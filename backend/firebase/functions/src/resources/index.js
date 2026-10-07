@@ -63,17 +63,18 @@ const {
   RESOURCE_TYPES,
 } = require("./modelMap");
 const {
-  DEFAULT_RESOURCE_MODEL,
-  DEFAULT_SUBMISSION_CHOICE,
-  SOURCE_PLANNER_MODEL,
+  LEGACY_CHOICE,
   assertAllowedMainModel,
   assertModelChoice,
-  CHAT_MODEL,
   backupModelFor,
+  chatModel,
   currentModelFor,
+  defaultSubmissionChoice,
   inferModelChoice,
   modelForChoice,
   providerForModel,
+  refreshModelConfig,
+  sourcePlannerModel,
 } = require("./modelRegistry");
 const { normaliseTopics } = require("./topicTaxonomy");
 const {
@@ -102,9 +103,9 @@ const openaiApiKey = defineSecret("OPENAI_API_KEY");
 // deploy; set RESOURCE_PDF_PREVIEW_URL in the function env to point at the
 // converter service (private Cloud Run in prod, local Docker in dev).
 const pdfPreviewUrl = defineString("RESOURCE_PDF_PREVIEW_URL", { default: "" });
-// Overrides the per-type models in modelMap.js when set (empty = use the map).
-// Exists so a model upgrade can be rolled back, or a candidate model trialled on
-// staging, by changing the function env only — no code change, no redeploy.
+// Forces every generation job onto one model when set (empty = use each job's
+// choice). Changing it means a redeploy; to switch models without one, edit
+// the config/resourceModels Firestore doc instead (see modelRegistry.js).
 const llmModelOverride = defineString("RESOURCE_LLM_MODEL", { default: "" });
 const llmFailoverEnabled = defineBoolean("RESOURCE_LLM_FAILOVER_ENABLED", { default: true });
 // Feature flag (default ON): source a verified public-domain passage for English
@@ -255,7 +256,7 @@ function validateSubmitResourceJobPayload(input) {
       // - distinct from LEGACY_CHOICE, which is what an older job with no
       // recorded choice at all is inferred to have run on.
       if (value === undefined || value === null || value === "") {
-        return DEFAULT_SUBMISSION_CHOICE;
+        return defaultSubmissionChoice();
       }
       return assertModelChoice(value);
     },
@@ -536,7 +537,7 @@ function buildResourceJobDoc({
     failover: null,
     failureAttempts: [],
     sourcePlanner: {
-      requestedModel: SOURCE_PLANNER_MODEL,
+      requestedModel: sourcePlannerModel(),
       effectiveModel: null,
       effectiveProvider: null,
       fallbackUsed: false,
@@ -573,15 +574,15 @@ function buildResourceJobDoc({
 /**
  * The model this deployment should use for a resource type.
  *
- * RESOURCE_LLM_MODEL overrides MODEL_MAP when set, so the model can be changed
- * or rolled back by editing the function env alone — no redeploy, and no code
- * change needed to fall back if a new model misbehaves in production.
+ * RESOURCE_LLM_MODEL overrides everything when set. Otherwise the job's choice,
+ * then the resource type's default choice, resolved to the model that choice
+ * currently runs on (see modelRegistry.js).
  */
 function configuredModelForResourceType(resourceType, modelChoice = null) {
   const override = String(llmModelOverride.value() || "").trim();
   if (override) return assertAllowedMainModel(override, "RESOURCE_LLM_MODEL");
   if (modelChoice) return modelForChoice(assertModelChoice(modelChoice));
-  return MODEL_MAP[resourceType] || DEFAULT_RESOURCE_MODEL;
+  return modelForChoice(MODEL_MAP[resourceType] || LEGACY_CHOICE);
 }
 
 /**
@@ -592,8 +593,12 @@ function configuredModelForResourceType(resourceType, modelChoice = null) {
  * from their persisted choice/model, still respecting the emergency override.
  */
 function modelForResourceJob(job) {
-  const activeModel = currentModelFor(job?.activeModel);
-  if (activeModel) return activeModel;
+  // A claimed attempt keeps the model it was claimed with, even when
+  // config/resourceModels changes mid-run, so every stage and the failure
+  // record name the model actually called. Upgrading a replaced model happens
+  // when a job is claimed (claimNextPendingJobForTutor) or retried (RES-39).
+  const activeModel = String(job?.activeModel || "").trim();
+  if (providerForModel(activeModel)) return activeModel;
   return configuredModelForResourceType(job?.resourceType, inferModelChoice(job));
 }
 
@@ -925,10 +930,10 @@ async function chatAboutResourceImpl({ payload, actor, deps }) {
   const studentName = studentDisplayName(studentSnap.data() || {}, payload.studentId);
   const history = await loadChatHistory({ db, studentId: payload.studentId });
 
-  // Always Sonnet (see CHAT_MODEL), whatever the tutor picked for generation.
-  // RESOURCE_LLM_MODEL deliberately doesn't apply: it exists to roll back
-  // generation models.
-  const model = CHAT_MODEL;
+  // Always the chat model (Sonnet by default; see modelRegistry.js), whatever
+  // the tutor picked for generation. RESOURCE_LLM_MODEL deliberately doesn't
+  // apply: it exists to roll back generation models.
+  const model = chatModel();
   // Normalising inside the try means an unusable response (an empty reply)
   // reads as a failed model call, the same as a provider error.
   const callModel = async (request, normalise) => {
@@ -1124,6 +1129,10 @@ async function createResourceRevisionImpl({ payload, actor, deps }) {
 
 const submitResourceJob = onCall(RESOURCE_CALLABLE_OPTIONS, async (request) => {
   const actor = requireResourceStaffCallable(request);
+  // Every model-using entry point re-reads config/resourceModels (at most once
+  // a minute per instance) so a model switch needs no deploy. Before
+  // validation here, because an omitted modelChoice takes the live default.
+  await refreshModelConfig(admin.firestore());
   let payload;
   try {
     payload = validateSubmitResourceJobPayload(request.data);
@@ -1577,7 +1586,7 @@ async function maybeSourcePassage({
       });
       planner = {
         ...(alternative._planner || planner || {}),
-        requestedModel: SOURCE_PLANNER_MODEL,
+        requestedModel: sourcePlannerModel(),
         fallbackUsed: true,
         reasonCode: "CANONICAL_SOURCE_MISS",
         alternateWorkRequired: true,
@@ -1754,7 +1763,7 @@ async function maybeSourceStimulusSet({
       });
       planner = {
         ...(alternative._planner || planner || {}),
-        requestedModel: SOURCE_PLANNER_MODEL,
+        requestedModel: sourcePlannerModel(),
         fallbackUsed: true,
         reasonCode: "CANONICAL_SOURCE_MISS",
         alternateWorkRequired: true,
@@ -3915,6 +3924,7 @@ const processResourceJob = onDocumentCreated(
     ...RESOURCE_WORKER_OPTIONS,
   },
   async (event) => {
+    await refreshModelConfig(admin.firestore());
     try {
       return await processResourceJobImpl({
         event,
@@ -3943,6 +3953,7 @@ const processResourceFallback = onDocumentUpdated(
     ...RESOURCE_WORKER_OPTIONS,
   },
   async (event) => {
+    await refreshModelConfig(admin.firestore());
     try {
       return await processResourceFallbackImpl({
         event,
@@ -3967,6 +3978,7 @@ const processResourceFallback = onDocumentUpdated(
 
 const submitResourceRevision = onCall(RESOURCE_CALLABLE_OPTIONS, async (request) => {
   const actor = requireResourceStaffCallable(request);
+  await refreshModelConfig(admin.firestore());
   let payload;
   try {
     payload = validateSubmitResourceRevisionPayload(request.data);
@@ -3992,6 +4004,7 @@ const submitResourceRevision = onCall(RESOURCE_CALLABLE_OPTIONS, async (request)
 
 const chatAboutResource = onCall(RESOURCE_CHAT_OPTIONS, async (request) => {
   const actor = requireResourceStaffCallable(request);
+  await refreshModelConfig(admin.firestore());
   let payload;
   try {
     payload = validateChatAboutResourcePayload(request.data);
@@ -4023,6 +4036,7 @@ const retryResourceJob = onCall(
   RESOURCE_WORKER_OPTIONS,
   async (request) => {
     const actor = requireResourceStaffCallable(request);
+    await refreshModelConfig(admin.firestore());
     let payload;
     try {
       payload = validateRetryResourceJobPayload(request.data);
@@ -4119,6 +4133,7 @@ const recoverStuckResourceJobs = onSchedule(
     ...RESOURCE_WORKER_OPTIONS,
   },
   async () => {
+    await refreshModelConfig(admin.firestore());
     try {
       return await recoverStuckResourceJobsImpl({
         deps: {

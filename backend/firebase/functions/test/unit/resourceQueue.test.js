@@ -34,6 +34,7 @@ const {
 } = require("../../src/resources/builder/diagrams");
 const { fromDate } = require("../../src/shared/timestamps");
 const { RESOURCE_TYPES } = require("../../src/resources/modelMap");
+const { applyModelConfig, resetModelConfig } = require("../../src/resources/modelRegistry");
 
 const clock = () => new Date("2026-05-23T00:00:00.000Z");
 
@@ -400,7 +401,7 @@ describe("resource provider failover", () => {
     });
     assert.equal(first[0].status, "fallback_pending");
     assert.equal(db.jobs[0].status, "fallback_pending");
-    assert.equal(db.jobs[0].activeModel, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].activeModel, "gpt-6.1-sol");
     assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5-5"]);
     assert.equal(db.jobs[0].attemptId, null);
     assert.equal(storage.deletedPrefixes.length, 1);
@@ -426,9 +427,9 @@ describe("resource provider failover", () => {
 
     assert.equal(second.status, "pending");
     assert.equal(db.jobs[0].status, "complete");
-    assert.equal(db.jobs[0].effectiveModel, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].effectiveModel, "gpt-6.1-sol");
     assert.equal(db.jobs[0].effectiveProvider, "openai");
-    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5-5", "gpt-5.6-sol"]);
+    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5-5", "gpt-6.1-sol"]);
     assert.equal(db.jobs[0].attemptCount, 2);
     assert.ok(db.jobs[0].failover.completedAt);
   });
@@ -441,8 +442,8 @@ describe("resource provider failover", () => {
       createdAt: 1,
       resourceType: "worksheet",
       modelChoice: "openai",
-      requestedModel: "gpt-5.6-sol",
-      activeModel: "gpt-5.6-sol",
+      requestedModel: "gpt-6.1-sol",
+      activeModel: "gpt-6.1-sol",
       attemptedModels: [],
     }]);
     const result = await runQueueForTutor("tutor-1", {
@@ -492,12 +493,12 @@ describe("resource provider failover", () => {
       resourceType: "worksheet",
       modelChoice: "anthropic",
       requestedModel: "claude-opus-5-5",
-      activeModel: "gpt-5.6-sol",
+      activeModel: "gpt-6.1-sol",
       attemptedModels: ["claude-opus-5-5"],
       fallbackUsed: true,
       failover: {
         fromModel: "claude-opus-5-5",
-        toModel: "gpt-5.6-sol",
+        toModel: "gpt-6.1-sol",
         safeReason: "Primary unavailable.",
       },
       failureAttempts: [],
@@ -513,7 +514,7 @@ describe("resource provider failover", () => {
     // The tutor-facing error summarises both attempts without naming models.
     assert.match(db.jobs[0].error, /Both generation attempts failed/);
     assert.doesNotMatch(db.jobs[0].error, /claude-opus-5|gpt-5\.6-sol/);
-    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5-5", "gpt-5.6-sol"]);
+    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5-5", "gpt-6.1-sol"]);
   });
 
   // RES-35: jobs queued before a model upgrade store the retired model ID.
@@ -544,8 +545,73 @@ describe("resource provider failover", () => {
     assert.deepEqual(seen, ["claude-opus-5-5"]);
     assert.equal(db.jobs[0].modelChoice, "anthropic");
     assert.equal(db.jobs[0].requestedModel, "claude-opus-5-5");
-    assert.equal(db.jobs[0].activeModel, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].activeModel, "gpt-6.1-sol");
     assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5-5"]);
+  });
+
+  // RES-39: a queued job picks up a live model switch when it is claimed...
+  it("claims a queued job on its choice's live model", async () => {
+    applyModelConfig({ openai: "gpt-6.2-sol" });
+    try {
+      const db = fakeQueueDb([{
+        id: "job-1",
+        createdBy: "tutor-1",
+        status: "pending",
+        createdAt: 1,
+        resourceType: "worksheet",
+        modelChoice: "openai",
+        requestedModel: "gpt-6.1-sol",
+        activeModel: "gpt-6.1-sol",
+        attemptedModels: [],
+      }]);
+      const seen = [];
+      await runQueueForTutor("tutor-1", {
+        db,
+        storage: fakeStorage(),
+        clock,
+        generationPipeline: async (job) => {
+          seen.push(modelForResourceJob(job));
+          throw modelFailure();
+        },
+      });
+      assert.deepEqual(seen, ["gpt-6.2-sol"]);
+    } finally {
+      resetModelConfig();
+    }
+  });
+
+  // ...but an attempt already running keeps the model it was claimed with, so
+  // the failure record and the fallback name the model actually called.
+  it("keeps a running attempt on its claimed model through a live switch", async () => {
+    const db = fakeQueueDb([{
+      id: "job-1",
+      createdBy: "tutor-1",
+      status: "pending",
+      createdAt: 1,
+      resourceType: "worksheet",
+      modelChoice: "anthropic",
+      attemptedModels: [],
+    }]);
+    const seen = [];
+    try {
+      await runQueueForTutor("tutor-1", {
+        db,
+        storage: fakeStorage(),
+        clock,
+        generationPipeline: async (job) => {
+          seen.push(modelForResourceJob(job));
+          applyModelConfig({ anthropic: "claude-opus-6" });
+          seen.push(modelForResourceJob(job));
+          throw modelFailure();
+        },
+      });
+    } finally {
+      resetModelConfig();
+    }
+    assert.deepEqual(seen, ["claude-opus-5-5", "claude-opus-5-5"]);
+    assert.equal(db.jobs[0].failover.fromModel, "claude-opus-5-5");
+    assert.equal(db.jobs[0].failureAttempts[0].model, "claude-opus-5-5");
+    assert.equal(db.jobs[0].activeModel, "gpt-6.1-sol");
   });
 
   it("does not fall back to a choice already attempted under a retired model", async () => {
@@ -557,7 +623,7 @@ describe("resource provider failover", () => {
       resourceType: "worksheet",
       modelChoice: "claude-opus-5",
       requestedModel: "claude-opus-5",
-      activeModel: "gpt-5.6-sol",
+      activeModel: "gpt-6.1-sol",
       attemptedModels: ["claude-opus-5"],
       fallbackUsed: true,
       failureAttempts: [],
@@ -569,7 +635,7 @@ describe("resource provider failover", () => {
       generationPipeline: async () => { throw modelFailure("backup unavailable"); },
     });
     assert.equal(result[0].status, "failed");
-    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5-5", "gpt-5.6-sol"]);
+    assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5-5", "gpt-6.1-sol"]);
   });
 
   it("makes duplicate fallback trigger delivery idempotent", async () => {
@@ -578,7 +644,7 @@ describe("resource provider failover", () => {
       jobId: "job-1",
       createdBy: "tutor-1",
       status: "fallback_pending",
-      activeModel: "gpt-5.6-sol",
+      activeModel: "gpt-6.1-sol",
     };
     const db = fakeQueueDb([job]);
     let queueCalls = 0;
@@ -630,7 +696,7 @@ describe("resource provider failover", () => {
       jobId: "job-1",
       createdBy: "tutor-1",
       status: "fallback_pending",
-      activeModel: "gpt-5.6-sol",
+      activeModel: "gpt-6.1-sol",
     };
     const db = fakeQueueDb([job]);
     await cancelResourceJobImpl({
@@ -1224,11 +1290,23 @@ describe("resource queue runner", () => {
     );
   });
 
+  // RES-39: a config/resourceModels edit reaches every job claimed after it.
+  it("follows a live model switch for newly resolved jobs", () => {
+    applyModelConfig({ openai: "gpt-6.2-sol" });
+    try {
+      assert.equal(configuredModelForResourceType("worksheet", "openai"), "gpt-6.2-sol");
+      assert.equal(modelForResourceJob({ modelChoice: "openai" }), "gpt-6.2-sol");
+      assert.equal(modelForResourceJob({ modelChoice: "anthropic" }), "claude-opus-5-5");
+    } finally {
+      resetModelConfig();
+    }
+  });
+
   it("honours the emergency primary-model override", () => {
     const original = process.env.RESOURCE_LLM_MODEL;
-    process.env.RESOURCE_LLM_MODEL = "gpt-5.6-sol";
+    process.env.RESOURCE_LLM_MODEL = "gpt-6.1-sol";
     try {
-      assert.equal(configuredModelForResourceType("worksheet", "claude-opus-5-5"), "gpt-5.6-sol");
+      assert.equal(configuredModelForResourceType("worksheet", "claude-opus-5-5"), "gpt-6.1-sol");
     } finally {
       if (original === undefined) delete process.env.RESOURCE_LLM_MODEL;
       else process.env.RESOURCE_LLM_MODEL = original;
@@ -1520,14 +1598,14 @@ describe("retryResourceJobImpl", () => {
         error: "Bad JSON",
         errorCode: "DIAGRAM_LAYOUT_ERROR",
         modelChoice: "openai",
-        requestedModel: "gpt-5.6-sol",
+        requestedModel: "gpt-6.1-sol",
         activeModel: "claude-opus-5-5",
         effectiveModel: "claude-opus-5-5",
         effectiveProvider: "anthropic",
-        attemptedModels: ["gpt-5.6-sol", "claude-opus-5-5"],
+        attemptedModels: ["gpt-6.1-sol", "claude-opus-5-5"],
         fallbackUsed: true,
-        failover: { fromModel: "gpt-5.6-sol", toModel: "claude-opus-5-5" },
-        failureAttempts: [{ model: "gpt-5.6-sol" }],
+        failover: { fromModel: "gpt-6.1-sol", toModel: "claude-opus-5-5" },
+        failureAttempts: [{ model: "gpt-6.1-sol" }],
         usageByProvider: { openai: { inputTokens: 10 } },
         startedAt: fromDate(new Date("2026-05-23T00:00:00.000Z")),
         completedAt: fromDate(new Date("2026-05-23T00:01:00.000Z")),
@@ -1556,8 +1634,8 @@ describe("retryResourceJobImpl", () => {
     assert.equal(db.jobs[0].startedAt, null);
     assert.equal(db.jobs[0].completedAt, null);
     assert.equal(db.jobs[0].modelChoice, "openai");
-    assert.equal(db.jobs[0].requestedModel, "gpt-5.6-sol");
-    assert.equal(db.jobs[0].activeModel, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].requestedModel, "gpt-6.1-sol");
+    assert.equal(db.jobs[0].activeModel, "gpt-6.1-sol");
     assert.equal(db.jobs[0].effectiveModel, null);
     assert.equal(db.jobs[0].effectiveProvider, null);
     assert.deepEqual(db.jobs[0].attemptedModels, []);
@@ -1784,11 +1862,11 @@ describe("recoverStuckResourceJobsImpl", () => {
       createdBy: "tutor-1",
       status: "fallback_pending",
       modelChoice: "anthropic",
-      activeModel: "gpt-5.6-sol",
+      activeModel: "gpt-6.1-sol",
       attemptedModels: ["claude-opus-5-5"],
       failover: {
         fromModel: "claude-opus-5-5",
-        toModel: "gpt-5.6-sol",
+        toModel: "gpt-6.1-sol",
         queuedAt: fromDate(new Date("2026-05-23T00:00:00.000Z")),
       },
     }]);
@@ -1809,7 +1887,7 @@ describe("recoverStuckResourceJobsImpl", () => {
     assert.deepEqual(result.recoveredJobIds, ["fallback-stuck"]);
     assert.deepEqual(queued, ["tutor-1"]);
     assert.equal(db.jobs[0].status, "pending");
-    assert.equal(db.jobs[0].activeModel, "gpt-5.6-sol");
+    assert.equal(db.jobs[0].activeModel, "gpt-6.1-sol");
     assert.equal(db.jobs[0].error, "Fallback handoff recovered after its worker did not start");
   });
 });

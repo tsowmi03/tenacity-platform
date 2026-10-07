@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-07 | [Resources move to GPT-6.1 Sol, and models switch without a deploy (RES-39)](#2026-10-07--resources-move-to-gpt-61-sol-and-models-switch-without-a-deploy-res-39) |
 | 2026-10-07 | [Talk a resource through with AI before generating it (RES-24)](#2026-10-07--talk-a-resource-through-with-ai-before-generating-it-res-24) |
 | 2026-10-07 | [Answer modes give what they promise: criteria only, or the full answer (RES-36)](#2026-10-07--answer-modes-give-what-they-promise-criteria-only-or-the-full-answer-res-36) |
 | 2026-09-24 | [Superscripts and subscripts render everywhere, or the tutor is told (RES-19)](#2026-09-24--superscripts-and-subscripts-render-everywhere-or-the-tutor-is-told-res-19) |
@@ -158,6 +159,37 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-07 — Resources move to GPT-6.1 Sol, and models switch without a deploy (RES-39)
+
+**What changed**
+- The GPT side of resource generation now runs on GPT-6.1 Sol instead of
+  GPT-5.6 Sol. GPT stays the default for new resources; the Claude side
+  (Opus 5.5), the chat (Sonnet 5.5) and the source planner are unchanged.
+- Every resource model can now be switched from the Firebase console, with no
+  deploy: the two generation choices, which one is the default, the chat
+  model, and the source planner and its fallback. Each is a field on the
+  Firestore doc `config/resourceModels`; a missing field keeps the code
+  default. Each function instance re-reads the doc at most once a minute.
+- A bad value can't take generation down: a malformed ID, or a Claude choice
+  pointed at a GPT model (or the reverse), is ignored and logged, and the
+  code default is used. If Firestore can't be read, the models already in use
+  stay in use.
+- A model's provider is now read from its ID prefix (`claude-` / `gpt-`), so a
+  job that recorded an older model, such as `gpt-5.6-sol`, carries on with its
+  choice's current model. The hand-kept list of retired models is gone. A
+  resource already being generated finishes on the model it started with.
+- The README has a "Switching resource AI models" section with the fields and
+  defaults.
+
+**Why:** Each model upgrade still needed a code change and a deploy, and a
+model that misbehaved in production couldn't be rolled back quickly.
+
+**Status:** Live. [#221](https://github.com/tsowmi03/tenacity-platform/pull/221),
+Functions deployed with the merge. No `config/resourceModels` doc exists yet, so production runs on the code
+defaults until one is created.
 
 ---
 

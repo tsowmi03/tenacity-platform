@@ -21,15 +21,14 @@
 const { callAiForResource } = require("./aiClient");
 const { resourceFailureReasonCode } = require("./failure");
 const {
-  SOURCE_PLANNER_FALLBACK_MODEL,
-  SOURCE_PLANNER_MODEL,
   providerForModel,
+  sourcePlannerFallbackModel,
+  sourcePlannerModel,
 } = require("./modelRegistry");
 
 // Trailing slash is the canonical form — /books redirects (301) to /books/,
 // which would cost an extra round trip on every search.
 const GUTENDEX_BASE = "https://gutendex.com/books/";
-const DEFAULT_MODEL = SOURCE_PLANNER_MODEL;
 const FETCH_TIMEOUT_MS = 20000;
 
 const SELECTION_SCHEMA = Object.freeze({
@@ -167,7 +166,7 @@ async function callCuratorWithFallback({
   anthropicApiKey,
   openaiApiKey,
   apiKey,
-  model = DEFAULT_MODEL,
+  model = sourcePlannerModel(),
   systemPrompt,
   userMessage,
   responseSchema,
@@ -182,8 +181,8 @@ async function callCuratorWithFallback({
       openaiApiKey,
       model: targetModel,
       maxTokens: 4096,
-      effort: targetModel === SOURCE_PLANNER_FALLBACK_MODEL ? "low" : null,
-      thinkingDisabled: targetModel === SOURCE_PLANNER_MODEL,
+      effort: targetModel === sourcePlannerFallbackModel() ? "low" : null,
+      thinkingDisabled: targetModel === sourcePlannerModel(),
       systemPrompt,
       userMessage,
       mathBearing: false,
@@ -207,13 +206,13 @@ async function callCuratorWithFallback({
   } catch (primaryError) {
     if (
       !allowFallback ||
-      model !== SOURCE_PLANNER_MODEL ||
+      model !== sourcePlannerModel() ||
       ["APIUserAbortError", "AbortError"].includes(primaryError?.name) ||
       primaryError?.cancelled === true
     ) {
       throw primaryError;
     }
-    const result = await invoke(SOURCE_PLANNER_FALLBACK_MODEL);
+    const result = await invoke(sourcePlannerFallbackModel());
     return {
       result,
       planner: plannerMetadata({
@@ -258,7 +257,7 @@ async function selectPublicDomainText({
   apiKey,
   anthropicApiKey,
   openaiApiKey,
-  model = DEFAULT_MODEL,
+  model = sourcePlannerModel(),
   brief,
   callAi = callAiForResource,
   signal,
@@ -401,7 +400,7 @@ async function planStimulusSelections({
   apiKey,
   anthropicApiKey,
   openaiApiKey,
-  model = DEFAULT_MODEL,
+  model = sourcePlannerModel(),
   job,
   uploadedContent = null,
   callAi = callAiForResource,
@@ -476,7 +475,7 @@ async function planStimulusSelections({
 async function selectAlternativePublicDomainText(options) {
   return selectPublicDomainText({
     ...options,
-    model: SOURCE_PLANNER_FALLBACK_MODEL,
+    model: sourcePlannerFallbackModel(),
     allowFallback: false,
   });
 }
@@ -1089,7 +1088,6 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
 }
 
 module.exports = {
-  DEFAULT_MODEL,
   SELECTION_SCHEMA,
   SELECTION_SYSTEM_PROMPT,
   STIMULUS_PLAN_SCHEMA,

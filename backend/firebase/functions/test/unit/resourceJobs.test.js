@@ -98,19 +98,22 @@ describe("validateSubmitResourceJobPayload", () => {
       validateSubmitResourceJobPayload({ ...base, modelChoice: "anthropic" }).modelChoice,
       "anthropic"
     );
-    assert.throws(
-      () => validateSubmitResourceJobPayload({ ...base, modelChoice: "gpt-5.6-terra" }),
-      /modelChoice must be one of/
-    );
+    for (const modelChoice of ["mistral-large", "gemini", "gpt"]) {
+      assert.throws(
+        () => validateSubmitResourceJobPayload({ ...base, modelChoice }),
+        /modelChoice must be one of/
+      );
+    }
   });
 
   // RES-35: a portal build cached from before the deploy still sends a model
-  // ID. Current and retired IDs both normalise to their choice.
+  // ID. Any ID normalises to its provider's choice (RES-39), current or not.
   it("accepts a model ID from an older portal and stores its choice", () => {
     for (const [value, choice] of [
       ["claude-opus-5", "anthropic"],
       ["claude-opus-5-5", "anthropic"],
       ["gpt-5.6-sol", "openai"],
+      ["gpt-6.1-sol", "openai"],
     ]) {
       assert.equal(
         validateSubmitResourceJobPayload({ ...base, modelChoice: value }).modelChoice,
@@ -259,16 +262,16 @@ describe("createResourceJobImpl", () => {
     assert.equal(db.writes[0].data.createdByName, "Maya Lawson");
     // This payload omits modelChoice, so it exercises the submission
     // default - Sol as of RES-27, not the Opus legacy-inference fallback.
-    assert.equal(db.writes[0].data.model, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.model, "gpt-6.1-sol");
     assert.equal(db.writes[0].data.modelChoice, "openai");
-    assert.equal(db.writes[0].data.requestedModel, "gpt-5.6-sol");
-    assert.equal(db.writes[0].data.activeModel, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.requestedModel, "gpt-6.1-sol");
+    assert.equal(db.writes[0].data.activeModel, "gpt-6.1-sol");
     assert.equal(db.writes[0].data.effectiveModel, null);
     assert.deepEqual(db.writes[0].data.attemptedModels, []);
     assert.equal(db.writes[0].data.fallbackUsed, false);
     assert.equal(db.writes[0].data.modelChoice, "openai");
-    assert.equal(db.writes[0].data.requestedModel, "gpt-5.6-sol");
-    assert.equal(db.writes[0].data.activeModel, "gpt-5.6-sol");
+    assert.equal(db.writes[0].data.requestedModel, "gpt-6.1-sol");
+    assert.equal(db.writes[0].data.activeModel, "gpt-6.1-sol");
     assert.equal(db.writes[0].data.effectiveModel, null);
     assert.deepEqual(db.writes[0].data.attemptedModels, []);
     assert.equal(db.writes[0].data.fallbackUsed, false);
