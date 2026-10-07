@@ -507,7 +507,7 @@ function makeAnswerTable(answers = [], opts = {}) {
 
   for (const answer of asArray(answers)) {
     const parts = [answer?.answer || answer?.suggestedResponse || ""];
-    if (includeWorking && answer?.workingOut) parts.push(`Working: ${answer.workingOut}`);
+    if (includeWorking && answer?.workingOut) parts.push(`Working:\n${answer.workingOut}`);
     if (answer?.note) parts.push(`Note: ${answer.note}`);
     rows.push(makeAnswerRow(answerLabel(answer), parts.filter(Boolean).join("\n"), opts));
   }

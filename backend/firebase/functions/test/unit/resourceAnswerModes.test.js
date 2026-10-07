@@ -187,6 +187,33 @@ describe("Maths Answers with working out mode", () => {
     }
   });
 
+  it("prints each step of the working on its own line", async () => {
+    const { buildResourceDocx } = require("../../src/resources/builder");
+    const worksheet = {
+      title: "Linear Equations",
+      subject: "maths",
+      year: 8,
+      topic: "Linear equations",
+      totalMarks: 2,
+      questions: [{ number: 1, stem: "Solve the equation.", type: "calculation", marks: 2, parts: null }],
+      answers: [{
+        questionNumber: 1,
+        partLabel: null,
+        answer: "four",
+        workingOut: "Subtract three from both sides\nDivide both sides by two",
+      }],
+    };
+    for (const resourceType of ["worksheet", "mixed-review"]) {
+      const resource = resourceType === "worksheet"
+        ? worksheet
+        : { ...worksheet, topics: ["Linear equations"], sections: [{ topic: "Linear equations", questions: worksheet.questions }] };
+      const paragraphs = documentText(await buildResourceDocx(resourceType, resource, { answerMode: "worked" })).split("\n");
+      for (const line of ["Working:", "Subtract three from both sides", "Divide both sides by two"]) {
+        assert.ok(paragraphs.includes(line), `${resourceType}: "${line}" is not its own paragraph`);
+      }
+    }
+  });
+
   it("rejects an answer without working", async () => {
     const { buildResourceDocx } = require("../../src/resources/builder");
     const worksheet = {

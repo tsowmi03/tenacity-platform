@@ -93,7 +93,7 @@ function makeAnswerTable(answers = [], { includeWorking = true } = {}) {
   ];
 
   for (const answer of answers) {
-    const working = includeWorking && answer?.workingOut ? `\nWorking: ${answer.workingOut}` : "";
+    const working = includeWorking && answer?.workingOut ? `\nWorking:\n${answer.workingOut}` : "";
     rows.push(makeAnswerRow(answerLabel(answer), `${answer?.answer ?? ""}${working}`));
   }
 

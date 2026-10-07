@@ -957,6 +957,15 @@ function makeWorkedExampleTable(steps = []) {
   });
 }
 
+function answerLines(answer) {
+  const lines = String(answer ?? "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.length ? lines : [""];
+}
+
 function makeAnswerRow(number, answer, opts = {}) {
   setMathLocation(`Answer ${cleanText(number)}`);
   const numberWidth = opts.numberWidth || 1400;
@@ -969,8 +978,16 @@ function makeAnswerRow(number, answer, opts = {}) {
         numberWidth,
         { fill: opts.fill }
       ),
+      // One paragraph per line: working out is one step per line, and a single
+      // paragraph ran every step together into an unreadable block.
       cell(
-        [paragraph(answer, { bold: opts.bold, color: opts.color, spacing: { after: 0 } })],
+        answerLines(answer).map((line, index, lines) =>
+          paragraph(line, {
+            bold: opts.bold || (lines.length > 1 && line === "Working:"),
+            color: opts.color,
+            spacing: { before: index && line === "Working:" ? 80 : 0, after: 0 },
+          })
+        ),
         answerWidth,
         { fill: opts.fill }
       ),
