@@ -194,8 +194,9 @@ omitted, and open follow-ups are tracked at the bottom.
 with the reference files and the student's history in view, gets a better
 brief before any generation time is spent.
 
-**Status:** Live. The `chatAboutResource` Function and the resource portal
-deployed with the merge.
+**Status:** Live. [#219](https://github.com/tsowmi03/tenacity-platform/pull/219),
+the `chatAboutResource` Function and the resource portal deployed with the
+merge.
 
 ---
 
