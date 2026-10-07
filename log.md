@@ -191,7 +191,9 @@ omitted, and open follow-ups are tracked at the bottom.
 with a suggested response for every question, several of them directions
 ("The response should identify…") rather than answers.
 
-**Status:** Live. Functions deployed with the RES-36 merge.
+**Status:** Live. [#218](https://github.com/tsowmi03/tenacity-platform/pull/218),
+Functions deployed with the merge. Fuller English answering guidance follows in
+RES-37.
 
 ---
 
