@@ -200,7 +200,8 @@ omitted, and open follow-ups are tracked at the bottom.
 mostly with no warning to the tutor: lost dollar signs, dropped accents,
 merged working lines, sets as brackets, and LaTeX shown as words.
 
-**Status:** Live. Functions deployed with the merge.
+**Status:** Live. [#224](https://github.com/tsowmi03/tenacity-platform/pull/224),
+Functions deployed with the merge.
 
 **Next steps**
 - Run the corpus checks over real `resourceJobs.generatedJson` from
