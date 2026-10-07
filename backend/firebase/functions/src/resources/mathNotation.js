@@ -275,7 +275,10 @@ const UNICODE_SUPERSCRIPTS = {
 };
 
 const SINGLE_CHAR_SCRIPT = /[\p{L}\p{N}°′*∞]/u;
-const TRAILING_ATOM = new RegExp(String.raw`(\d[\d\p{M}]*(?:\.\d[\d\p{M}]*)?|\p{L}\p{M}*[′']*|[${BIG_OPS}])$`, "u");
+// A function name is one base (log₂, sin²), not a word whose last letter
+// carries the script.
+const FUNCTION_BASE = "arcsin|arccos|arctan|sinh|cosh|tanh|sin|cos|tan|cot|sec|csc|log|ln|exp|lim|max|min";
+const TRAILING_ATOM = new RegExp(String.raw`(\d[\d\p{M}]*(?:\.\d[\d\p{M}]*)?|(?<![A-Za-z])(?:${FUNCTION_BASE})|\p{L}\p{M}*[′']*|[${BIG_OPS}])$`, "u");
 // Operands of a slash fraction, matching what the span detector accepts.
 const SLASH_ATOM = String.raw`(?:\d+[A-Za-z]+|${NUM}|[A-Za-zα-ωΑ-Ω]${WORD_TAIL})`;
 const SLASH_ATOM_END = new RegExp(`${SLASH_ATOM}$`);

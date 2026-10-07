@@ -360,3 +360,47 @@ describe("units", () => {
     assert.match((await body("s = \\frac{d}{t}")).shown, /«s = \[d\/t\]»/);
   });
 });
+
+describe("equation formatting", () => {
+  async function paragraphXml(text, opts) {
+    return xmlFor(shared.runWithMathRendering(true, () => [new Paragraph({ children: shared.richTextRuns(text, opts) })]));
+  }
+
+  it("gives equations in bold body text the paragraph's size and weight", async () => {
+    const xml = await paragraphXml("Ratio a:b = 2:3", { bold: true });
+    const run = /<m:oMath>.*?<\/m:oMath>/.exec(xml)[0];
+    assert.match(run, /<w:sz w:val="22"\/>/);
+    assert.match(run, /<w:b\/>/);
+  });
+
+  it("sizes body equations like body text", async () => {
+    const run = /<m:oMath>.*?<\/m:oMath>/.exec(await paragraphXml("Solve x + 1 = 2."))[0];
+    assert.match(run, /<w:sz w:val="22"\/>/);
+  });
+
+  it("sets function names and words upright, variables italic", async () => {
+    const xml = await paragraphXml("A = \\frac{1}{2}ab sin C and Area = lwh and ABC = 90°");
+    const upright = [...xml.matchAll(/<m:r><m:rPr><m:sty m:val="p"\/><\/m:rPr>(?:<w:rPr>.*?<\/w:rPr>)?<m:t>([^<]*)<\/m:t>/g)].map((m) => m[1]);
+    assert.ok(upright.includes("sin"), upright.join());
+    assert.ok(!upright.some((word) => ["ab", "lwh", "ABC"].includes(word)), upright.join());
+  });
+});
+
+describe("styled text and function bases", () => {
+  it("sets maths in titles and coloured text inline, in the text's own style", async () => {
+    const xml = await xmlFor(shared.runWithMathRendering(true, () => [
+      new Paragraph({ children: shared.richTextRuns("Ratios: a:b = 2:3 and x^{2}", { size: 36, bold: true, color: "1B3A6B" }) }),
+    ]));
+    assert.doesNotMatch(xml, /<m:oMath>/);
+    assert.match(xml, /<w:vertAlign w:val="superscript"\/>/);
+    assert.match(visible(xml), /Ratios: a:b = 2:3 and x‹sup›2/);
+  });
+
+  it("uses the whole function name as the base of a script", async () => {
+    const { shown } = await body("Evaluate \\log_{2} 8 and \\sin^{2} \\theta + \\cos^{2} \\theta = 1.");
+    assert.match(shown, /log₍2₎/);
+    assert.match(shown, /sin⁽2⁾/);
+    const xml = await xmlFor(shared.runWithMathRendering(true, () => [new Paragraph({ children: shared.richTextRuns("log_{2} 8 = 3") })]));
+    assert.match(xml, /<m:sSub><m:sSubPr\/><m:e><m:r><m:rPr><m:sty m:val="p"\/><\/m:rPr>(?:<w:rPr>.*?<\/w:rPr>)?<m:t>log<\/m:t>/);
+  });
+});

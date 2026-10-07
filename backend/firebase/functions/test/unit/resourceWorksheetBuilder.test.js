@@ -264,7 +264,8 @@ describe("worksheet DOCX builder", () => {
     assert.match(documentXml, /<m:t>5x = 20<\/m:t>/);
     assert.match(documentXml, /<m:t>x = 4<\/m:t>/);
     assert.match(documentXml, /<m:t>−3 ≤ x<\/m:t>/);
-    assert.match(documentXml, /<m:t>2×3 ≠ 5 → true<\/m:t>/);
+    // "true" is a word, so it is its own upright run (RES-31).
+    assert.match(documentXml, /<m:t>2×3 ≠ 5 → <\/m:t><\/m:r><m:r><m:rPr><m:sty m:val="p"\/><\/m:rPr>(?:<w:rPr>.*?<\/w:rPr>)?<m:t>true<\/m:t>/);
     assert.doesNotMatch(documentXml, /<w:t>z\/4<\/w:t>/);
   });
 

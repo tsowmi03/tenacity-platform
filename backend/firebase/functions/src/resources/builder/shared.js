@@ -11,10 +11,11 @@ const {
   ImageRun,
   LineRuleType,
   BuilderElement,
+  RunProperties,
+  XmlComponent,
   Math: DocxMath,
   MathFraction,
   MathRadical,
-  MathRun,
   MathSubScript,
   MathSubSuperScript,
   MathSuperScript,
@@ -227,6 +228,54 @@ function mathText(value) {
   );
 }
 
+// Formatting of the paragraph the equation sits in. Equation runs carry no
+// formatting of their own, so without this they came out at the default size
+// and black: small in titles and headings, invisible on a dark header band.
+// Set by mathSpanRuns for the (synchronous) build of one equation.
+let currentMathStyle = {};
+
+class MathTextElement extends XmlComponent {
+  constructor(text) {
+    super("m:t");
+    this.root.push(text);
+  }
+}
+
+// An equation run in the surrounding text's size, colour and weight;
+// `plain` sets it upright (function names, words, units).
+function mathRun(text, { plain = false } = {}) {
+  const run = new BuilderElement({ name: "m:r", children: [] });
+  if (plain) run.root.push(ommlElement("m:rPr", [ommlElement("m:sty", [], "p")]));
+  const { size, color, bold } = currentMathStyle;
+  if (size || color || bold) run.root.push(new RunProperties({ size, color, bold }));
+  run.root.push(new MathTextElement(text));
+  return run;
+}
+
+// Function names and real words (sin, log, Area, distance) are upright in
+// maths. Variables stay italic: single letters, products like ac or lwh, and
+// point names like ABC.
+const FUNCTION_NAMES = new Set(["arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "sin", "cos", "tan",
+  "cot", "sec", "csc", "log", "ln", "exp", "lim", "max", "min", "det", "gcd", "deg", "Pr"]);
+
+function isUprightWord(word) {
+  if (FUNCTION_NAMES.has(word)) return true;
+  return word.length >= 3 && /[aeiou]/i.test(word) && word !== word.toUpperCase();
+}
+
+function textMathRuns(value) {
+  const out = [];
+  let cursor = 0;
+  for (const match of value.matchAll(/(?<![A-Za-z])[A-Za-z]{2,}(?![A-Za-z])/g)) {
+    if (!isUprightWord(match[0])) continue;
+    if (match.index > cursor) out.push(mathRun(value.slice(cursor, match.index)));
+    out.push(mathRun(match[0], { plain: true }));
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < value.length) out.push(mathRun(value.slice(cursor)));
+  return out;
+}
+
 const SUPERSCRIPT_CHARS = {
   0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹",
   "+": "⁺", "-": "⁻", "−": "⁻", "(": "⁽", ")": "⁾", n: "ⁿ", i: "ⁱ",
@@ -269,7 +318,7 @@ function ommlArray(node) {
   if (layout === "lines") {
     inner = ommlElement("m:eqArr", node.rows.map((row) => ommlElement(
       "m:e",
-      row.flatMap((cell, index) => [...(index ? [new MathRun("  ")] : []), ...ommlChildren(cell)])
+      row.flatMap((cell, index) => [...(index ? [mathRun("  ")] : []), ...ommlChildren(cell)])
     )));
   } else {
     const columns = Math.max(...node.rows.map((row) => row.length));
@@ -311,7 +360,7 @@ function ommlChildren(nodes) {
       // schema order (base first) and LibreOffice then drops the base.
       const flatSup = !node.sub && unicodeSuperscript(node.sup);
       if (flatSup) {
-        out.push(new MathRun(flatSup), ...ommlChildren(base));
+        out.push(mathRun(flatSup), ...ommlChildren(base));
       } else {
         const slot = (part) => (part ? ommlChildren(part) : []);
         out.push(ommlElement("m:sPre", [
@@ -325,11 +374,11 @@ function ommlChildren(nodes) {
     if (node.type === "array") {
       out.push(...ommlArray(node));
     } else if (node.type === "text") {
-      if (node.value) out.push(new MathRun(restoreBraces(normaliseMathSymbols(node.value))));
+      if (node.value) out.push(...textMathRuns(restoreBraces(normaliseMathSymbols(node.value))));
     } else if (node.type === "group") {
       out.push(...ommlChildren(node.children));
     } else if (node.type === "paren") {
-      out.push(new MathRun(node.open), ...ommlChildren(node.children), new MathRun(node.close));
+      out.push(mathRun(node.open), ...ommlChildren(node.children), mathRun(node.close));
     } else if (node.type === "script") {
       const children = ommlChildren(node.base);
       if (node.sup && node.sub) {
@@ -373,7 +422,13 @@ function normaliseMathSymbols(value) {
 function mathSpanRuns(value, opts = {}) {
   const parsed = parseMath(mathText(value));
   if (parsed.ok) {
-    const children = ommlChildren(parsed.nodes);
+    currentMathStyle = { size: opts.size || BRAND.FONT_SIZE_BODY, color: opts.color, bold: opts.bold };
+    let children;
+    try {
+      children = ommlChildren(parsed.nodes);
+    } finally {
+      currentMathStyle = {};
+    }
     if (children.length) return [new DocxMath({ children })];
   }
   const shownAs = readableFallback(value);
@@ -599,12 +654,24 @@ function mathAwareTextRuns(input, opts = {}) {
   return runs.length ? runs : [rawTextRun(value, opts)];
 }
 
+function isStyledText(opts) {
+  const color = String(opts.color || "").toUpperCase();
+  return (opts.size && opts.size > BRAND.FONT_SIZE_BODY) || (color && color !== "000000");
+}
+
 function richTextRuns(text, opts = {}) {
   // When math is disabled (e.g. English documents), keep prose punctuation
   // literal. Maths documents still run through the expression renderer. Clean
   // the whole value before splitting Markdown so whitespace around styled runs
   // survives rather than being trimmed from every segment independently.
   const mathEnabled = mathRenderingEnabled();
+  // Headings, titles and coloured text set their maths inline (raised and
+  // lowered runs in the text's own font): Word equations ignore the run's
+  // size and colour in the LibreOffice preview, so a title's maths came out
+  // small and black, and white header text came out black on navy.
+  if (mathEnabled && !opts.verbatim && isStyledText(opts)) {
+    return textRuns(text, opts);
+  }
   if (mathEnabled) {
     // Stacked working ("2 × $12 = $24" over "3 × $12 = $36") and LaTeX \\
     // keep their line breaks; joining them reads 24 3 as 243.
