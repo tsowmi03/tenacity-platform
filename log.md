@@ -179,7 +179,8 @@ omitted, and open follow-ups are tracked at the bottom.
   stay in use.
 - A model's provider is now read from its ID prefix (`claude-` / `gpt-`), so a
   job that recorded an older model, such as `gpt-5.6-sol`, carries on with its
-  choice's current model. The hand-kept list of retired models is gone.
+  choice's current model. The hand-kept list of retired models is gone. A
+  resource already being generated finishes on the model it started with.
 - The README has a "Switching resource AI models" section with the fields and
   defaults.
 

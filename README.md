@@ -212,8 +212,9 @@ Firebase console (staging first). It takes effect within about a minute.
 
 - A malformed value, or a choice set to a model from the other provider, is
   ignored and logged (`[modelRegistry] ignored unusable model config fields`).
-- Jobs that recorded an older model carry on with their choice's current one,
-  and each job still records the exact model it ran on.
+- Queued and retried jobs pick up the new model; a resource already being
+  generated finishes on the model it started with. Each job records the exact
+  model it ran on.
 - To roll back, delete the field (or the whole doc).
 - To change the code defaults, edit `DEFAULT_MODELS` and redeploy.
 

@@ -593,8 +593,12 @@ function configuredModelForResourceType(resourceType, modelChoice = null) {
  * from their persisted choice/model, still respecting the emergency override.
  */
 function modelForResourceJob(job) {
-  const activeModel = currentModelFor(job?.activeModel);
-  if (activeModel) return activeModel;
+  // A claimed attempt keeps the model it was claimed with, even when
+  // config/resourceModels changes mid-run, so every stage and the failure
+  // record name the model actually called. Upgrading a replaced model happens
+  // when a job is claimed (claimNextPendingJobForTutor) or retried (RES-39).
+  const activeModel = String(job?.activeModel || "").trim();
+  if (providerForModel(activeModel)) return activeModel;
   return configuredModelForResourceType(job?.resourceType, inferModelChoice(job));
 }
 

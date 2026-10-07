@@ -549,6 +549,71 @@ describe("resource provider failover", () => {
     assert.deepEqual(db.jobs[0].attemptedModels, ["claude-opus-5-5"]);
   });
 
+  // RES-39: a queued job picks up a live model switch when it is claimed...
+  it("claims a queued job on its choice's live model", async () => {
+    applyModelConfig({ openai: "gpt-6.2-sol" });
+    try {
+      const db = fakeQueueDb([{
+        id: "job-1",
+        createdBy: "tutor-1",
+        status: "pending",
+        createdAt: 1,
+        resourceType: "worksheet",
+        modelChoice: "openai",
+        requestedModel: "gpt-6.1-sol",
+        activeModel: "gpt-6.1-sol",
+        attemptedModels: [],
+      }]);
+      const seen = [];
+      await runQueueForTutor("tutor-1", {
+        db,
+        storage: fakeStorage(),
+        clock,
+        generationPipeline: async (job) => {
+          seen.push(modelForResourceJob(job));
+          throw modelFailure();
+        },
+      });
+      assert.deepEqual(seen, ["gpt-6.2-sol"]);
+    } finally {
+      resetModelConfig();
+    }
+  });
+
+  // ...but an attempt already running keeps the model it was claimed with, so
+  // the failure record and the fallback name the model actually called.
+  it("keeps a running attempt on its claimed model through a live switch", async () => {
+    const db = fakeQueueDb([{
+      id: "job-1",
+      createdBy: "tutor-1",
+      status: "pending",
+      createdAt: 1,
+      resourceType: "worksheet",
+      modelChoice: "anthropic",
+      attemptedModels: [],
+    }]);
+    const seen = [];
+    try {
+      await runQueueForTutor("tutor-1", {
+        db,
+        storage: fakeStorage(),
+        clock,
+        generationPipeline: async (job) => {
+          seen.push(modelForResourceJob(job));
+          applyModelConfig({ anthropic: "claude-opus-6" });
+          seen.push(modelForResourceJob(job));
+          throw modelFailure();
+        },
+      });
+    } finally {
+      resetModelConfig();
+    }
+    assert.deepEqual(seen, ["claude-opus-5-5", "claude-opus-5-5"]);
+    assert.equal(db.jobs[0].failover.fromModel, "claude-opus-5-5");
+    assert.equal(db.jobs[0].failureAttempts[0].model, "claude-opus-5-5");
+    assert.equal(db.jobs[0].activeModel, "gpt-6.1-sol");
+  });
+
   it("does not fall back to a choice already attempted under a retired model", async () => {
     const db = fakeQueueDb([{
       id: "job-1",
@@ -1225,13 +1290,12 @@ describe("resource queue runner", () => {
     );
   });
 
-  // RES-39: a config/resourceModels edit reaches new and in-flight jobs
-  // without a deploy.
-  it("follows a live model switch for new and in-flight jobs", () => {
+  // RES-39: a config/resourceModels edit reaches every job claimed after it.
+  it("follows a live model switch for newly resolved jobs", () => {
     applyModelConfig({ openai: "gpt-6.2-sol" });
     try {
       assert.equal(configuredModelForResourceType("worksheet", "openai"), "gpt-6.2-sol");
-      assert.equal(modelForResourceJob({ activeModel: "gpt-6.1-sol" }), "gpt-6.2-sol");
+      assert.equal(modelForResourceJob({ modelChoice: "openai" }), "gpt-6.2-sol");
       assert.equal(modelForResourceJob({ modelChoice: "anthropic" }), "claude-opus-5-5");
     } finally {
       resetModelConfig();

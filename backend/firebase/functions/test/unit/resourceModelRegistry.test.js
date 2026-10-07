@@ -177,6 +177,42 @@ describe("resource model registry", () => {
       assert.equal(db.reads, 2);
     });
 
+    // A cold-start burst must not let the second caller run on the defaults
+    // while the first caller's read is still in flight.
+    it("makes concurrent callers wait for the read in progress", async () => {
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      const db = configDb({ openai: "gpt-6.2-sol" });
+      const slowDb = {
+        collection: (name) => ({
+          doc: (id) => ({
+            async get() {
+              await gate;
+              return db.collection(name).doc(id).get();
+            },
+          }),
+        }),
+      };
+      const first = refreshModelConfig(slowDb);
+      const second = refreshModelConfig(slowDb);
+      release();
+      const [a, b] = await Promise.all([first, second]);
+      assert.equal(a.openai, "gpt-6.2-sol");
+      assert.equal(b.openai, "gpt-6.2-sol");
+      assert.equal(db.reads, 1);
+    });
+
+    it("clears the read in progress even when Firestore throws immediately", async () => {
+      let at = 0;
+      const throwing = { collection() { throw new Error("no firestore"); } };
+      await refreshModelConfig(throwing, { now: () => at });
+      at += MODEL_CONFIG_TTL_MS;
+      const db = configDb({ openai: "gpt-6.2-sol" });
+      await refreshModelConfig(db, { now: () => at });
+      assert.equal(db.reads, 1);
+      assert.equal(modelForChoice("openai"), "gpt-6.2-sol");
+    });
+
     it("returns to the defaults when the doc is deleted", async () => {
       let at = 0;
       await refreshModelConfig(configDb({ openai: "gpt-6.2-sol" }), { now: () => at });

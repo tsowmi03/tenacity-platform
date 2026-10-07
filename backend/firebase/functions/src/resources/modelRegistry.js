@@ -69,6 +69,9 @@ const DISPLAY_NAMES = Object.freeze({
 
 let liveModels = DEFAULT_MODELS;
 let lastFetchedAt = null;
+// The read in progress, if any, so concurrent callers wait for it rather than
+// carry on with the models it is about to replace.
+let pendingRefresh = null;
 
 function clean(value) {
   return String(value || "").trim();
@@ -118,16 +121,7 @@ function applyModelConfig(data) {
   return ignored;
 }
 
-/**
- * Re-reads config/resourceModels when the cached copy is over a minute old.
- * Never throws: if the read fails, the models already in use stay in use.
- */
-async function refreshModelConfig(db, { now = Date.now } = {}) {
-  const at = now();
-  if (lastFetchedAt !== null && at - lastFetchedAt < MODEL_CONFIG_TTL_MS) {
-    return liveModels;
-  }
-  lastFetchedAt = at;
+async function readModelConfig(db) {
   try {
     const snap = await db.collection(MODEL_CONFIG_COLLECTION).doc(MODEL_CONFIG_DOC).get();
     const ignored = applyModelConfig(snap.exists ? snap.data() : {});
@@ -139,13 +133,32 @@ async function refreshModelConfig(db, { now = Date.now } = {}) {
       errorMessage: err?.message,
     });
   }
-  return liveModels;
+}
+
+/**
+ * Re-reads config/resourceModels when the cached copy is over a minute old.
+ * Callers arriving while a read is in progress wait for that read. Never
+ * throws: if the read fails, the models already in use stay in use.
+ */
+function refreshModelConfig(db, { now = Date.now } = {}) {
+  if (pendingRefresh) return pendingRefresh;
+  if (lastFetchedAt !== null && now() - lastFetchedAt < MODEL_CONFIG_TTL_MS) {
+    return Promise.resolve(liveModels);
+  }
+  pendingRefresh = readModelConfig(db)
+    .finally(() => {
+      lastFetchedAt = now();
+      pendingRefresh = null;
+    })
+    .then(() => liveModels);
+  return pendingRefresh;
 }
 
 // Back to the code defaults, as if no config had ever been read (tests only).
 function resetModelConfig() {
   liveModels = DEFAULT_MODELS;
   lastFetchedAt = null;
+  pendingRefresh = null;
 }
 
 function currentModels() {
