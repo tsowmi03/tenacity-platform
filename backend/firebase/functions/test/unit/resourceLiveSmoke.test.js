@@ -142,7 +142,7 @@ describe("live resource smoke CLI", () => {
             },
             raw: "{\"title\":\"Local Smoke Worksheet\"}",
             provider: "openai",
-            model: "gpt-5.6-sol",
+            model: "gpt-6.1-sol",
             responseId: "resp_local_test",
             usage: { inputTokens: 10, outputTokens: 20 },
           }),
@@ -151,11 +151,11 @@ describe("live resource smoke CLI", () => {
 
       assert.equal(result.job.status, "complete");
       assert.equal(result.job.fallbackUsed, true);
-      assert.deepEqual(result.job.attemptedModels, ["claude-opus-5-5", "gpt-5.6-sol"]);
+      assert.deepEqual(result.job.attemptedModels, ["claude-opus-5-5", "gpt-6.1-sol"]);
       assert.equal(fs.existsSync(result.artifact.docxPath), true);
       assert.equal(fs.existsSync(result.artifact.auditPath), true);
       const audit = await fs.promises.readFile(result.artifact.auditPath, "utf8");
-      assert.match(audit, /\"effectiveModel\": \"gpt-5\.6-sol\"/);
+      assert.match(audit, /\"effectiveModel\": \"gpt-6\.1-sol\"/);
       assert.doesNotMatch(audit, /local-test-key/);
     } finally {
       await fs.promises.rm(outputDir, { recursive: true, force: true });

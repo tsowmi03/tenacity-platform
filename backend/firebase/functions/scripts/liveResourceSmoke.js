@@ -13,19 +13,18 @@ const {
   runQueueForTutor,
 } = require("../src/resources");
 const {
-  DEFAULT_RESOURCE_MODEL,
-  OPENAI_RESOURCE_MODEL,
   backupModelFor,
   choiceForValue,
   displayNameForModel,
+  modelForChoice,
   providerForModel,
 } = require("../src/resources/modelRegistry");
 
 const SCENARIOS = Object.freeze({
-  "sol-direct": Object.freeze({ primaryModel: OPENAI_RESOURCE_MODEL, injectPrimaryFailure: false }),
-  "opus-direct": Object.freeze({ primaryModel: DEFAULT_RESOURCE_MODEL, injectPrimaryFailure: false }),
-  "opus-to-sol": Object.freeze({ primaryModel: DEFAULT_RESOURCE_MODEL, injectPrimaryFailure: true }),
-  "sol-to-opus": Object.freeze({ primaryModel: OPENAI_RESOURCE_MODEL, injectPrimaryFailure: true }),
+  "sol-direct": Object.freeze({ primaryModel: modelForChoice("openai"), injectPrimaryFailure: false }),
+  "opus-direct": Object.freeze({ primaryModel: modelForChoice("anthropic"), injectPrimaryFailure: false }),
+  "opus-to-sol": Object.freeze({ primaryModel: modelForChoice("anthropic"), injectPrimaryFailure: true }),
+  "sol-to-opus": Object.freeze({ primaryModel: modelForChoice("openai"), injectPrimaryFailure: true }),
 });
 
 const DEFAULT_SCENARIO = "opus-to-sol";
@@ -38,10 +37,13 @@ function usage() {
   npm run smoke:resources:live -- [--scenario ${DEFAULT_SCENARIO}] [--firebase-secrets] [--output DIR]
 
 Scenarios:
-  opus-to-sol  Simulate an Anthropic availability failure, then generate with GPT-5.6 Sol (default)
-  sol-direct   Generate directly with GPT-5.6 Sol
-  opus-direct  Generate directly with Claude Opus 5
-  sol-to-opus  Simulate an OpenAI availability failure, then generate with Claude Opus 5
+  opus-to-sol  Simulate an Anthropic availability failure, then generate with the GPT model (default)
+  sol-direct   Generate directly with the GPT model
+  opus-direct  Generate directly with the Claude model
+  sol-to-opus  Simulate an OpenAI availability failure, then generate with the Claude model
+
+Models are the code defaults in src/resources/modelRegistry.js; the live
+config/resourceModels override is not read.
 
 The runner uses synthetic data and writes only to a local temporary directory. By default it
 uses shell/.secret.local keys and never connects to Firebase. --firebase-secrets reads only the

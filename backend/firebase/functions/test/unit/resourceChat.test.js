@@ -17,7 +17,7 @@ const {
   normaliseFileSummaries,
 } = require("../../src/resources/chatPrompt");
 const { callAnthropicForResource } = require("../../src/resources/apiClient");
-const { CHAT_MODEL, providerForModel } = require("../../src/resources/modelRegistry");
+const { chatModel, providerForModel } = require("../../src/resources/modelRegistry");
 const { callOpenAiForResource } = require("../../src/resources/openaiClient");
 
 const actor = {
@@ -279,9 +279,9 @@ describe("chatAboutResourceImpl", () => {
       actor,
       deps: deps({ callAi: fakeAi(calls) }),
     });
-    assert.equal(CHAT_MODEL, "claude-sonnet-5-5");
-    assert.equal(calls[0].model, CHAT_MODEL);
-    assert.equal(providerForModel(CHAT_MODEL), "anthropic");
+    assert.equal(chatModel(), "claude-sonnet-5-5");
+    assert.equal(calls[0].model, chatModel());
+    assert.equal(providerForModel(chatModel()), "anthropic");
   });
 
   it("starts from the current custom prompt when one exists", async () => {
@@ -473,7 +473,7 @@ describe("AI clients with a conversation", () => {
     const calls = [];
     await callOpenAiForResource({
       apiKey: "k",
-      model: "gpt-5.6-sol",
+      model: "gpt-6.1-sol",
       systemPrompt: "SYSTEM",
       messages: conversation,
       createClient: () => ({

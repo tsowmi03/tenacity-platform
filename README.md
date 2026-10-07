@@ -192,6 +192,31 @@ Use `-- --scenario sol-direct`, `opus-direct`, or `sol-to-opus` to exercise the
 other routes. These commands call the real provider APIs and incur normal API
 usage, but they do not connect to any Firebase project.
 
+### Switching resource AI models (no deploy)
+
+Resource generation, the pre-generation chat and the public-domain source
+planner read their models from the Firestore doc `config/resourceModels`, with
+the code defaults in
+[`modelRegistry.js`](backend/firebase/functions/src/resources/modelRegistry.js)
+for any field it doesn't set. To switch, create or edit that doc in the
+Firebase console (staging first). It takes effect within about a minute.
+
+| Field | Default | Must start with |
+|---|---|---|
+| `anthropic` | `claude-opus-5-5` | `claude-` (the "Claude" choice) |
+| `openai` | `gpt-6.1-sol` | `gpt-` (the "GPT" choice) |
+| `defaultChoice` | `openai` | `anthropic` or `openai` |
+| `chat` | `claude-sonnet-5-5` | `claude-` or `gpt-` |
+| `sourcePlanner` | `claude-sonnet-5` | `claude-` or `gpt-` |
+| `sourcePlannerFallback` | `gpt-5.6-terra` | `claude-` or `gpt-` |
+
+- A malformed value, or a choice set to a model from the other provider, is
+  ignored and logged (`[modelRegistry] ignored unusable model config fields`).
+- Jobs that recorded an older model carry on with their choice's current one,
+  and each job still records the exact model it ran on.
+- To roll back, delete the field (or the whole doc).
+- To change the code defaults, edit `DEFAULT_MODELS` and redeploy.
+
 The portal currently has no lint script. The website currently has no automated
 test script. Preserve those facts during the structural migration; tooling
 changes belong in separate reviewed work.

@@ -7,8 +7,8 @@
 //
 //   npm run smoke:chat:live -- --firebase-secrets [--configs sonnet,opus,sol,luna] [--output DIR]
 //
-// By default it runs the chat model production uses (CHAT_MODEL). Add the
-// comparison line-ups to weigh a model change.
+// By default it runs the default chat model (chatModel() in modelRegistry.js).
+// Add the comparison line-ups to weigh a model change.
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -17,16 +17,16 @@ const path = require("node:path");
 const { chatAboutResourceImpl, validateChatAboutResourcePayload } = require("../src/resources");
 const { callAnthropicForResource } = require("../src/resources/apiClient");
 const { callOpenAiForResource } = require("../src/resources/openaiClient");
-const { CHAT_MODEL } = require("../src/resources/modelRegistry");
+const { chatModel } = require("../src/resources/modelRegistry");
 const { loadFirebaseSecrets, parseSecretFile } = require("./liveResourceSmoke");
 
 // Each line-up names the model for the chat reply and for file summaries.
 // sonnet is what production runs; the rest are comparisons.
 const lineUp = (model) => ({ chat: model, summary: model });
 const CONFIGS = Object.freeze({
-  sonnet: lineUp(CHAT_MODEL),
+  sonnet: lineUp(chatModel()),
   opus: lineUp("claude-opus-5-5"),
-  sol: lineUp("gpt-5.6-sol"),
+  sol: lineUp("gpt-6.1-sol"),
   luna: lineUp("gpt-6-luna"),
 });
 const DEFAULT_CONFIGS = ["sonnet"];

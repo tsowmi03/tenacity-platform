@@ -17,9 +17,9 @@ const {
 } = require("../src/resources/diagramSchema");
 const { DIAGRAM_REGISTRY } = require("../src/resources/diagramRegistry");
 const { validateDiagram } = require("../src/resources/builder/validation");
-const { DEFAULT_RESOURCE_MODEL } = require("../src/resources/modelRegistry");
+const { defaultResourceModel } = require("../src/resources/modelRegistry");
 
-const MODEL = process.env.RESOURCE_LLM_MODEL || DEFAULT_RESOURCE_MODEL;
+const MODEL = process.env.RESOURCE_LLM_MODEL || defaultResourceModel();
 
 function countOptional(schema, acc = { n: 0 }) {
   if (!schema || typeof schema !== "object") return acc.n;
