@@ -404,3 +404,45 @@ describe("styled text and function bases", () => {
     assert.match(xml, /<m:sSub><m:sSubPr\/><m:e><m:r><m:rPr><m:sty m:val="p"\/><\/m:rPr>(?:<w:rPr>.*?<\/w:rPr>)?<m:t>log<\/m:t>/);
   });
 });
+
+describe("tables and markdown", () => {
+  const { buildResourceDocx } = require("../../src/resources/builder");
+
+  async function worksheetXml(stem, extra = {}) {
+    const buffer = await buildResourceDocx("worksheet", {
+      title: "Check",
+      subject: "maths",
+      year: 9,
+      topic: "Check",
+      totalMarks: 1,
+      questions: [{ number: 1, stem, marks: 1, type: "calculation", options: null, workingLines: 1, parts: null, diagramRequired: false, ...extra }],
+      answers: [{ questionNumber: 1, partLabel: null, answer: "**Answer:** x = 2" }],
+    }, { answerMode: "answers" });
+    const xml = await (await JSZip.loadAsync(buffer)).file("word/document.xml").async("string");
+    return xml;
+  }
+
+  it("keeps an absolute value inside its table cell", async () => {
+    const xml = await worksheetXml("Complete the table.\n| x | |x| |\n|---|---|\n| -3 | |-3| |\n| 2 | 2 |");
+    const table = xml.slice(xml.indexOf("<w:tbl>", xml.indexOf("Complete the table")));
+    assert.equal((table.slice(0, table.indexOf("</w:tbl>")).match(/<w:gridCol /g) || []).length, 2);
+    assert.match(visible(table), /\|x\|/);
+  });
+
+  it("reads \\| as a bar inside a cell", async () => {
+    const xml = await worksheetXml("Use the table.\n| x | \\|x\\| |\n|---|---|\n| 1 | 1 |");
+    const table = xml.slice(xml.indexOf("<w:tbl>", xml.indexOf("Use the table")));
+    assert.equal((table.slice(0, table.indexOf("</w:tbl>")).match(/<w:gridCol /g) || []).length, 2);
+  });
+
+  it("makes **bold** bold in any field, not just explanations", async () => {
+    const xml = await worksheetXml("**Note:** solve x + 1 = 3.");
+    assert.doesNotMatch(visible(xml), /\*\*/);
+    assert.match(xml, /<w:b\/>(?:(?!<\/w:r>).)*<w:t[^>]*>Note:<\/w:t>/);
+  });
+
+  it("leaves single * and _ alone outside opted-in fields", async () => {
+    const { shown } = await body("Evaluate 2 * 3 * 4 and {}_{n}C_{r}.");
+    assert.doesNotMatch(shown, /\{n\}C/);
+  });
+});

@@ -226,13 +226,27 @@ function isPipeTableLine(line) {
   return value.includes("|") && value.split("|").length >= 3;
 }
 
-function parsePipeCells(line) {
+function splitPipeRow(line) {
   return String(line || "")
     .trim()
     .replace(/^\|/, "")
     .replace(/\|$/, "")
-    .split("|")
-    .map((cellText) => cleanText(cellText));
+    // \| is a literal bar inside a cell, as in GitHub tables.
+    .split(/(?<!\\)\|/)
+    .map((cellText) => cellText.replace(/\\\|/g, "|"));
+}
+
+// `columns` comes from the separator row. A row with more cells than that
+// usually has an absolute value in it (| x | |x| |): bars that hug their
+// content are |x| and |−3|, not column breaks.
+function parsePipeCells(line, columns) {
+  let cells = splitPipeRow(line);
+  if (columns && cells.length > columns) {
+    const shielded = String(line).replace(/\|(?=[^\s|])([^|\n]{1,20}?)(?<=[^\s|])\|/g, "\uE002$1\uE002");
+    const retry = splitPipeRow(shielded).map((cellText) => cellText.replace(/\uE002/g, "|"));
+    if (retry.length === columns) cells = retry;
+  }
+  return cells.map((cellText) => cleanText(cellText));
 }
 
 function isMarkdownSeparator(cells) {
@@ -254,14 +268,14 @@ function splitMarkdownTableBlocks(value) {
     const line = lines[index];
     const nextLine = lines[index + 1];
     if (isPipeTableLine(line) && isPipeTableLine(nextLine)) {
-      const headers = parsePipeCells(line);
       const separator = parsePipeCells(nextLine);
+      const headers = parsePipeCells(line, separator.length);
       if (isMarkdownSeparator(separator)) {
         flushText();
         const rows = [];
         index += 2;
         while (index < lines.length && isPipeTableLine(lines[index])) {
-          const row = parsePipeCells(lines[index]);
+          const row = parsePipeCells(lines[index], separator.length);
           if (row.length) rows.push(row);
           index += 1;
         }

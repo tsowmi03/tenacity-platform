@@ -581,13 +581,18 @@ function findMathSpan(text, start) {
   return best;
 }
 
-function inlineMarkdownSegments(value) {
+// **bold** is safe everywhere: no maths writes a doubled asterisk. Single
+// * and _ emphasis stays opt-in, because in maths they are multiplication,
+// subscripts and blanks ("{}_{n}C_{r}" must not italicise "{n}C").
+const BOLD_ONLY = /(?<![\p{L}\p{N}*])(\*\*)(\S(?:.*?\S)?)\*\*(?![\p{L}\p{N}*])/gu;
+
+function inlineMarkdownSegments(value, { boldOnly = false } = {}) {
   const text = String(value ?? "");
   // Keep this deliberately small: booklet sections only need inline emphasis,
   // while paragraph and list structure is handled by makeParagraphs. The
   // single-marker boundary checks avoid treating maths such as 2*3*4 or x_1 as
   // emphasis.
-  const pattern = /(?<![\p{L}\p{N}])(\*\*|__)(\S(?:.*?\S)?)\1(?![\p{L}\p{N}])|(?<![\p{L}\p{N}*])\*(?!\*)(\S(?:.*?\S)?)\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_(?!_)(\S(?:.*?\S)?)_(?![\p{L}\p{N}_])/gu;
+  const pattern = boldOnly ? BOLD_ONLY : /(?<![\p{L}\p{N}])(\*\*|__)(\S(?:.*?\S)?)\1(?![\p{L}\p{N}])|(?<![\p{L}\p{N}*])\*(?!\*)(\S(?:.*?\S)?)\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_(?!_)(\S(?:.*?\S)?)_(?![\p{L}\p{N}_])/gu;
   const segments = [];
   let cursor = 0;
 
@@ -689,9 +694,7 @@ function richTextRuns(text, opts = {}) {
   const value = mathEnabled
     ? mathText(stripDollarDelimiters(text))
     : cleanText(text, { verbatim: opts.verbatim });
-  const segments = opts.inlineMarkdown
-    ? inlineMarkdownSegments(value)
-    : [{ text: value }];
+  const segments = inlineMarkdownSegments(value, { boldOnly: !opts.inlineMarkdown });
 
   return segments.flatMap((segment) => {
     const runOpts = {
