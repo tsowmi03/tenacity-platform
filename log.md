@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-08 | [Maths renders as written: money, sets, ratios, accents, worked examples (RES-31)](#2026-10-08--maths-renders-as-written-money-sets-ratios-accents-worked-examples-res-31) |
 | 2026-10-07 | [English resources teach and mark the Tenacity way (RES-37)](#2026-10-07--english-resources-teach-and-mark-the-tenacity-way-res-37) |
 | 2026-10-07 | [Resources move to GPT-6.1 Sol, and models switch without a deploy (RES-39)](#2026-10-07--resources-move-to-gpt-61-sol-and-models-switch-without-a-deploy-res-39) |
 | 2026-10-07 | [Talk a resource through with AI before generating it (RES-24)](#2026-10-07--talk-a-resource-through-with-ai-before-generating-it-res-24) |
@@ -160,6 +161,51 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-08 — Maths renders as written: money, sets, ratios, accents, worked examples (RES-31)
+
+**What changed**
+- Dollar signs for money are kept. Any two `$` in a field used to be read as
+  maths delimiters and deleted ("Tom has $15 and Sam has $20" lost both).
+- Accents are kept instead of dropped: recurring decimals (0.3̇), the mean (x̄)
+  and complements (Ā) no longer turn into different maths. Arcs, `\cancel`
+  and `\underbrace` render too.
+- Sets keep their braces, `{1, 2, 3}`, instead of becoming round brackets.
+- Every LaTeX command the model can send renders, including ⩽ ⩾ ↦ ∁ ⊊ ⋃ ℓ
+  and `\colon`. `\sum_`, `\log_` and `\lim_` no longer keep their backslash.
+- New structures: ⁿCᵣ (from `\binom` or `^{n}C_{r}`), stacked simultaneous
+  equations (`cases`), column vectors (`pmatrix`), `\\` line breaks and blanks.
+- Worked-example working keeps one line per step ("24" and "3" used to run
+  together as "24 3").
+- One expression is one equation. Inline maths detection was rewritten as a
+  small grammar, so ratios (`1:2 = 3:6`), π r², P(A ∪ B), ∠ABC, |x − 3|,
+  `log₂ 8` and `x = −b/2a` are no longer split into differently styled pieces.
+- Units stay upright text next to their number (60 km/h, 25 cm², $4.50/kg)
+  instead of italic variables or stacked fractions.
+- Equations take their paragraph's size and weight. Titles and coloured
+  headings set their maths inline, because the LibreOffice preview ignores
+  equation formatting. Function names (sin, log) and words are upright. Long
+  equations are cut at operators so they wrap in narrow table cells.
+- Tables keep `|x|` inside a cell. `**bold**` works in every field.
+- The prompt says how to write money, units, ratios, sets, recurring decimals,
+  the mean, ⁿCᵣ, absolute values, simultaneous equations and vectors.
+- A 274-line corpus covering all 40 NSW Stage 3–5 maths topics now runs on
+  every test run (`test/fixtures/mathRenderingCorpus.js`). It fails on leaked
+  LaTeX, raw scripts, lost dollar signs or fallback warnings. Against the old
+  code it fails 17 lines. RES-15 (ratios) was merged into RES-31.
+
+**Why:** Booklets were printing different maths from what the model wrote,
+mostly with no warning to the tutor: lost dollar signs, dropped accents,
+merged working lines, sets as brackets, and LaTeX shown as words.
+
+**Status:** Live. Functions deployed with the merge.
+
+**Next steps**
+- Run the corpus checks over real `resourceJobs.generatedJson` from
+  production. This needs a fresh `gcloud auth application-default login`.
+  About an hour.
 
 ---
 
