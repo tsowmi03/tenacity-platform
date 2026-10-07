@@ -492,7 +492,10 @@ function renderStimulusBooklet(resource, subject, opts = {}) {
   return children;
 }
 
+// `includeWorking` is false for "Answers only": the tutor asked for the final
+// answer and nothing else, so any working the row carries is not printed.
 function makeAnswerTable(answers = [], opts = {}) {
+  const includeWorking = opts.includeWorking !== false;
   const rows = [
     makeAnswerRow(opts.firstHeader || "Q#", opts.secondHeader || "Answer", {
       bold: true,
@@ -504,7 +507,7 @@ function makeAnswerTable(answers = [], opts = {}) {
 
   for (const answer of asArray(answers)) {
     const parts = [answer?.answer || answer?.suggestedResponse || ""];
-    if (answer?.workingOut) parts.push(`Working: ${answer.workingOut}`);
+    if (includeWorking && answer?.workingOut) parts.push(`Working:\n${answer.workingOut}`);
     if (answer?.note) parts.push(`Note: ${answer.note}`);
     rows.push(makeAnswerRow(answerLabel(answer), parts.filter(Boolean).join("\n"), opts));
   }
@@ -522,7 +525,7 @@ function makeAnswerTable(answers = [], opts = {}) {
   });
 }
 
-function makeSectionedAnswerTable(answers = [], sectionBy) {
+function makeSectionedAnswerTable(answers = [], sectionBy, opts = {}) {
   const children = [];
   const groups = new Map();
   for (const answer of asArray(answers)) {
@@ -533,26 +536,33 @@ function makeSectionedAnswerTable(answers = [], sectionBy) {
 
   for (const [group, rows] of groups.entries()) {
     children.push(makeSubHeading(group));
-    children.push(makeAnswerTable(rows));
+    children.push(makeAnswerTable(rows, opts));
     children.push(new Paragraph({ spacing: { after: 140 } }));
   }
   return children;
 }
 
-function makeMarkingGuide(tasks = [], answers = []) {
+// `includeResponse` is false in Marking guide mode: the tutor asked for criteria
+// only, so the Suggested Response column is not drawn at all — even if the
+// model sent one, or the row predates the mode being enforced.
+function makeMarkingGuide(tasks = [], answers = [], opts = {}) {
+  const includeResponse = opts.includeResponse !== false;
   const answerByTask = new Map(asArray(answers).map((answer) => [Number(answer.taskNumber), answer]));
   const rows = [];
   for (const task of asArray(tasks)) {
     const answer = answerByTask.get(Number(task.number)) || {};
-    rows.push([
-      `Task ${task.number}`,
-      answer.suggestedResponse || "",
-      asArray(answer.markingCriteria).join("\n"),
-    ]);
+    const criteria = asArray(answer.markingCriteria).join("\n");
+    rows.push(includeResponse
+      ? [`Task ${task.number}`, answer.suggestedResponse || "", criteria]
+      : [`Task ${task.number}`, criteria]);
   }
-  return makeTable(["Task", "Suggested Response", "Marking Criteria"], rows, {
-    widths: [1200, 3800, PAGE.CONTENT_WIDTH - 5000],
-  });
+  return includeResponse
+    ? makeTable(["Task", "Suggested Response", "Marking Criteria"], rows, {
+        widths: [1200, 3800, PAGE.CONTENT_WIDTH - 5000],
+      })
+    : makeTable(["Task", "Marking Criteria"], rows, {
+        widths: [1200, PAGE.CONTENT_WIDTH - 1200],
+      });
 }
 
 function guideContext(row) {
@@ -570,30 +580,34 @@ function guideResponse(row) {
 
 function makeQuestionMarkingGuide(guidance = [], opts = {}) {
   const rows = asArray(guidance);
+  const includeResponse = opts.includeResponse !== false;
   const includeContext = opts.includeContext ?? rows.some((row) => guideContext(row));
-  const headers = includeContext
-    ? ["Q#", opts.contextHeader || "Focus", "Suggested Response", "Marking Criteria"]
-    : ["Q#", "Suggested Response", "Marking Criteria"];
-  const widths = includeContext
-    ? [900, 1800, 3300, PAGE.CONTENT_WIDTH - 6000]
-    : [900, 4000, PAGE.CONTENT_WIDTH - 4900];
-  const tableRows = rows.map((row) => {
-    const base = [answerLabel(row), guideResponse(row), guideCriteria(row)];
-    return includeContext
-      ? [base[0], guideContext(row), base[1], base[2]]
-      : base;
-  });
+  const headers = [
+    "Q#",
+    ...(includeContext ? [opts.contextHeader || "Focus"] : []),
+    ...(includeResponse ? ["Suggested Response"] : []),
+    "Marking Criteria",
+  ];
+  const fixedWidths = [900, ...(includeContext ? [1800] : []), ...(includeResponse ? [includeContext ? 3300 : 4000] : [])];
+  const widths = [...fixedWidths, PAGE.CONTENT_WIDTH - fixedWidths.reduce((sum, width) => sum + width, 0)];
+  const tableRows = rows.map((row) => [
+    answerLabel(row),
+    ...(includeContext ? [guideContext(row)] : []),
+    ...(includeResponse ? [guideResponse(row)] : []),
+    guideCriteria(row),
+  ]);
 
   if (!tableRows.length) {
-    tableRows.push(includeContext
-      ? ["-", "", "No marking guide supplied.", ""]
-      : ["-", "No marking guide supplied.", ""]);
+    const empty = headers.map(() => "");
+    empty[0] = "-";
+    empty[1] = "No marking guide supplied.";
+    tableRows.push(empty);
   }
 
   return makeTable(headers, tableRows, { widths });
 }
 
-function makeSectionedMarkingGuide(guidance = [], sectionBy) {
+function makeSectionedMarkingGuide(guidance = [], sectionBy, opts = {}) {
   const children = [];
   const groups = new Map();
   for (const row of asArray(guidance)) {
@@ -602,11 +616,11 @@ function makeSectionedMarkingGuide(guidance = [], sectionBy) {
     groups.get(key).push(row);
   }
 
-  if (!groups.size) return [makeQuestionMarkingGuide([])];
+  if (!groups.size) return [makeQuestionMarkingGuide([], opts)];
 
   for (const [group, rows] of groups.entries()) {
     children.push(makeSubHeading(group));
-    children.push(makeQuestionMarkingGuide(rows, { includeContext: false }));
+    children.push(makeQuestionMarkingGuide(rows, { ...opts, includeContext: false }));
     children.push(new Paragraph({ spacing: { after: 140 } }));
   }
   return children;

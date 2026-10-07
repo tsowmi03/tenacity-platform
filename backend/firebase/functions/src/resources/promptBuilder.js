@@ -127,26 +127,41 @@ function answerRule(subject, answerMode) {
   }
   if (isEnglishSubject(subject)) {
     if (includesWorking(answerMode)) {
-      return `Do not include answers inline with questions. Include a tutor marking guide with full suggested model responses and marking criteria.`;
+      return `Do not include answers inline with questions. Include a tutor marking guide with a model answer and marking criteria for every question and part.
+
+MODEL ANSWER RULES (strictly enforced):
+1. "suggestedResponse" is the answer itself, written as a top-band student would write it. It is never a description of an answer. BANNED: "The response should…", "Students should…", "A paragraph that…", "An introduction with…", "A direct judgement about…", "Evidence should show…", or any other wording that says what an answer would contain instead of giving it.
+2. Questions or parts worth 6 marks or fewer: write the complete answer in full prose. A thesis question gets the thesis sentence; an introduction question gets the whole introduction; a paragraph question gets the whole paragraph. Quote the text wherever the question asks for evidence. For multiple choice, give the correct option and one sentence on why.
+3. Questions or parts worth more than 6 marks (extended responses): do NOT write full prose. Give a detailed plan as dot points, each on its own line beginning "- ": the thesis, then each argument with its quotation, technique and effect, then the link back to the question.
+4. Match length to the marks. A 1–2 mark answer is one or two sentences; a 5–6 mark answer is a developed paragraph.
+5. Be concise and focused. No filler, no restating the question, no hedging, no preamble.`;
     }
-    return `Do not include answers inline with questions. Include a tutor marking guide with marking criteria and rubric points only. Do NOT write full sample answer responses — keep "suggestedResponse" to a brief summary of key points expected.`;
+    return `Do not include answers inline with questions. Include a tutor marking guide that gives the marking criteria for each question and nothing else. Do not write a suggested, sample or model response, or a summary of what a response should contain — the tutor asked for marking criteria only.`;
   }
   if (includesWorking(answerMode)) {
     return `Do not include answers inline with questions. Put them only in the designated "answers" array. The "answer" field must contain ONLY the final answer (e.g. "x = 3", "169.65 m²") — no steps, explanations, or caveats. The "workingOut" field must contain clean, professional, step-by-step working for every question — do not leave it null.
 
 WORKING OUT RULES (strictly enforced):
-1. Write exactly the logical steps a teacher would write on a whiteboard. Each step follows directly from the previous one.
-2. NEVER write out loud. The following are BANNED from workingOut: "Wait", "Actually", "Let me re-check", "Hmm", "Note:", "Re-checking", "I made an error", or ANY self-correction or meta-commentary. If your reasoning produces an error, silently discard it and write only the correct solution.
-3. The final numerical value or expression in "workingOut" MUST match "answer" exactly. Compute the answer via the working first, then copy that exact final value into "answer".`;
+1. Write exactly the logical steps a teacher would write on a whiteboard, one step per line. Show every step. Never skip, merge or leave a step for the student to fill in. Each step follows directly from the previous one.
+2. Explain where a student would otherwise be lost. When a step is a logical leap (applying a rule, property or theorem, choosing a method, rejecting a solution), add a short plain-English reason on that line, e.g. "Co-interior angles add to 180°, so x + 110° = 180°". When an answer takes little or no working, give one sentence saying why it is the answer instead of leaving the working bare. Keep each explanation to one short sentence.
+3. NEVER write out loud. The following are BANNED from workingOut: "Wait", "Actually", "Let me re-check", "Hmm", "Note:", "Re-checking", "I made an error", or ANY self-correction or meta-commentary. If your reasoning produces an error, silently discard it and write only the correct solution.
+4. The final numerical value or expression in "workingOut" MUST match "answer" exactly. Compute the answer via the working first, then copy that exact final value into "answer".`;
   }
   return MATH_ANSWER_RULE;
+}
+
+// An English marking guide carries a model response only when the tutor asked
+// for model answers. In "Marking guide" mode the field is left out of the shape
+// entirely — responseSchema.js omits it too — so the model cannot slip one in.
+function suggestedResponseField(answerMode) {
+  return includesWorking(answerMode) ? `"suggestedResponse": string, ` : "";
 }
 
 function practiceAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "questionNumber": number, "partLabel": null | string (single letter only, no parentheses), "suggestedResponse": string, "markingCriteria": string[], "marks": number }
+    { "questionNumber": number, "partLabel": null | string (single letter only, no parentheses), ${suggestedResponseField(answerMode)}"markingCriteria": string[], "marks": number }
   ]`;
   }
   if (answerMode === "none") return `"answers": []`;
@@ -162,7 +177,7 @@ function topicAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "section": string, "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }
+    { "section": string, "questionNumber": number, "partLabel": null | string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`;
   }
   if (answerMode === "none") return `"answers": []`;
@@ -182,7 +197,7 @@ function topicAssessmentAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "section": string (the sub-topic title, or the quiz section title), "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }
+    { "section": string (the sub-topic title, or the quiz section title), "questionNumber": number, "partLabel": null | string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`;
   }
   if (answerMode === "none") {
@@ -205,7 +220,7 @@ function diagnosticAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "questionNumber": number, "subTopic": string, "suggestedResponse": string, "markingCriteria": string[] }
+    { "questionNumber": number, "subTopic": string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`;
   }
   if (answerMode === "none") return `"answers": []`;
@@ -221,7 +236,7 @@ function standardAnswerSchema(subject, answerMode) {
   if (isEnglishSubject(subject)) {
     if (answerMode === "none") return `"markingGuide": []`;
     return `"markingGuide": [
-    { "questionNumber": number, "partLabel": null | string, "topic": null | string, "suggestedResponse": string, "markingCriteria": string[] }
+    { "questionNumber": number, "partLabel": null | string, "topic": null | string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`;
   }
   if (answerMode === "none") return `"answers": []`;
@@ -596,7 +611,7 @@ Return JSON matching this schema exactly:
   ${answerMode === "none"
     ? `"markingGuide": []`
     : `"markingGuide": [
-    { "taskNumber": number, "suggestedResponse": string, "markingCriteria": string[] }
+    { "taskNumber": number, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }
   ]`}
 }`,
 
@@ -623,14 +638,23 @@ Return JSON matching this schema exactly:
   "generalGuidance": string[]
 }`,
 
+  // English tutor copy is a marking guide and nothing else: there is no
+  // answerSection for English, so a "Marking guide" job cannot slip full
+  // answers in through the other block type.
   custom: ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
 You are generating a polished custom educational resource for a Year ${year} ${subject} student at Tenacity Tutoring.
 Infer the best structure from the tutor's instructions, but return content in branded block shapes that can render cleanly to DOCX.
-Use Tenacity-friendly block types: heading, paragraph, bulletList, table, noteBox, questionSet, answerSection, and markingGuideSection.
-${answerMode === "none"
-    ? "Do not include answerSection or markingGuideSection blocks unless the tutor explicitly requests them."
-    : "For English resources, use markingGuideSection where appropriate. For maths resources, use answerSection blocks."}
+Use Tenacity-friendly block types: heading, paragraph, bulletList, table, noteBox, questionSet, ${isEnglishSubject(subject) ? "" : "answerSection, "}and markingGuideSection.
+${isEnglishSubject(subject)
+    ? answerMode === "none"
+      ? "Do not include markingGuideSection blocks unless the tutor explicitly requests them."
+      : `Put the tutor copy in markingGuideSection blocks.\n${answerRule(subject, answerMode)}`
+    : answerMode === "none"
+      ? "Do not include answerSection or markingGuideSection blocks unless the tutor explicitly requests them."
+      // Maths answerSection rows carry no workingOut field, so the maths answer
+      // rule (which talks about one) would contradict the shape.
+      : "Use answerSection blocks for answers."}
 
 Return JSON matching this schema exactly:
 {
@@ -645,9 +669,9 @@ Return JSON matching this schema exactly:
     { "type": "bulletList", "items": string[] } |
     { "type": "table", "headers": string[], "rows": string[][] } |
     { "type": "noteBox", "title": string, "text": string } |
-    { "type": "questionSet", "questions": [${questionSchemaText(subject)}] } |
-    { "type": "answerSection", "title": string, "answers": [{ "questionNumber": number, "partLabel": null | string, "answer": string }] } |
-    { "type": "markingGuideSection", "title": string, "guidance": [{ "questionNumber": number, "partLabel": null | string, "suggestedResponse": string, "markingCriteria": string[] }] }
+    { "type": "questionSet", "questions": [${questionSchemaText(subject)}] } |${isEnglishSubject(subject) ? "" : `
+    { "type": "answerSection", "title": string, "answers": [{ "questionNumber": number, "partLabel": null | string, "answer": string }] } |`}
+    { "type": "markingGuideSection", "title": string, "guidance": [{ "questionNumber": number, "partLabel": null | string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }] }
   ]
 }`,
 };

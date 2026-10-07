@@ -1,6 +1,6 @@
 "use strict";
 
-const { shouldIncludeAnswers } = require("../answerMode");
+const { shouldIncludeAnswers, shouldIncludeWorking } = require("../answerMode");
 const {
   asArray,
   makeDetailLine,
@@ -51,6 +51,7 @@ function validateAnnotationTaskResource(resource, options = {}) {
   if (shouldIncludeAnswers(options)) {
     validateMarkingGuideArray(resource.markingGuide || resource.answers, "annotationTask.markingGuide", {
       taskNumber: true,
+      requireResponse: shouldIncludeWorking(options),
     });
   }
 }
@@ -109,7 +110,9 @@ async function buildAnnotationTaskDocx(resource, options = {}) {
     children.push(makePageBreak());
     children.push(makeSectionHeading("Answer Guide - Tutor Copy"));
     children.push(makeSpacer());
-    children.push(makeMarkingGuide(resource.tasks, resource.markingGuide || resource.answers || []));
+    children.push(makeMarkingGuide(resource.tasks, resource.markingGuide || resource.answers || [], {
+      includeResponse: shouldIncludeWorking(options),
+    }));
   }
 
   return packDocument({

@@ -2284,9 +2284,10 @@ async function verifyMathsAnswers({ job, parsed, apiKey, signal, callAi = callAi
   const systemPrompt = `You are a senior mathematics teacher proof-reading a mark scheme.
 
 For each answer entry, review and correct:
-1. CLEAN WORKING: "workingOut" must read like a teacher's whiteboard solution. Remove any "Wait", "Actually", "Let me re-check", "Note:", self-corrections, or meta-commentary. Rewrite those steps cleanly and correctly.
-2. CONSISTENCY: The value in "answer" must match exactly what "workingOut" concludes. If they disagree, fix "answer" to match the correct conclusion of the working.
-3. ACCURACY: If you spot a calculation error in "workingOut", correct both "workingOut" and "answer".
+1. CLEAN WORKING: "workingOut" must read like a teacher's whiteboard solution. Remove any "Wait", "Actually", "Let me re-check", "Note:", self-corrections, or meta-commentary. Rewrite those steps cleanly and correctly. Keep the short plain-English reasons that explain a step (e.g. "Co-interior angles add to 180°") — they are part of the solution, not commentary.
+2. COMPLETENESS: Every step must be shown. If a step is skipped, or a logical leap (a rule, property, theorem or choice of method) is left unexplained, add the missing step or a one-sentence reason. If an answer has little or no working, make sure one sentence says why it is the answer.
+3. CONSISTENCY: The value in "answer" must match exactly what "workingOut" concludes. If they disagree, fix "answer" to match the correct conclusion of the working.
+4. ACCURACY: If you spot a calculation error in "workingOut", correct both "workingOut" and "answer".
 
 Return ONLY corrections, as valid JSON, for the entries you actually changed:
 { "corrections": [{ "index": number, "answer": string, "workingOut": string }, ...] }
@@ -2380,6 +2381,7 @@ Repair mode:
 - The user will provide a previous model response that failed JSON parsing or DOCX schema validation.
 - Preserve the educational content, question intent, marks, answers, and marking guide as much as possible.
 - Fix only the JSON structure and schema compatibility issues.
+- Exception: if the failure reason says a marking guide response describes an answer instead of giving it, rewrite every such response as the model answer itself, following the MODEL ANSWER RULES above.
 - Return ONLY valid JSON matching the schema above. No markdown code fences. No explanation.`;
 }
 

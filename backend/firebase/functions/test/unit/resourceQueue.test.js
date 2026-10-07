@@ -1087,7 +1087,12 @@ describe("resource repair pipeline", () => {
         clock,
         callAi: async (payload) => {
           aiCalls.push(payload);
-          return { parsed: worksheetJson, raw: JSON.stringify(worksheetJson) };
+          // A working job must come back with working: RES-36 rejects one without.
+          const worked = {
+            ...worksheetJson,
+            answers: [{ ...worksheetJson.answers[0], workingOut: "2x + 3 = 11\n2x = 8\nx = 4" }],
+          };
+          return { parsed: worked, raw: JSON.stringify(worked) };
         },
       }
     );

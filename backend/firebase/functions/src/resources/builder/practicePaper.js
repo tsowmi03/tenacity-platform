@@ -1,7 +1,7 @@
 "use strict";
 
 const { AlignmentType } = require("docx");
-const { shouldIncludeAnswers } = require("../answerMode");
+const { shouldIncludeAnswers, shouldIncludeWorking } = require("../answerMode");
 
 const {
   asArray,
@@ -41,13 +41,17 @@ function validatePracticePaperResource(resource, options = {}) {
     validateQuestionArray(section.questions, `${path}.questions`);
   });
   if (shouldIncludeAnswers(options)) {
-    validateTutorCopy(resource, "practicePaper", { requireMarks: true });
+    validateTutorCopy(resource, "practicePaper", {
+      requireMarks: true,
+      requireResponse: shouldIncludeWorking(options),
+      requireWorking: shouldIncludeWorking(options),
+    });
   }
 }
 
-function makeMarkScheme(answers = []) {
+function makeMarkScheme(answers = [], { includeWorking = true } = {}) {
   const rows = asArray(answers);
-  const hasWorking = rows.some((a) => a.workingOut);
+  const hasWorking = includeWorking && rows.some((a) => a.workingOut);
   const headers = hasWorking ? ["Q#", "Answer", "Working", "Marks"] : ["Q#", "Answer", "Marks"];
   const widths = hasWorking ? [900, 3000, 3800, 1326] : [900, 6800, 1326];
   return makeTable(
@@ -118,11 +122,13 @@ async function buildPracticePaperDocx(resource, options = {}) {
     children.push(makePageBreak());
     if (isEnglishSubject(subject)) {
       children.push(makeSectionHeading("Marking Guide"));
-      children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.markScheme || resource.answers || []));
+      children.push(makeQuestionMarkingGuide(resource.markingGuide || resource.markScheme || resource.answers || [], {
+        includeResponse: shouldIncludeWorking(options),
+      }));
     } else {
       const markScheme = asArray(resource.answers).length ? resource.answers : resource.markScheme;
       children.push(makeSectionHeading("Mark Scheme"));
-      children.push(makeMarkScheme(markScheme || []));
+      children.push(makeMarkScheme(markScheme || [], { includeWorking: shouldIncludeWorking(options) }));
     }
   }
 
