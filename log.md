@@ -190,7 +190,8 @@ omitted, and open follow-ups are tracked at the bottom.
 teach or mark the way Tenacity does, and marks, criteria and model answers
 could drift apart.
 
-**Status:** Live. Functions deployed with the merge.
+**Status:** Live. [#222](https://github.com/tsowmi03/tenacity-platform/pull/222),
+Functions deployed with the merge.
 
 ---
 
