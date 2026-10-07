@@ -10,6 +10,7 @@ const {
 } = require("./answerMode");
 const { canonicalTopicList } = require("./topicTaxonomy");
 const { HUMAN_WRITING_RULES, AUTHORSHIP_RULES } = require("./humanStyle");
+const { ENGLISH_CRITERIA_RULE, ENGLISH_GUIDANCE } = require("./englishGuidance");
 const { numberedStimulusBody } = require("./stimulusUnits");
 
 const GLOBAL_RULES = `You are generating educational resources for Tenacity Tutoring, a Sydney-based tutoring centre.
@@ -131,12 +132,16 @@ function answerRule(subject, answerMode) {
 
 MODEL ANSWER RULES (strictly enforced):
 1. "suggestedResponse" is the answer itself, written as a top-band student would write it. It is never a description of an answer. BANNED: "The response should…", "Students should…", "A paragraph that…", "An introduction with…", "A direct judgement about…", "Evidence should show…", or any other wording that says what an answer would contain instead of giving it.
-2. Questions or parts worth 6 marks or fewer: write the complete answer in full prose. A thesis question gets the thesis sentence; an introduction question gets the whole introduction; a paragraph question gets the whole paragraph. Quote the text wherever the question asks for evidence. For multiple choice, give the correct option and one sentence on why.
-3. Questions or parts worth more than 6 marks (extended responses): do NOT write full prose. Give a detailed plan as dot points, each on its own line beginning "- ": the thesis, then each argument with its quotation, technique and effect, then the link back to the question.
-4. Match length to the marks. A 1–2 mark answer is one or two sentences; a 5–6 mark answer is a developed paragraph.
-5. Be concise and focused. No filler, no restating the question, no hedging, no preamble.`;
+2. Questions or parts worth 6 marks or fewer: write the complete answer in full prose, built exactly as the SHORT-ANSWER QUESTIONS table in HOW TENACITY TEACHES ENGLISH sets out for its marks: the thesis first (from 3 marks), then the ETAs those marks call for, quoting the text as evidence. A thesis question gets the thesis sentence; an introduction question gets the whole introduction; a paragraph question gets the whole TETAL paragraph. For multiple choice, give the correct option and one sentence on why.
+3. Questions or parts worth more than 6 marks (extended responses): do NOT write full prose. Give a TETAL plan as dot points, each on its own line beginning "- ": first "- Thesis: …", then for each body paragraph "- Paragraph 1 thesis: …", one "- ETA: "quotation" · technique · analysis" line per ETA, and "- Link: …".
+4. Match length to the marks, as the table sets out. A 1–2 mark answer is a technique and its analysis in one or two sentences; a 6 mark answer is a thesis and three ETAs.
+5. Be concise and focused. No filler, no restating the question, no hedging, no preamble.
+
+${ENGLISH_CRITERIA_RULE}`;
     }
-    return `Do not include answers inline with questions. Include a tutor marking guide that gives the marking criteria for each question and nothing else. Do not write a suggested, sample or model response, or a summary of what a response should contain — the tutor asked for marking criteria only.`;
+    return `Do not include answers inline with questions. Include a tutor marking guide that gives the marking criteria for each question and nothing else. Do not write a suggested, sample or model response, or a summary of what a response should contain — the tutor asked for marking criteria only.
+
+${ENGLISH_CRITERIA_RULE}`;
   }
   if (includesWorking(answerMode)) {
     return `Do not include answers inline with questions. Put them only in the designated "answers" array. The "answer" field must contain ONLY the final answer (e.g. "x = 3", "169.65 m²") — no steps, explanations, or caveats. The "workingOut" field must contain clean, professional, step-by-step working for every question — do not leave it null.
@@ -256,7 +261,7 @@ function standardAnswerSchema(subject, answerMode) {
 function bookletContentLine(subject) {
   const sectionFormatting = `Within each sub-topic's "explanation", choose the structure that teaches the content most clearly. You may use multiple paragraphs separated by \\n\\n, dot points on separate lines beginning "- ", numbered lists, **bold** for key terms, and *italics* for emphasis. Do not force every explanation into the same format.`;
   if (isEnglishSubject(subject)) {
-    return `Include explanations, key terms and techniques, model analysis (a quote, the technique it uses, and its effect on the reader), an optional short model paragraph, tips, common mistakes, practice questions, and an end-of-topic quiz. ${sectionFormatting} Do NOT include maths-style worked examples or step-by-step "working".`;
+    return `Include explanations, key terms and techniques, model analysis written as ETAs (in each "modelAnalysis" entry, "quote" is the evidence, "technique" the device it uses, and "effect" the analysis drawn from that technique), an optional short exemplar paragraph written in TETAL, tips, common mistakes, practice questions, and an end-of-topic quiz. ${sectionFormatting} Do NOT include maths-style worked examples or step-by-step "working".`;
   }
   return `Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${sectionFormatting}`;
 }
@@ -301,7 +306,7 @@ function bookletSubTopicSchema(subject, { hasStimulus = false } = {}) {
 // sections off key quotations and context. Definitions/key-points are shared.
 function studyGuideContentLine(subject) {
   if (isEnglishSubject(subject)) {
-    return `Use concise summaries, key points, key terms and techniques, key quotations paired with their significance, brief context notes where relevant, and a quick reference section.`;
+    return `Use concise summaries, key points, key terms and techniques, key quotations paired with their technique and its analysis (in "significance"), brief context notes where relevant, and a quick reference section.`;
   }
   return `Use concise summaries, key points, formulas when relevant, definitions, and a quick reference section.`;
 }
@@ -619,6 +624,7 @@ Return JSON matching this schema exactly:
 
 You are generating an essay planning scaffold for a Year ${year} English student.
 This is a structured planning template for one specific essay question or text type. It is not the essay itself.
+For an analytical essay, follow TETAL: an introduction section (thesis first, then each paragraph thesis), one section per body paragraph (3 by default) prompting for the paragraph thesis, each ETA and the link, and a conclusion section. For other text types, structure it by the matching guidance in HOW TENACITY TEACHES ENGLISH.
 Include sentence starters and vocabulary suggestions appropriate for the year level.
 ${stimulusInstructionFor("english", hasStimulus)}${topicsInstruction("english", { textTitle: true })}
 
@@ -808,7 +814,16 @@ function buildSystemPrompt(resourceType, {
     hasStimulus,
     stimulusImages,
   });
-  return `${prompt}\n\n${SCOPE_DISCIPLINE}`;
+  const guidance = usesEnglishGuidance(resourceType, subject) ? `\n\n${ENGLISH_GUIDANCE}` : "";
+  return `${prompt}${guidance}\n\n${SCOPE_DISCIPLINE}`;
+}
+
+// The annotation task and essay scaffold are English-only and ignore `subject`,
+// so they carry the guidance whatever the job's subject field says.
+const ENGLISH_ONLY_TYPES = new Set(["annotation-task", "essay-scaffold"]);
+
+function usesEnglishGuidance(resourceType, subject) {
+  return isEnglishSubject(subject) || ENGLISH_ONLY_TYPES.has(resourceType);
 }
 
 // Title/Author/Source header lines for a sourced text, shared by the single-

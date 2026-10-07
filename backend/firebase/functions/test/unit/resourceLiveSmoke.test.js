@@ -22,6 +22,7 @@ describe("live resource smoke CLI", () => {
   it("defaults to the synthetic Opus-to-Sol outage rehearsal", () => {
     assert.deepEqual(parseCliArgs([]), {
       scenario: "opus-to-sol",
+      job: "maths-worksheet",
       preflight: false,
       outputDir: null,
       firebaseSecrets: false,
@@ -31,9 +32,10 @@ describe("live resource smoke CLI", () => {
 
   it("parses explicit safe options and rejects unknown scenarios", () => {
     assert.deepEqual(
-      parseCliArgs(["--scenario", "sol-direct", "--preflight", "--output", "/tmp/out"]),
+      parseCliArgs(["--scenario", "sol-direct", "--job", "english-booklet", "--preflight", "--output", "/tmp/out"]),
       {
         scenario: "sol-direct",
+        job: "english-booklet",
         preflight: true,
         outputDir: "/tmp/out",
         firebaseSecrets: false,
@@ -41,6 +43,7 @@ describe("live resource smoke CLI", () => {
       }
     );
     assert.throws(() => parseCliArgs(["--scenario", "unknown"]), /Unknown scenario/);
+    assert.throws(() => parseCliArgs(["--job", "unknown"]), /Unknown job/);
   });
 
   it("reads local secret syntax without exposing or transforming the value", () => {
