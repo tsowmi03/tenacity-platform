@@ -556,17 +556,22 @@ function customSchema({ subject, answerMode } = {}) {
         }),
         obj({ type: enumOf(["noteBox"]), title: str, text: str }),
         obj({ type: enumOf(["questionSet"]), questions: arrayOf(question) }),
-        obj({
-          type: enumOf(["answerSection"]),
-          title: str,
-          answers: arrayOf(
-            obj({
-              questionNumber: int,
-              partLabel: nullable(str),
-              answer: str,
-            })
-          ),
-        }),
+        // English tutor copy is a marking guide only — see promptBuilder.js.
+        ...(isEnglishSubject(subject)
+          ? []
+          : [
+              obj({
+                type: enumOf(["answerSection"]),
+                title: str,
+                answers: arrayOf(
+                  obj({
+                    questionNumber: int,
+                    partLabel: nullable(str),
+                    answer: str,
+                  })
+                ),
+              }),
+            ]),
         obj({
           type: enumOf(["markingGuideSection"]),
           title: str,

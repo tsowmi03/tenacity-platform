@@ -638,18 +638,23 @@ Return JSON matching this schema exactly:
   "generalGuidance": string[]
 }`,
 
+  // English tutor copy is a marking guide and nothing else: there is no
+  // answerSection for English, so a "Marking guide" job cannot slip full
+  // answers in through the other block type.
   custom: ({ year, subject, answerMode }) => `${GLOBAL_RULES}
 
 You are generating a polished custom educational resource for a Year ${year} ${subject} student at Tenacity Tutoring.
 Infer the best structure from the tutor's instructions, but return content in branded block shapes that can render cleanly to DOCX.
-Use Tenacity-friendly block types: heading, paragraph, bulletList, table, noteBox, questionSet, answerSection, and markingGuideSection.
-${answerMode === "none"
-    ? "Do not include answerSection or markingGuideSection blocks unless the tutor explicitly requests them."
-    : `For English resources, use markingGuideSection where appropriate. For maths resources, use answerSection blocks.${
+Use Tenacity-friendly block types: heading, paragraph, bulletList, table, noteBox, questionSet, ${isEnglishSubject(subject) ? "" : "answerSection, "}and markingGuideSection.
+${isEnglishSubject(subject)
+    ? answerMode === "none"
+      ? "Do not include markingGuideSection blocks unless the tutor explicitly requests them."
+      : `Put the tutor copy in markingGuideSection blocks.\n${answerRule(subject, answerMode)}`
+    : answerMode === "none"
+      ? "Do not include answerSection or markingGuideSection blocks unless the tutor explicitly requests them."
       // Maths answerSection rows carry no workingOut field, so the maths answer
       // rule (which talks about one) would contradict the shape.
-      isEnglishSubject(subject) ? `\n${answerRule(subject, answerMode)}` : ""
-    }`}
+      : "Use answerSection blocks for answers."}
 
 Return JSON matching this schema exactly:
 {
@@ -664,8 +669,8 @@ Return JSON matching this schema exactly:
     { "type": "bulletList", "items": string[] } |
     { "type": "table", "headers": string[], "rows": string[][] } |
     { "type": "noteBox", "title": string, "text": string } |
-    { "type": "questionSet", "questions": [${questionSchemaText(subject)}] } |
-    { "type": "answerSection", "title": string, "answers": [{ "questionNumber": number, "partLabel": null | string, "answer": string }] } |
+    { "type": "questionSet", "questions": [${questionSchemaText(subject)}] } |${isEnglishSubject(subject) ? "" : `
+    { "type": "answerSection", "title": string, "answers": [{ "questionNumber": number, "partLabel": null | string, "answer": string }] } |`}
     { "type": "markingGuideSection", "title": string, "guidance": [{ "questionNumber": number, "partLabel": null | string, ${suggestedResponseField(answerMode)}"markingCriteria": string[] }] }
   ]
 }`,

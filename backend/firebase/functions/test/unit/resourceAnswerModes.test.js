@@ -228,3 +228,38 @@ describe("Maths Answers with working out mode", () => {
     await assert.rejects(buildResourceDocx("worksheet", worksheet, { answerMode: "worked" }), /workingOut/);
   });
 });
+
+describe("custom English tutor copy", () => {
+  const { buildResponseSchema } = require("../../src/resources/responseSchema");
+  const { buildResourceDocx } = require("../../src/resources/builder");
+
+  const blockTypes = (schema) =>
+    schema.properties.blocks.items.anyOf.map((block) => block.properties.type.enum[0]);
+
+  it("offers no answerSection, so a Marking guide cannot carry full answers", () => {
+    for (const answerMode of ["none", "answers", "worked"]) {
+      assert.ok(!blockTypes(buildResponseSchema("custom", { subject: "english", answerMode })).includes("answerSection"));
+      assert.doesNotMatch(prompt("custom", "english", answerMode), /answerSection/);
+    }
+    assert.ok(blockTypes(buildResponseSchema("custom", { subject: "maths", answerMode: "answers" })).includes("answerSection"));
+    assert.match(prompt("custom", "maths", "answers"), /answerSection/);
+  });
+
+  it("rejects an English answerSection the model sends anyway", async () => {
+    const resource = {
+      title: "Persuasive Language",
+      subject: "english",
+      year: 8,
+      resourceType: "custom",
+      topic: null,
+      blocks: [
+        { type: "heading", text: "Answers" },
+        { type: "answerSection", title: "Answers", answers: [{ questionNumber: 1, partLabel: null, answer: "A full model answer." }] },
+      ],
+    };
+    await assert.rejects(
+      buildResourceDocx("custom", resource, { subject: "english", answerMode: "answers" }),
+      /markingGuideSection/
+    );
+  });
+});

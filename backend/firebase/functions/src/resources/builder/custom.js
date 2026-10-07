@@ -35,6 +35,7 @@ function validateCustomResource(resource, options = {}) {
   assertText(resource.resourceType, "custom.resourceType");
   validateCustomContent(resource.blocks || resource.content || resource.sections, "custom.content", {
     requireResponse: shouldIncludeWorking(options),
+    isEnglish: cleanText(resource.subject || options.subject).toLowerCase() === "english",
   });
 }
 
@@ -67,6 +68,11 @@ function validateCustomContent(content, path, opts = {}) {
   } else if (type === "questionset") {
     validateQuestionArray(content.questions, `${path}.questions`);
   } else if (type === "answersection") {
+    // English answers live in the marking guide, where the answer mode
+    // decides whether a response is shown at all.
+    if (opts.isEnglish) {
+      fail(`${path} is an answerSection; English resources put tutor copy in a markingGuideSection instead`);
+    }
     assertArray(content.answers, `${path}.answers`, { min: 1 });
   } else if (type === "markingguidesection") {
     validateMarkingGuideArray(content.guidance || content.answers, `${path}.guidance`, {
