@@ -188,6 +188,10 @@ async function callAnthropicForResource({
   model,
   systemPrompt,
   userMessage,
+  // A prior conversation to send instead of a single userMessage (RES-24's
+  // pre-generation chat): [{ role: "user" | "assistant", content }], starting
+  // and ending on a user turn.
+  messages = null,
   maxTokens = 8000,
   signal,
   mathBearing = true,
@@ -207,14 +211,18 @@ async function callAnthropicForResource({
   if (!apiKey) throw new TypeError("callAnthropicForResource requires apiKey");
   if (!model) throw new TypeError("callAnthropicForResource requires model");
   if (!systemPrompt) throw new TypeError("callAnthropicForResource requires systemPrompt");
-  if (!userMessage) throw new TypeError("callAnthropicForResource requires userMessage");
+  if (!userMessage && !messages?.length) {
+    throw new TypeError("callAnthropicForResource requires userMessage or messages");
+  }
 
   const client = createClient(apiKey);
   const request = {
     model,
     max_tokens: maxTokens,
     system: buildAnthropicSystemParam({ systemPrompt }),
-    messages: [{ role: "user", content: userMessage }],
+    messages: messages?.length
+      ? messages.map(({ role, content }) => ({ role, content }))
+      : [{ role: "user", content: userMessage }],
   };
   // `effort` and `format` both live under output_config, so build it once and
   // attach only if something asked for it — an empty output_config is noise.

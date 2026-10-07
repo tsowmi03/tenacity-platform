@@ -13,6 +13,7 @@ const portalOverrides = require("./portal/overrides");
 const uidLink_1 = require("./uidLink");
 const {
   cancelResourceJob,
+  chatAboutResource,
   deleteResourceJob,
   generateResourcePreviewOnComplete,
   processResourceJob,
@@ -154,6 +155,7 @@ module.exports = Object.assign(
 );
 module.exports.submitResourceJob = submitResourceJob;
 module.exports.submitResourceRevision = submitResourceRevision;
+module.exports.chatAboutResource = chatAboutResource;
 module.exports.processResourceJob = processResourceJob;
 module.exports.processResourceFallback = processResourceFallback;
 module.exports.generateResourcePreviewOnComplete = generateResourcePreviewOnComplete;

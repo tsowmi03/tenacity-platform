@@ -50,6 +50,7 @@ vi.mock("./callable", () => ({
 
 const {
   buildResubmitPayload,
+  chatAboutResource,
   deleteResourceJob,
   findSimilarResources,
   normalizeResourceJob,
@@ -281,5 +282,57 @@ describe("findSimilarResources", () => {
   it("returns nothing without a subject, type, and topics", async () => {
     expect(await findSimilarResources({})).toEqual({ sameType: [], otherType: [] });
     expect(firestore.getDocs).not.toHaveBeenCalled();
+  });
+});
+
+describe("chatAboutResource", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sends the draft, summaries for attached files only, and the transcript", async () => {
+    callable.callFunction.mockResolvedValue({ reply: "Hi" });
+    await chatAboutResource({
+      draft: {
+        draftId: "d1",
+        studentId: "student-1",
+        studentName: "Mei Tanaka",
+        subject: "maths",
+        year: "8",
+        resourceType: "worksheet",
+        answerMode: "worked",
+        showMarks: false,
+        modelChoice: "anthropic",
+        customPrompt: "Index laws",
+        sourceJobId: null,
+        uploadedFiles: [{ path: "resources/uploads/t/a.pdf", name: "a.pdf", size: 10 }],
+        uploadProgress: null,
+      },
+      fileSummaries: {
+        "resources/uploads/t/a.pdf": "Summary A",
+        "resources/uploads/t/removed.pdf": "Stale",
+      },
+      messages: [
+        { id: "a0", role: "assistant", content: "Questions?", proposedPrompt: null, suggestions: ["x"] },
+        { id: "u1", role: "user", content: "Harder" },
+      ],
+    });
+
+    expect(callable.callFunction).toHaveBeenCalledWith("chatAboutResource", {
+      studentId: "student-1",
+      subject: "maths",
+      year: 8,
+      resourceType: "worksheet",
+      answerMode: "worked",
+      showMarks: false,
+      customPrompt: "Index laws",
+      sourceJobId: null,
+      uploadedFiles: [{ path: "resources/uploads/t/a.pdf", name: "a.pdf" }],
+      fileSummaries: [{ path: "resources/uploads/t/a.pdf", summary: "Summary A" }],
+      messages: [
+        { role: "assistant", content: "Questions?", proposedPrompt: null },
+        { role: "user", content: "Harder", proposedPrompt: null },
+      ],
+    });
   });
 });

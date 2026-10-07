@@ -20,6 +20,7 @@
     "smoke": "node -e \"const f = require('./lib/index.js'); console.log(Object.keys(f).sort().join('\\n'))\"",
     "smoke:resources:live": "node scripts/liveResourceSmoke.js",
     "smoke:resources:live:preflight": "node scripts/liveResourceSmoke.js --preflight",
+    "smoke:chat:live": "node scripts/liveChatSmoke.js",
     "test": "node --test --test-reporter=spec 'test/unit/**/*.test.js'",
     "test:diagrams:render": "node scripts/renderDiagramFixtures.js",
     "test:diagrams:spike-renderers": "node scripts/spikeDiagramRenderers.js",

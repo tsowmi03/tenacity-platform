@@ -10,6 +10,7 @@ import { extractQueryTopics } from "../../backend/topicTaxonomy";
 import Button from "../Button";
 import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
+import ResourceChatDrawer from "./ResourceChatDrawer";
 import ResourcePreviewModal from "./ResourcePreviewModal";
 import { exemplarForType } from "./exemplars";
 import {
@@ -117,6 +118,12 @@ export default function ResourceJobBuilder({
   const [showAllOther, setShowAllOther] = useState(false);
   const [previewType, setPreviewType] = useState(null);
   const [editingFrom, setEditingFrom] = useState(null);
+  // RES-24 chat. Summaries are keyed by storage path, which is unique per
+  // upload, so they stay valid across reopens and drafts.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatSession, setChatSession] = useState(0);
+  const [fileSummaries, setFileSummaries] = useState({});
+  const [promptFromChat, setPromptFromChat] = useState(false);
   const activeUploadRef = useRef(null);
   const sectionRef = useRef(null);
 
@@ -144,6 +151,7 @@ export default function ResourceJobBuilder({
     activeUploadRef.current?.cancel?.();
     activeUploadRef.current = null;
     setDraft(draftFromJob(prefill));
+    setChatOpen(false);
     setEditingFrom({
       resourceType: prefill.resourceType,
       studentName: prefill.studentName || "",
@@ -243,6 +251,43 @@ export default function ResourceJobBuilder({
     !draft.uploadError
   );
   const stagedCountForSubmit = staged.length + (canStage ? 1 : 0);
+  const canDiscuss = Boolean(
+    draft.studentId &&
+    draft.year &&
+    draft.resourceType &&
+    draft.uploadProgress == null
+  );
+
+  // The chat talks about this draft, so it can't outlive a draft that no
+  // longer has what it needs (student cleared, upload started).
+  useEffect(() => {
+    if (chatOpen && !canDiscuss) setChatOpen(false);
+  }, [chatOpen, canDiscuss]);
+
+  // A different student, year, subject or type is a different resource: close
+  // the chat so a reply about the old one can't be applied to the new one.
+  // Reopening is cheap, since file summaries are kept.
+  useEffect(() => {
+    setChatOpen(false);
+  }, [draft.studentId, draft.year, draft.subject, draft.resourceType]);
+
+  function openChat() {
+    setChatSession((n) => n + 1);
+    setChatOpen(true);
+  }
+
+  function applyChatPrompt(text) {
+    set({ customPrompt: text });
+    setPromptFromChat(true);
+    setChatOpen(false);
+  }
+
+  function addFileSummaries(entries) {
+    setFileSummaries((current) => ({
+      ...current,
+      ...Object.fromEntries(entries.map((entry) => [entry.path, entry.summary])),
+    }));
+  }
 
   function set(patch) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -271,6 +316,7 @@ export default function ResourceJobBuilder({
     if (!canStage) return;
     setStaged((current) => [...current, { ...draft }]);
     setDraft(initialDraft(draft.subject));
+    setChatOpen(false);
     setSelectedStudent(null);
     setRowErrors({});
     setEditingFrom(null);
@@ -281,6 +327,7 @@ export default function ResourceJobBuilder({
     activeUploadRef.current?.cancel?.();
     activeUploadRef.current = null;
     setDraft(initialDraft());
+    setChatOpen(false);
     setSelectedStudent(null);
     setRowErrors({});
     setEditingFrom(null);
@@ -362,6 +409,7 @@ export default function ResourceJobBuilder({
     if (result?.ok) {
       setStaged([]);
       setDraft(initialDraft());
+      setChatOpen(false);
       setSelectedStudent(null);
       setEditingFrom(null);
       return;
@@ -551,14 +599,35 @@ export default function ResourceJobBuilder({
           </div>
 
           <div className="field">
-            <label className="label">Custom prompt <span className="opt">optional</span></label>
+            <div className="rg-prompt-head">
+              <label className="label" htmlFor="rg-custom-prompt">Custom prompt <span className="opt">optional</span></label>
+              <Button
+                className="rg-chat-open"
+                disabled={!canDiscuss}
+                icon="sparkles"
+                onClick={openChat}
+                size="sm"
+                variant="ghost"
+              >
+                {draft.customPrompt.trim() ? "Refine with AI" : "Discuss with AI"}
+              </Button>
+            </div>
             <textarea
-              className="textarea"
+              className={`textarea${promptFromChat ? " rg-prompt-flash" : ""}`}
+              id="rg-custom-prompt"
+              onAnimationEnd={() => setPromptFromChat(false)}
               onChange={(event) => set({ customPrompt: event.target.value })}
               placeholder={PROMPT_PLACEHOLDERS[draft.resourceType] || "Give extra context: topic focus, difficulty, length, format."}
-              rows={3}
+              rows={draft.customPrompt.length > 240 ? 6 : 3}
               value={draft.customPrompt}
             />
+            <div className="hint">
+              {!canDiscuss
+                ? "Choose a student, year and resource type to talk this through with AI."
+                : draft.customPrompt.trim()
+                  ? "Edit directly, or refine with AI. The chat starts from what's here."
+                  : "Not sure what to ask for? Talk it through with AI and it will write this prompt for you."}
+            </div>
           </div>
 
           <details className="rg-generation-settings">
@@ -708,6 +777,17 @@ export default function ResourceJobBuilder({
             </ul>
           </div>
         </div>
+      ) : null}
+
+      {chatOpen ? (
+        <ResourceChatDrawer
+          draft={draft}
+          key={chatSession}
+          onClose={() => setChatOpen(false)}
+          onSummaries={addFileSummaries}
+          onUsePrompt={applyChatPrompt}
+          summaries={fileSummaries}
+        />
       ) : null}
 
       <ResourcePreviewModal

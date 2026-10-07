@@ -68,6 +68,7 @@ const {
   SOURCE_PLANNER_MODEL,
   assertAllowedMainModel,
   assertModelChoice,
+  CHAT_MODEL,
   backupModelFor,
   currentModelFor,
   inferModelChoice,
@@ -75,6 +76,17 @@ const {
   providerForModel,
 } = require("./modelRegistry");
 const { normaliseTopics } = require("./topicTaxonomy");
+const {
+  CHAT_LIMITS,
+  CHAT_RESPONSE_SCHEMA,
+  FILE_SUMMARY_SCHEMA,
+  FILE_SUMMARY_SYSTEM_PROMPT,
+  buildChatMessages,
+  buildChatSystemPrompt,
+  buildFileSummaryMessage,
+  normaliseChatReply,
+  normaliseFileSummaries,
+} = require("./chatPrompt");
 const { excerptStimulusBody, stimulusUnits } = require("./stimulusUnits");
 
 const SUBJECTS = ["maths", "english"];
@@ -175,6 +187,15 @@ const RESOURCE_CALLABLE_OPTIONS = {
   region: "us-central1",
   memory: "512MiB",
 };
+// The RES-24 chat makes up to two model calls per turn (summarising newly
+// attached files, then the reply) and may extract PDF text, so it needs the
+// model secrets, more time than the bare callables, and room for extraction.
+const RESOURCE_CHAT_OPTIONS = {
+  region: "us-central1",
+  memory: "1GiB",
+  timeoutSeconds: 120,
+  secrets: [anthropicApiKey, openaiApiKey],
+};
 
 function requireResourceStaffCallable(request) {
   const auth = request?.auth;
@@ -196,6 +217,24 @@ function requireResourceStaffCallable(request) {
 function nullableString(value, field, opts = {}) {
   if (value === undefined || value === null || value === "") return null;
   return assertString(value, field, opts);
+}
+
+function validateUploadedFilesField(value) {
+  if (value === undefined || value === null) return [];
+  return assertArray(value, "uploadedFiles", {
+    max: RESOURCE_MAX_REFERENCE_FILES,
+  }).map((file, index) => {
+    if (!file || typeof file !== "object" || Array.isArray(file)) {
+      throw new HttpsError(
+        "invalid-argument",
+        `uploadedFiles[${index}] must be an object`
+      );
+    }
+    return {
+      path: assertString(file.path, `uploadedFiles[${index}].path`, { max: 500 }),
+      name: assertString(file.name, `uploadedFiles[${index}].name`, { max: 240 }),
+    };
+  });
 }
 
 function validateSubmitResourceJobPayload(input) {
@@ -247,23 +286,7 @@ function validateSubmitResourceJobPayload(input) {
       nullableString(value, "uploadedFilePath", { max: 500 }),
     uploadedFileName: (value) =>
       nullableString(value, "uploadedFileName", { max: 240 }),
-    uploadedFiles: (value) => {
-      if (value === undefined || value === null) return [];
-      return assertArray(value, "uploadedFiles", {
-        max: RESOURCE_MAX_REFERENCE_FILES,
-      }).map((file, index) => {
-        if (!file || typeof file !== "object" || Array.isArray(file)) {
-          throw new HttpsError(
-            "invalid-argument",
-            `uploadedFiles[${index}] must be an object`
-          );
-        }
-        return {
-          path: assertString(file.path, `uploadedFiles[${index}].path`, { max: 500 }),
-          name: assertString(file.name, `uploadedFiles[${index}].name`, { max: 240 }),
-        };
-      });
-    },
+    uploadedFiles: validateUploadedFilesField,
   });
 
   if (hasAnswerMode) {
@@ -350,6 +373,96 @@ function validateCancelResourceJobPayload(input) {
   return validateShape(input || {}, {
     jobId: (value) => assertString(value, "jobId", { max: 160 }),
   });
+}
+
+/**
+ * RES-24 chat turn. Carries the job builder's current form (so the chat stays
+ * in step if the tutor changes it mid-conversation), the file summaries the
+ * portal already holds, and the transcript so far. The transcript alternates
+ * assistant/user starting with the assistant's opening reply, and is either
+ * empty (the opening turn) or ends on the tutor's latest message.
+ */
+function validateChatAboutResourcePayload(input) {
+  const payload = validateShape(input || {}, {
+    studentId: (value) => assertString(value, "studentId", { max: 160 }),
+    subject: (value) => assertEnum(value, "subject", SUBJECTS),
+    year: (value) => assertNumber(value, "year", { min: 5, max: 10, integer: true }),
+    resourceType: (value) => assertEnum(value, "resourceType", RESOURCE_TYPES),
+    answerMode: (value) => {
+      if (value === undefined || value === null || value === "") return "none";
+      return assertEnum(value, "answerMode", ANSWER_MODES);
+    },
+    showMarks: (value) => {
+      if (value === undefined || value === null) return false;
+      return assertBoolean(value, "showMarks");
+    },
+    customPrompt: (value) => {
+      if (value === undefined || value === null) return "";
+      return assertString(value, "customPrompt", { min: 0, max: CHAT_LIMITS.maxPromptChars });
+    },
+    sourceJobId: (value) => nullableString(value, "sourceJobId", { max: 160 }),
+    uploadedFiles: validateUploadedFilesField,
+    fileSummaries: (value) => {
+      if (value === undefined || value === null) return [];
+      return assertArray(value, "fileSummaries", {
+        max: RESOURCE_MAX_REFERENCE_FILES,
+      }).map((entry, index) => ({
+        path: assertString(entry?.path, `fileSummaries[${index}].path`, { max: 500 }),
+        summary: assertString(entry?.summary, `fileSummaries[${index}].summary`, {
+          max: CHAT_LIMITS.maxSummaryChars,
+        }),
+      }));
+    },
+    messages: (value) => {
+      if (value === undefined || value === null) return [];
+      return assertArray(value, "messages", {
+        max: CHAT_LIMITS.maxMessages,
+      }).map((message, index) => ({
+        role: assertEnum(message?.role, `messages[${index}].role`, ["user", "assistant"]),
+        content: assertString(message?.content, `messages[${index}].content`, {
+          min: 1,
+          max: CHAT_LIMITS.maxMessageChars,
+        }),
+        proposedPrompt: nullableString(message?.proposedPrompt, `messages[${index}].proposedPrompt`, {
+          max: CHAT_LIMITS.maxPromptChars,
+        }),
+      }));
+    },
+  });
+
+  if (
+    ENGLISH_ONLY_RESOURCE_TYPES.has(payload.resourceType) &&
+    payload.subject !== "english"
+  ) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${payload.resourceType} is only available for English resources`
+    );
+  }
+
+  for (const file of payload.uploadedFiles) {
+    if (!file.path.startsWith("resources/uploads/")) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Reference file paths must point inside resources/uploads"
+      );
+    }
+  }
+
+  payload.messages.forEach((message, index) => {
+    const expected = index % 2 === 0 ? "assistant" : "user";
+    if (message.role !== expected) {
+      throw new HttpsError(
+        "invalid-argument",
+        "messages must alternate, starting with the assistant's opening reply"
+      );
+    }
+  });
+  if (payload.messages.length && payload.messages.at(-1).role !== "user") {
+    throw new HttpsError("invalid-argument", "messages must end with the tutor's message");
+  }
+
+  return payload;
 }
 
 function fullName(firstName, lastName) {
@@ -750,6 +863,157 @@ async function createResourceJobImpl({ payload, actor, deps }) {
 
   await jobRef.set(doc);
   return { jobId: jobRef.id };
+}
+
+// The student's latest completed resources, for the chat's context. Reuses the
+// studentId + createdAt index and filters status here rather than needing a
+// new composite index. Best-effort: the chat still works without history.
+async function loadChatHistory({ db, studentId }) {
+  try {
+    const snap = await db
+      .collection("resourceJobs")
+      .where("studentId", "==", studentId)
+      .orderBy("createdAt", "desc")
+      .limit(30)
+      .get();
+    return snap.docs
+      .map((docSnap) => docSnap.data() || {})
+      .filter((job) => job.status === "complete")
+      .slice(0, CHAT_LIMITS.maxHistoryJobs);
+  } catch (err) {
+    logger.warn("[chatAboutResource] history could not be loaded", {
+      studentId,
+      errorMessage: err?.message,
+    });
+    return [];
+  }
+}
+
+function chatHistoryEntry(job) {
+  const createdAt = typeof job.createdAt?.toDate === "function" ? job.createdAt.toDate() : job.createdAt;
+  return {
+    resourceType: job.resourceType || null,
+    topics: Array.isArray(job.extractedTopics) ? job.extractedTopics.slice(0, 4) : [],
+    createdAt: createdAt instanceof Date && !Number.isNaN(createdAt.getTime())
+      ? createdAt.toISOString()
+      : null,
+  };
+}
+
+/**
+ * One turn of the RES-24 pre-generation chat.
+ *
+ * Reference files are summarised once: any attached file the portal has no
+ * summary for is downloaded, extracted and summarised on this turn, and the new
+ * summaries are returned for the portal to send back on later turns. Nothing is
+ * written to Firestore.
+ */
+async function chatAboutResourceImpl({ payload, actor, deps }) {
+  const { db, storage, callAi = callAiForResource, extractText = extractTextFromBuffer } = deps;
+  if (!db) throw new TypeError("chatAboutResourceImpl requires db");
+  if (!actor?.uid) throw new TypeError("chatAboutResourceImpl requires actor.uid");
+
+  const sourceJob = payload.sourceJobId
+    ? await loadSourceResourceJob({ db, sourceJobId: payload.sourceJobId, actor })
+    : null;
+  assertUploadedFilesAllowed({ uploadedFiles: payload.uploadedFiles, actor, sourceJob });
+
+  const studentSnap = await db.collection("students").doc(payload.studentId).get();
+  if (!studentSnap.exists) {
+    throw new HttpsError("not-found", `Student not found: ${payload.studentId}`);
+  }
+  const studentName = studentDisplayName(studentSnap.data() || {}, payload.studentId);
+  const history = await loadChatHistory({ db, studentId: payload.studentId });
+
+  // Always Sonnet (see CHAT_MODEL), whatever the tutor picked for generation.
+  // RESOURCE_LLM_MODEL deliberately doesn't apply: it exists to roll back
+  // generation models.
+  const model = CHAT_MODEL;
+  // Normalising inside the try means an unusable response (an empty reply)
+  // reads as a failed model call, the same as a provider error.
+  const callModel = async (request, normalise) => {
+    try {
+      const result = await callAi({
+        ...request,
+        model,
+        effort: "low",
+        mathBearing: false,
+        anthropicApiKey: deps.anthropicApiKey,
+        openaiApiKey: deps.openaiApiKey,
+        safetyIdentifier: safetyIdentifierForUid(actor.uid),
+      });
+      return normalise(result.parsed);
+    } catch (err) {
+      logger.error("[chatAboutResource] model call failed", {
+        actorUid: actor.uid,
+        model,
+        errorMessage: err?.message,
+      });
+      throw new HttpsError("unavailable", "The AI couldn't reply just now. Try again.");
+    }
+  };
+
+  // Only summaries for files that are still attached are trusted; anything
+  // else in the payload is ignored.
+  const known = new Map(payload.fileSummaries.map((entry) => [entry.path, entry.summary]));
+  const toSummarise = payload.uploadedFiles.filter((file) => !known.has(file.path));
+  let newSummaries = [];
+  if (toSummarise.length) {
+    if (!storage) throw new TypeError("chatAboutResourceImpl requires storage");
+    let contents;
+    try {
+      contents = await downloadUploadedContent({
+        job: { uploadedFiles: toSummarise },
+        storage,
+        extractText,
+      });
+    } catch (err) {
+      logger.warn("[chatAboutResource] reference file could not be read", {
+        actorUid: actor.uid,
+        errorMessage: err?.message,
+      });
+      throw new HttpsError(
+        "failed-precondition",
+        "A reference file couldn't be read. Remove it and try again."
+      );
+    }
+    newSummaries = await callModel(
+      {
+        systemPrompt: FILE_SUMMARY_SYSTEM_PROMPT,
+        userMessage: buildFileSummaryMessage(contents),
+        responseSchema: FILE_SUMMARY_SCHEMA,
+        maxTokens: 4000,
+      },
+      (parsed) => normaliseFileSummaries(parsed, toSummarise)
+    );
+    for (const entry of newSummaries) known.set(entry.path, entry.summary);
+  }
+
+  const reply = await callModel({
+    systemPrompt: buildChatSystemPrompt({
+      form: payload,
+      studentName,
+      customPrompt: payload.customPrompt.trim(),
+      files: payload.uploadedFiles.map((file) => ({
+        name: file.name,
+        summary: known.get(file.path),
+      })),
+      history,
+    }),
+    messages: buildChatMessages({
+      customPrompt: payload.customPrompt.trim(),
+      transcript: payload.messages,
+    }),
+    responseSchema: CHAT_RESPONSE_SCHEMA,
+    maxTokens: 6000,
+  }, normaliseChatReply);
+
+  return {
+    ...reply,
+    fileSummaries: newSummaries.map(({ path, summary }) => ({ path, summary })),
+    // What the chat could see, for the portal's "What the AI can see" panel.
+    pastResources: history.map(chatHistoryEntry),
+  };
 }
 
 /**
@@ -3726,6 +3990,35 @@ const submitResourceRevision = onCall(RESOURCE_CALLABLE_OPTIONS, async (request)
   }
 });
 
+const chatAboutResource = onCall(RESOURCE_CHAT_OPTIONS, async (request) => {
+  const actor = requireResourceStaffCallable(request);
+  let payload;
+  try {
+    payload = validateChatAboutResourcePayload(request.data);
+  } catch (err) {
+    throw toHttpsError(err);
+  }
+
+  try {
+    return await chatAboutResourceImpl({
+      payload,
+      actor,
+      deps: {
+        db: admin.firestore(),
+        storage: admin.storage(),
+        anthropicApiKey: anthropicApiKey.value(),
+        openaiApiKey: openaiApiKey.value(),
+      },
+    });
+  } catch (err) {
+    logger.error("[chatAboutResource] failed", {
+      actorUid: actor.uid,
+      errorMessage: err?.message,
+    });
+    throw toHttpsError(err);
+  }
+});
+
 const retryResourceJob = onCall(
   RESOURCE_WORKER_OPTIONS,
   async (request) => {
@@ -3854,6 +4147,8 @@ module.exports = {
   buildResourceJobDoc,
   cancelResourceJob,
   cancelResourceJobImpl,
+  chatAboutResource,
+  chatAboutResourceImpl,
   claimNextPendingJobForTutor,
   createResourceJobImpl,
   createResourceRevisionImpl,
@@ -3906,6 +4201,7 @@ module.exports = {
   submitResourceJob,
   submitResourceRevision,
   validateCancelResourceJobPayload,
+  validateChatAboutResourcePayload,
   validateSubmitResourceRevisionPayload,
   validateRetryResourceJobPayload,
   validateDeleteResourceJobPayload,
