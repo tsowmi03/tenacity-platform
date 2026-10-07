@@ -186,8 +186,8 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** Each model upgrade still needed a code change and a deploy, and a
 model that misbehaved in production couldn't be rolled back quickly.
 
-**Status:** Live. Functions deployed with the merge. No
-`config/resourceModels` doc exists yet, so production runs on the code
+**Status:** Live. [#221](https://github.com/tsowmi03/tenacity-platform/pull/221),
+Functions deployed with the merge. No `config/resourceModels` doc exists yet, so production runs on the code
 defaults until one is created.
 
 ---
