@@ -2,11 +2,12 @@
 
 How code in this repository reaches production, and what stops it going wrong.
 
-The five production surfaces — Firestore rules, Firestore indexes, Cloud
+The six production surfaces — Firestore rules, Firestore indexes, Cloud
 Functions, admin portal Hosting, resource portal Hosting, and the public
 website — all deploy from
-`tsowmi03/tenacity-platform`. Mobile is not one of them: it ships from
-`tsowmi03/Tenacity` to the app stores and nothing here touches it.
+`tsowmi03/tenacity-platform`. Mobile also ships from this repository
+(`apps/mobile`), but by hand through Xcode and the store consoles, so no
+workflow here touches it.
 
 This is a solo-operated project. Controls that only work by involving a second
 person are not used, because they would be theatre: `main` requires a pull

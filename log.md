@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-08 | [The README describes the repo as it is today (TP-26)](#2026-10-08--the-readme-describes-the-repo-as-it-is-today-tp-26) |
 | 2026-10-08 | [Maths renders as written: money, sets, ratios, accents, worked examples (RES-31)](#2026-10-08--maths-renders-as-written-money-sets-ratios-accents-worked-examples-res-31) |
 | 2026-10-07 | [English resources teach and mark the Tenacity way (RES-37)](#2026-10-07--english-resources-teach-and-mark-the-tenacity-way-res-37) |
 | 2026-10-07 | [Resources move to GPT-6.1 Sol, and models switch without a deploy (RES-39)](#2026-10-07--resources-move-to-gpt-61-sol-and-models-switch-without-a-deploy-res-39) |
@@ -161,6 +162,32 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-08 — The README describes the repo as it is today (TP-26)
+
+**What changed**
+- Rewrote the root `README.md` as an overview of the repo: what each app,
+  the backend, `scripts/` and `docs/` contain (now including the resource
+  portal), a diagram of how they share one Firebase project, per-app getting
+  started, staging vs production, validation commands, how each surface
+  deploys, and a docs index.
+- The migration-status sections are gone; the migration records are linked as
+  history.
+- The live resource smoke test and AI model-switching guide moved to
+  `backend/firebase/README.md`.
+- Removed the remaining claims that mobile ships from `tsowmi03/Tenacity`
+  (backend README, mobile README, production deployment runbook).
+- `CLAUDE.md` and `AGENTS.md` now map the resource portal to the Resource
+  Generator (`RES`) Jira space rather than Admin Web Portal.
+
+**Why:** The README still read as a migration handoff from July: it said
+mobile released from another repo, described per-surface manual deploys, and
+did not mention the resource portal.
+
+**Status:** Live. [#225](https://github.com/tsowmi03/tenacity-platform/pull/225),
+documentation only, nothing to deploy.
 
 ---
 
