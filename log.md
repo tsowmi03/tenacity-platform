@@ -186,7 +186,8 @@ omitted, and open follow-ups are tracked at the bottom.
 mobile released from another repo, described per-surface manual deploys, and
 did not mention the resource portal.
 
-**Status:** Live. Documentation only, nothing to deploy.
+**Status:** Live. [#225](https://github.com/tsowmi03/tenacity-platform/pull/225),
+documentation only, nothing to deploy.
 
 ---
 
