@@ -131,8 +131,8 @@ Locally, run the checks for each area you touched:
 | Area | Commands |
 | --- | --- |
 | CI scripts | From the root: `node --test scripts/ci/test/*.test.mjs` · `node scripts/ci/check-functions-inventory.mjs` · `node scripts/ci/validate-firebase-config.mjs` |
-| Mobile | From `apps/mobile`: `dart format --output=none --set-exit-if-changed lib test` · `flutter analyze --no-fatal-infos` · `flutter test` |
-| Admin portal | `npm --prefix apps/admin-portal test` · `npm --prefix apps/admin-portal run build` · `npm --prefix apps/admin-portal run test:rules` when rules change |
+| Mobile | From `apps/mobile`: `dart format --output=none --set-exit-if-changed lib test` · `flutter analyze --no-fatal-infos` · `flutter test` · `flutter build web` |
+| Admin portal | From the root: `npm --prefix apps/admin-portal test` · `node --test apps/admin-portal/test/enrolmentEditPayload.test.mjs` · `npm --prefix apps/admin-portal run build` · `npm --prefix apps/admin-portal run test:rules` when rules change |
 | Resource portal | `npm --prefix apps/resource-portal test` · `npm --prefix apps/resource-portal run build` |
 | Functions | `npm --prefix backend/firebase/functions test` · `npm --prefix backend/firebase/functions run smoke` · `npm --prefix backend/firebase/functions run test:emulator` when integration behaviour changes |
 | Website | From `apps/website`: `yarn lint` · `yarn build` |
@@ -156,13 +156,18 @@ flowchart LR
 | --- | --- |
 | Admin portal, resource portal, website | **Automatically** once `Validate platform` passes on `main`, if that app changed and the commit didn't touch the backend |
 | Firestore indexes, rules, Cloud Functions | **Manual dispatch** of [`production-deploy.yml`](.github/workflows/production-deploy.yml) with the `main` SHA. It deploys what the commit changed, in dependency order |
-| Mobile | **By hand:** bump `apps/mobile/pubspec.yaml`, run `flutter build ios --config-only`, archive in Xcode (untick *Manage Version and Build Number*), and submit to the stores |
+| Mobile | **By hand**, for both stores. See [Mobile releases](#mobile-releases) |
 
 Things worth knowing before you dispatch:
 
 - The deploy resolves surfaces from the **last commit on `main`** and must be
   dispatched with `main`'s current HEAD. Land each change as one squashed PR
   that includes its log entry, so nothing lands between merge and deploy.
+- A commit that changes only root `firebase.json` or
+  `backend/firebase/deployment-targets.json` blocks the auto-deploy, but the
+  dispatch planner selects no surface for it. Dispatch the affected surface's
+  own workflow instead (e.g. `firebase-hosting-production.yml` for a Hosting
+  header change).
 - Every production run opens and closes a deploy-record issue automatically.
 - Rollback workflows exist for each portal's Hosting, for rules, and for the
   website. Functions roll back by redeploying the previous source; indexes
@@ -170,6 +175,22 @@ Things worth knowing before you dispatch:
 
 Full controls, abort conditions and rollback steps:
 [production deployment runbook](docs/operations/production-deployment-controls.md).
+
+### Mobile releases
+
+From `apps/mobile`, after bumping `version:` in `pubspec.yaml`. Build numbers
+are one counter shared by both stores, so start above the highest number
+already uploaded.
+
+- **iOS:** run `flutter build ios --config-only --flavor prod
+  --dart-define=TENACITY_ENV=prod` so Xcode picks up the new version, then
+  archive the `prod` scheme in Xcode and distribute from Organizer with
+  *Manage Version and Build Number* unticked. (`flutter build ipa` fails at
+  export with a non-interactive keychain.)
+- **Android:** run `flutter build appbundle --flavor prod
+  --dart-define=TENACITY_ENV=prod`, check the bundle at
+  `build/app/outputs/bundle/prodRelease/app-prod-release.aab` reports the new
+  version, and upload it in Play Console.
 
 ## Working in the repo
 
