@@ -155,6 +155,16 @@ const SYMBOL_COMMANDS = {
   Pr: "Pr", hom: "hom",
 };
 
+// Commands whose next brace group is their argument, never a set.
+const ARGUMENT_COMMANDS = [
+  "frac", "dfrac", "tfrac", "cfrac", "sqrt", "binom", "dbinom", "tbinom", "begin", "end",
+  "text", "textrm", "textit", "textbf", "textsf", "texttt", "mathrm", "mathbf", "mathit", "mathsf",
+  "mathtt", "mathcal", "mathfrak", "mathbb", "operatorname", "boxed", "overset", "underset", "stackrel",
+  "cancel", "bcancel", "xcancel", "underbrace", "overbrace",
+  "bar", "overline", "underline", "dot", "ddot", "hat", "widehat", "tilde", "widetilde",
+  "check", "breve", "acute", "grave", "vec", "overrightarrow", "overleftarrow",
+];
+
 // Layout-only commands with no visible output of their own.
 const IGNORED_COMMANDS = ["displaystyle", "limits", "nolimits", "thinspace", "negthinspace"];
 
@@ -227,6 +237,10 @@ function normaliseLaTeXCommands(value) {
     // --- Set braces: \{...\}, \lbrace ... \rbrace, and a bare {...} that
     // opens after a space, =, ( or a set operator (a LaTeX group never does;
     // it follows ^, _, a command or another group). {} stays an empty group.
+    // An argument group may follow its command after a space (\frac {1} {2},
+    // \sqrt {4}, x^ {2}, \begin {cases}). Join them first, so the space does
+    // not make the group look like a set opening after a space.
+    .replace(new RegExp(String.raw`(\\(?:${ARGUMENT_COMMANDS.join("|")})${END}|\\sqrt\s*\[[^\]]*\]|[\^_}])\s+(?=\{)`, "g"), "$1")
     .replace(new RegExp(String.raw`\\(?:\{|lbrace${END})`, "g"), SET_OPEN)
     .replace(new RegExp(String.raw`\\(?:\}|rbrace${END})`, "g"), SET_CLOSE)
     .replace(/(^|[\s=(,:∈∉∪∩⊂⊆])\{(?!\})([^{}]*)\}/g, `$1${SET_OPEN}$2${SET_CLOSE}`)
@@ -247,8 +261,8 @@ function splitLatexLines(value) {
   let depth = 0;
   let out = "";
   for (let i = 0; i < text.length; i += 1) {
-    if (text.startsWith("\\begin{", i)) depth += 1;
-    else if (text.startsWith("\\end{", i)) depth = Math.max(0, depth - 1);
+    if (/^\\begin\s*\{/.test(text.slice(i, i + 12))) depth += 1;
+    else if (/^\\end\s*\{/.test(text.slice(i, i + 10))) depth = Math.max(0, depth - 1);
     if (depth === 0 && text[i] === "\\" && text[i + 1] === "\\" && !/[A-Za-z]/.test(text[i + 2] || "")) {
       out += "\n";
       i += 1;

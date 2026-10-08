@@ -541,3 +541,28 @@ describe("real job regressions, third pass", () => {
     assert.doesNotMatch(shown, /− P»/);
   });
 });
+
+// PR #224 review: a space before an argument group must not make it a set.
+describe("spaced argument groups", () => {
+  for (const [input, expected] of [
+    ["\\frac {1}{2}", /«\[1\/2\]»/],
+    ["\\frac{1} {2}", /«\[1\/2\]»/],
+    ["\\sqrt {4}", /«√\(4\)»/],
+    ["\\sqrt[3] {27}", /√/],
+    ["x^ {2}", /«x⁽2⁾»/],
+    ["\\bar {x} = 5", /x̄/],
+    ["\\begin {cases} x = 1 \\\\ y = 2 \\end {cases}", /x = 1/],
+  ]) {
+    it(`reads ${input} as an argument, not a set`, async () => {
+      const { shown, issues } = await body(input);
+      assert.match(shown, expected);
+      assert.doesNotMatch(shown, /[{}]/);
+      assert.deepEqual(issues, []);
+    });
+  }
+
+  it("still reads a set after a set operator or =", async () => {
+    assert.match((await body("x \\in {1, 2, 3}")).shown, /\{1, 2, 3\}/);
+    assert.match((await body("A = {1, 2}")).shown, /\{1, 2\}/);
+  });
+});
