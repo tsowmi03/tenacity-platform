@@ -16,8 +16,8 @@ Storage CORS source.
 > [production deployment runbook](../../docs/operations/production-deployment-controls.md)).
 > `tsowmi03/tenacity-web-portal` and `tsowmi03/tenacity-tutoring` no longer
 > serve production and are redundant; they stay available only until the
-> two-stable-deployment archive gate closes. Mobile releases are the one
-> exception and continue from `tsowmi03/Tenacity`.
+> two-stable-deployment archive gate closes. Mobile store releases also ship
+> from this monorepo (`apps/mobile`).
 
 ## Layout
 
@@ -85,3 +85,65 @@ A Function deploying for the first time needs no special handling: the
 pre-deploy comparison reports it as not-yet-live and the strict post-batch
 check still requires it to be live when the run finishes. See
 [Introducing a new Function](../../docs/operations/production-deployment-controls.md#functions).
+
+## Local live resource-generation smoke test
+
+The resource worker has a synthetic live-provider rehearsal that does not use
+Firestore, Cloud Storage, uploaded files, or real student data. Add the relevant
+provider keys to the git-ignored
+`functions/.secret.local` file:
+
+```dotenv
+ANTHROPIC_API_KEY=your-local-anthropic-key
+OPENAI_API_KEY=your-local-openai-key
+```
+
+From `functions`, check the local secret without making an API
+request, then run the default Anthropic-outage rehearsal. The runner injects one
+529-style Opus failure, sends the complete synthetic job to GPT-5.6 Sol in a
+fresh attempt, opens the resulting DOCX through Mammoth, and writes the DOCX and
+a sanitized audit JSON file under the operating system's temporary directory.
+
+```sh
+npm run smoke:resources:live:preflight
+npm run smoke:resources:live
+```
+
+If the key is already provisioned in production Secret Manager, use the
+explicit option below instead of making a local copy. It reads only the
+required secret through the authenticated Firebase CLI, keeps it in memory,
+and does not print it:
+
+```sh
+npm run smoke:resources:live -- --firebase-secrets
+```
+
+Use `-- --scenario sol-direct`, `opus-direct`, or `sol-to-opus` to exercise the
+other routes. These commands call the real provider APIs and incur normal API
+usage, but they do not connect to any Firebase project.
+
+## Switching resource AI models (no deploy)
+
+Resource generation, the pre-generation chat and the public-domain source
+planner read their models from the Firestore doc `config/resourceModels`, with
+the code defaults in
+[`modelRegistry.js`](functions/src/resources/modelRegistry.js)
+for any field it doesn't set. To switch, create or edit that doc in the
+Firebase console (staging first). It takes effect within about a minute.
+
+| Field | Default | Must start with |
+|---|---|---|
+| `anthropic` | `claude-opus-5-5` | `claude-` (the "Claude" choice) |
+| `openai` | `gpt-6.1-sol` | `gpt-` (the "GPT" choice) |
+| `defaultChoice` | `openai` | `anthropic` or `openai` |
+| `chat` | `claude-sonnet-5-5` | `claude-` or `gpt-` |
+| `sourcePlanner` | `claude-sonnet-5` | `claude-` or `gpt-` |
+| `sourcePlannerFallback` | `gpt-5.6-terra` | `claude-` or `gpt-` |
+
+- A malformed value, or a choice set to a model from the other provider, is
+  ignored and logged (`[modelRegistry] ignored unusable model config fields`).
+- Queued and retried jobs pick up the new model; a resource already being
+  generated finishes on the model it started with. Each job records the exact
+  model it ran on.
+- To roll back, delete the field (or the whole doc).
+- To change the code defaults, edit `DEFAULT_MODELS` and redeploy.

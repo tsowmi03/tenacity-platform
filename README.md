@@ -1,258 +1,205 @@
 # Tenacity platform
 
-This private monorepo contains the Tenacity Tutoring mobile app, admin portal,
-public website, and the platform-owned Firebase source.
+Everything that runs Tenacity Tutoring, in one private monorepo: the mobile app
+used by parents, students and tutors, the two staff web portals, the public
+website, and the Firebase backend they all share. Every surface — including
+the App Store and Play Store releases — ships from here.
 
-## Migration status
+- **New here?** Read [What's in the repo](#whats-in-the-repo) and
+  [How it fits together](#how-it-fits-together), then
+  [Getting started](#getting-started) for the app you're touching.
+- **Shipping a change?** [Working in the repo](#working-in-the-repo) and
+  [Deploying](#deploying).
 
-Start a new migration session with the
-[current status and handoff](docs/migrations/current-status-and-handoff-2026.md).
-It records the merged phase commits, the production boundary, the remaining
-activation blockers, and the exact safe next sequence.
+## What's in the repo
 
-The history import completed on 21 July 2026. The imported histories are under
-`apps/`, and all 672 commits mapped during the import are reachable from the
-published main, feature, tag, or archive refs. See the
-[import record](docs/migrations/monorepo-import-2026.md) for the exact mapping
-and verification evidence. The
-[Phase 1 hardening record](docs/migrations/phase-1-hardening-2026.md) records
-the imported-path validation and remaining external gates. The
-[Phase 2 extraction record](docs/migrations/phase-2-firebase-extraction-2026.md)
-tracks the behavior-preserving Firebase move. The
-[Phase 3 controls record](docs/migrations/phase-3-ci-and-deployment-controls-2026.md)
-tracks active monorepo validation. The
-[Phase 3 activation-safeguards record](docs/migrations/phase-3-activation-safeguards-2026.md)
-tracks the repository-side Rules and index read-back controls and the remaining
-production-control gates, including evidence manifests and the separate Rules
-rollback design.
+| Path | What it is | Stack | Jira space |
+| --- | --- | --- | --- |
+| [`apps/mobile`](apps/mobile) | The Tenacity app for parents, students and tutors: timetable and class swaps, chat, announcements, invoices and Stripe payments, feedback, push notifications, plus admin tools on mobile | Flutter 3, Dart, pub | Mobile Application (`MOB`) |
+| [`apps/admin-portal`](apps/admin-portal) | Back-office web app at `admin.tenacitytutoring.com`: enrolments and waitlist, people, classes and attendance, terms, invoices, announcements, weekly parent updates, feedback, audit, reports | React + Vite, npm | Admin Web Portal (`AWP`) |
+| [`apps/resource-portal`](apps/resource-portal) | Teaching-resource generator at `resources.tenacitytutoring.com`: tutors and admins brief an AI, which produces worksheets and booklets as DOCX/PDF | React + Vite, npm | Resource Generator (`RES`) |
+| [`apps/website`](apps/website) | Public marketing site and the online enrolment flow, with its own API routes (registration, parent feedback, Year 11 interest, enquiry email, unsubscribe) | Next.js 15, Yarn 1 | Website (`WEB`) |
+| [`backend/firebase`](backend/firebase) | Cloud Functions, Firestore and Storage rules, Firestore indexes, Storage CORS, and the Functions inventory policy | Node.js 22, npm | Tenacity Platform (`TP`) |
+| [`scripts/ci`](scripts/ci) | CI helpers: change detection, deploy-surface resolution, Firebase config and Functions-inventory checks (with tests) | Node.js | Tenacity Platform |
+| [`scripts/firebase`](scripts/firebase) | Rules/index state and drift checks, deploy evidence, staging guards, provisioning scripts | Node.js, bash | Tenacity Platform |
+| [`docs`](docs) | Architecture decisions, integration notes, operations runbooks, migration records | Markdown | — |
+| [`.github/workflows`](.github/workflows) | Validation, production deploys and rollbacks, staging sync, drift checks | GitHub Actions | Tenacity Platform |
 
-The Phase 4 no-op production cutover is complete for the Firebase backend,
-admin Hosting, and public website. Those surfaces now release independently
-from this monorepo through guarded root workflows. Mobile and store releases
-were outside that cutover and remain owned by the existing mobile repository.
-The current state, completed execution records, and remaining cleanup work are
-maintained in the
-[current status and handoff](docs/migrations/current-status-and-handoff-2026.md).
+Root files:
 
-Production ownership is:
+- [`firebase.json`](firebase.json) / [`.firebaserc`](.firebaserc) — the only
+  deployable Firebase manifest. Defines the Functions source, rules, indexes,
+  the two Hosting targets (`admin-portal`, `resource-portal`) and emulator
+  ports. The `default` alias is production; `staging` is the staging project.
+- [`log.md`](log.md) — curated change log, newest first. Every piece of work
+  adds an entry.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md), [`AGENTS.md`](AGENTS.md),
+  [`CLAUDE.md`](CLAUDE.md) — contribution rules and instructions for AI agents.
+  Each app also has its own `CLAUDE.md`.
 
-| Surface | Current production owner |
+### Backend at a glance
+
+Functions live in [`backend/firebase/functions/src`](backend/firebase/functions/src),
+one folder per domain:
+
+| Domain | Covers |
 | --- | --- |
-| Mobile and store releases | [`tsowmi03/Tenacity`](https://github.com/tsowmi03/Tenacity) |
-| Cloud Functions, Firebase rules and indexes, and admin Hosting | This monorepo (`backend/firebase` and `apps/admin-portal`) |
-| Public website and Vercel | This monorepo (`apps/website`) |
+| `attendance`, `classes`, `terms`, `students`, `enrolments` | Timetable, roll marking, term calendar, class swaps, enrolment lifecycle |
+| `invoices`, `payments` | Invoicing, Stripe payments and one-off bookings, Xero |
+| `chats`, `notifications`, `email` | Messaging, FCM push, SendGrid email (welcome, weekly parent update) |
+| `resources` | AI resource generation (Anthropic and OpenAI), diagrams, maths rendering, DOCX/PDF building |
+| `calendar` | One-way Google Calendar timetable export |
+| `auth`, `users`, `audit`, `reports`, `shared` | Role claims, user management, audit trail, reporting, shared helpers |
 
-The root `validate.yml` workflow is validation-only. Production releases use
-the manual, exact-SHA workflows under `.github/workflows/`; each requires a
-deployment execution record, typed confirmation, successful validation, and a
-temporarily armed production environment. Deploy one surface at a time and
-restore its arming value to false after every attempt.
+The package entry point is `lib/index.js`. See
+[`backend/firebase/README.md`](backend/firebase/README.md) for why `lib` and
+`src` coexist, and the Functions inventory rules.
 
-The root `firebase.json` is the only deployable Firebase manifest. It maps the
-existing Hosting site to the explicit `admin-portal` target. The root
-`.firebaserc` keeps production as the default project and now includes an exact
-staging alias. `apps/mobile/firebase.json` contains FlutterFire client metadata
-only.
+## How it fits together
 
-`backend/firebase/deployment-targets.json` is the reviewed provider-identity
-policy for privileged Rules and index helpers. It contains separate exact
-production and staging project, Storage-bucket, and database bindings. The
-staging project, billing guardrail, Firestore database, and Firebase default
-Storage bucket are provisioned, and the three staging rehearsal workflows are
-active with federated identities; bootstrap and privileged rehearsal remain
-pending. See the
-[staging runbook](docs/operations/firebase-staging-rehearsal.md). The root
-Firebase files bind each project's `primary` Storage deploy target to its exact
-bucket so future CLI writes and Rules API read-back agree.
+```mermaid
+flowchart LR
+  subgraph Clients
+    M[Mobile app<br/>iOS · Android]
+    AP[Admin portal<br/>Firebase Hosting]
+    RP[Resource portal<br/>Firebase Hosting]
+    W[Website<br/>Vercel]
+  end
+  subgraph FB[Firebase project tenacity-tutoring-b8eb2]
+    AUTH[Auth + role claims]
+    FS[(Firestore)]
+    ST[(Storage)]
+    FN[Cloud Functions]
+  end
+  M & AP & RP --> AUTH & FS & ST & FN
+  W -->|enrolments, server routes| FS
+  FN --> EXT[Stripe · Xero · SendGrid · FCM<br/>Google Calendar · Anthropic · OpenAI]
+```
 
-## Current repository layout
+- **One Firebase project** (`tenacity-tutoring-b8eb2`) backs every app: shared
+  users, role claims, Firestore data, Storage and Functions.
+- The **admin and resource portals are separate apps** on separate Hosting
+  sites and origins. They share no code and no session — a test in each
+  enforces that.
+- The **website** is a Vercel project (`tenacity-tutoring-tqi9`) that writes
+  enrolments to Firestore through `firebase-admin`.
+- **Staging** is a second Firebase project, `tenacity-tutoring-staging`,
+  holding synthetic seeded data. See [Environments](#environments).
 
-| Path | Contents | Runtime and package manager |
+## Getting started
+
+There is no root workspace or root install. Work inside each app with its own
+package manager.
+
+| App | Prerequisites | Install and run | Local config |
+| --- | --- | --- | --- |
+| Mobile | Flutter 3.x, Xcode / Android Studio | `cd apps/mobile && flutter pub get && scripts/run.sh staging` | Tracked; `run.sh` picks the Firebase project |
+| Admin portal | Node.js 22 | `npm ci --prefix apps/admin-portal && npm --prefix apps/admin-portal run dev` | Untracked `apps/admin-portal/.env` with `VITE_FIREBASE_*` — see its [README](apps/admin-portal/README.md#environment-variables) |
+| Resource portal | Node.js 22 | `npm ci --prefix apps/resource-portal && npm --prefix apps/resource-portal run dev` | Untracked `apps/resource-portal/.env` — see its [README](apps/resource-portal/README.md#local-development) |
+| Website | Node.js, Yarn 1 | `cd apps/website && yarn install --frozen-lockfile && yarn dev` (port 3003) | Untracked `.env.local` — see [environment variables](apps/website/docs/environment-variables.md) |
+| Functions | Node.js 22, Firebase CLI | `npm ci --prefix backend/firebase/functions` | `backend/firebase/functions/.secret.local` for local secrets — see [backend README](backend/firebase/README.md) |
+
+Mobile always takes an explicit environment: `scripts/run.sh staging` or
+`scripts/run.sh prod`. It sets the build flavour and Dart environment together
+so they can't disagree. Don't rerun `flutterfire configure` unless the Firebase
+client config is meant to change.
+
+## Environments
+
+| | Staging | Production |
 | --- | --- | --- |
-| `apps/mobile` | Flutter client for parents, tutors, students, and mobile admin workflows | Flutter 3.x, Dart `^3.5.3`, pub |
-| `apps/admin-portal` | React/Vite back-office UI | Node.js, npm lockfile |
-| `apps/website` | Next.js public website, enrolment flow, and application-specific server routes | Next.js 15, Yarn 1 |
-| `backend/firebase` | Functions, rules, indexes, Storage CORS source, and platform operations | Node.js 22 for Functions, npm lockfile |
-| `docs/migrations` | Import and cutover records | Markdown |
+| Firebase project | `tenacity-tutoring-staging` | `tenacity-tutoring-b8eb2` |
+| Data | Synthetic, from `npm --prefix backend/firebase/functions run seed:staging`; term calendar synced nightly from production | Real users, real payments |
+| Rules | Synced automatically on every merge that touches them | Deployed by dispatch, and only once staging already serves them |
+| Used by | Mobile (`run.sh staging`); seeded accounts for testing | Everything live |
 
-Production workflow gates and rollback requirements are defined in the
-[deployment-control runbook](docs/operations/production-deployment-controls.md).
+> **Local runs can write to production.** The portals and website use whatever
+> Firebase config is in their local env file, and none of them connect to
+> emulators automatically. A mutating flow against production config writes
+> real data, calls real Functions, and can send email or start a payment. Use
+> staging, the emulators, or an approved test method for anything that writes.
 
-## Local development
+Runbooks: [mobile staging](docs/operations/mobile-staging-environment.md) ·
+[Firebase staging rehearsal](docs/operations/firebase-staging-rehearsal.md).
 
-There is no root workspace manifest or root orchestration command. Run commands
-inside the relevant application and keep its current package manager.
+## Testing and validation
 
-> Local runtime safety: the tracked clients target the production Firebase
-> project, and the applications do not automatically connect to emulators.
-> Running a mutating flow with production configuration can write Firestore,
-> call production Functions, submit an enrolment, send email, or start a payment
-> flow. Use emulators or an explicitly approved test method before exercising a
-> mutation.
-
-### Mobile
-
-```bash
-cd apps/mobile
-flutter pub get
-flutter run
-```
-
-The tracked FlutterFire configuration already targets
-`tenacity-tutoring-b8eb2`. Do not rerun `flutterfire configure` unless the
-Firebase client configuration is intentionally changing.
-
-### Admin portal and Firebase Functions
-
-Use Node.js 22 for backend work.
-
-```bash
-npm ci --prefix apps/admin-portal
-npm ci --prefix backend/firebase/functions
-npm --prefix apps/admin-portal run dev
-```
-
-The portal requires an ignored local `.env` with its `VITE_FIREBASE_*` client
-configuration. Required names are `VITE_FIREBASE_API_KEY`,
-`VITE_FIREBASE_AUTH_DOMAIN`, and `VITE_FIREBASE_PROJECT_ID`. The storage bucket,
-messaging sender ID, and app ID variants are optional in the current source.
-Secret values must remain outside Git.
-
-The portal and Functions packages retain separate npm lockfiles. The Functions
-runtime and lock metadata require Node.js 22. Package-manager consolidation is
-outside the structural migration.
-
-### Public website
-
-```bash
-cd apps/website
-yarn install --frozen-lockfile
-yarn dev
-```
-
-The local development server uses port 3003. The website requires an ignored
-`.env.local`. Current source may require the six `NEXT_PUBLIC_FIREBASE_*` client
-values, `FIREBASE_SERVICE_ACCOUNT_JSON` or Application Default Credentials,
-`NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`, `SENDGRID_API_KEY`,
-`SENDER_EMAIL`, and the source-spelled `RECIEVER_EMAIL`. Secret values must
-remain outside Git.
-
-The tracked `apps/website/vercel.json` disables automatic production aliasing,
-but it does not change the provider-side binding. The canonical production
-project is `tenacity-tutoring-tqi9`; the similarly named
-`tenacity-tutoring` project has Vercel aliases only. Do not rebind either before
-the reviewed cutover.
-
-## Validation commands
-
-Run the checks for every affected area. Emulator checks also require the
-Firebase CLI and its emulator prerequisites.
+`Validate platform` ([`validate.yml`](.github/workflows/validate.yml)) runs on
+every PR and push to `main`, running only the jobs for areas that changed.
+Locally, run the checks for each area you touched:
 
 | Area | Commands |
 | --- | --- |
-| CI controls | From the root: `node --test scripts/ci/test/*.test.mjs`; `node scripts/ci/check-functions-inventory.mjs`; `node scripts/ci/validate-firebase-config.mjs` |
-| Mobile | From `apps/mobile`: `dart format --output=none --set-exit-if-changed lib test`; `flutter analyze --no-fatal-infos`; `flutter test`; `flutter build web` |
-| Admin portal | From the root: `npm --prefix apps/admin-portal test`; `node --test apps/admin-portal/test/enrolmentEditPayload.test.mjs`; `npm --prefix apps/admin-portal run build`; `npm --prefix apps/admin-portal run test:rules` when rules are affected |
-| Firebase Functions | From the root: `npm --prefix backend/firebase/functions test`; `npm --prefix backend/firebase/functions run smoke`; `npm --prefix backend/firebase/functions run test:emulator` when integration behavior is affected |
-| Public website | From `apps/website`: `yarn lint`; `yarn build` |
+| CI scripts | From the root: `node --test scripts/ci/test/*.test.mjs` · `node scripts/ci/check-functions-inventory.mjs` · `node scripts/ci/validate-firebase-config.mjs` |
+| Mobile | From `apps/mobile`: `dart format --output=none --set-exit-if-changed lib test` · `flutter analyze --no-fatal-infos` · `flutter test` |
+| Admin portal | `npm --prefix apps/admin-portal test` · `npm --prefix apps/admin-portal run build` · `npm --prefix apps/admin-portal run test:rules` when rules change |
+| Resource portal | `npm --prefix apps/resource-portal test` · `npm --prefix apps/resource-portal run build` |
+| Functions | `npm --prefix backend/firebase/functions test` · `npm --prefix backend/firebase/functions run smoke` · `npm --prefix backend/firebase/functions run test:emulator` when integration behaviour changes |
+| Website | From `apps/website`: `yarn lint` · `yarn build` |
 
-### Local live resource-generation smoke test
+The emulator suites (`test:rules`, `test:emulator`) need the Firebase CLI, use
+isolated `demo-*` project IDs, and share port 8080, so run them one at a time.
+The admin portal has no lint script and the website has no test script.
 
-The resource worker has a synthetic live-provider rehearsal that does not use
-Firestore, Cloud Storage, uploaded files, or real student data. Add the relevant
-provider keys to the git-ignored
-`backend/firebase/functions/.secret.local` file:
+## Deploying
 
-```dotenv
-ANTHROPIC_API_KEY=your-local-anthropic-key
-OPENAI_API_KEY=your-local-openai-key
+```mermaid
+flowchart LR
+  PR[PR merged to main] --> V{Validate platform<br/>passes?}
+  V -->|frontend-only change| AUTO[Auto-deploy that app<br/>admin · resource portal · website]
+  V -->|backend changed| D[Dispatch 'Deploy to production'<br/>SHA + confirmation]
+  D --> O[indexes → rules → functions → portals → website]
+  PR -->|rules changed| S[Rules synced to staging]
 ```
 
-From `backend/firebase/functions`, check the local secret without making an API
-request, then run the default Anthropic-outage rehearsal. The runner injects one
-529-style Opus failure, sends the complete synthetic job to GPT-5.6 Sol in a
-fresh attempt, opens the resulting DOCX through Mammoth, and writes the DOCX and
-a sanitized audit JSON file under the operating system's temporary directory.
+| Surface | How it reaches production |
+| --- | --- |
+| Admin portal, resource portal, website | **Automatically** once `Validate platform` passes on `main`, if that app changed and the commit didn't touch the backend |
+| Firestore indexes, rules, Cloud Functions | **Manual dispatch** of [`production-deploy.yml`](.github/workflows/production-deploy.yml) with the `main` SHA. It deploys what the commit changed, in dependency order |
+| Mobile | **By hand:** bump `apps/mobile/pubspec.yaml`, run `flutter build ios --config-only`, archive in Xcode (untick *Manage Version and Build Number*), and submit to the stores |
 
-```sh
-npm run smoke:resources:live:preflight
-npm run smoke:resources:live
-```
+Things worth knowing before you dispatch:
 
-If the key is already provisioned in production Secret Manager, use the
-explicit option below instead of making a local copy. It reads only the
-required secret through the authenticated Firebase CLI, keeps it in memory,
-and does not print it:
+- The deploy resolves surfaces from the **last commit on `main`** and must be
+  dispatched with `main`'s current HEAD. Land each change as one squashed PR
+  that includes its log entry, so nothing lands between merge and deploy.
+- Every production run opens and closes a deploy-record issue automatically.
+- Rollback workflows exist for each portal's Hosting, for rules, and for the
+  website. Functions roll back by redeploying the previous source; indexes
+  are additive and are not rolled back.
 
-```sh
-npm run smoke:resources:live -- --firebase-secrets
-```
+Full controls, abort conditions and rollback steps:
+[production deployment runbook](docs/operations/production-deployment-controls.md).
 
-Use `-- --scenario sol-direct`, `opus-direct`, or `sol-to-opus` to exercise the
-other routes. These commands call the real provider APIs and incur normal API
-usage, but they do not connect to any Firebase project.
+## Working in the repo
 
-### Switching resource AI models (no deploy)
+- **Branch from `main`, merge by PR.** `main` is protected; PRs are
+  squash-merged. Use a prefix such as `feature/`, `fix/` or `docs/` plus the
+  Jira key (e.g. `fix/res-31-maths-rendering`).
+- **Name the Jira ticket** in the branch, commits and PR title, using the
+  space in the table [above](#whats-in-the-repo). Cross-cutting work goes in
+  Tenacity Platform (`TP`).
+- **Update [`log.md`](log.md)** in the same PR: one entry per task, newest at
+  the top, with the Index row.
+- **Keep data changes additive.** Released mobile clients read the same
+  Firestore, so readers stay tolerant until every client has the new contract.
+- **Never deploy Firebase from an app directory** or with a bare
+  `firebase deploy`. Production goes through the workflows above. Never touch
+  the legacy `generateXeroAuthUrl` / `xeroOAuthCallback` Functions; this
+  package doesn't own them.
+- Ownership is documented in [`.github/CODEOWNERS`](.github/CODEOWNERS); the
+  review and validation expectations are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Resource generation, the pre-generation chat and the public-domain source
-planner read their models from the Firestore doc `config/resourceModels`, with
-the code defaults in
-[`modelRegistry.js`](backend/firebase/functions/src/resources/modelRegistry.js)
-for any field it doesn't set. To switch, create or edit that doc in the
-Firebase console (staging first). It takes effect within about a minute.
+## Docs index
 
-| Field | Default | Must start with |
-|---|---|---|
-| `anthropic` | `claude-opus-5-5` | `claude-` (the "Claude" choice) |
-| `openai` | `gpt-6.1-sol` | `gpt-` (the "GPT" choice) |
-| `defaultChoice` | `openai` | `anthropic` or `openai` |
-| `chat` | `claude-sonnet-5-5` | `claude-` or `gpt-` |
-| `sourcePlanner` | `claude-sonnet-5` | `claude-` or `gpt-` |
-| `sourcePlannerFallback` | `gpt-5.6-terra` | `claude-` or `gpt-` |
-
-- A malformed value, or a choice set to a model from the other provider, is
-  ignored and logged (`[modelRegistry] ignored unusable model config fields`).
-- Queued and retried jobs pick up the new model; a resource already being
-  generated finishes on the model it started with. Each job records the exact
-  model it ran on.
-- To roll back, delete the field (or the whole doc).
-- To change the code defaults, edit `DEFAULT_MODELS` and redeploy.
-
-The portal currently has no lint script. The website currently has no automated
-test script. Preserve those facts during the structural migration; tooling
-changes belong in separate reviewed work.
-
-## Contribution and ownership
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing shared platform paths.
-Ownership is declared in [`.github/CODEOWNERS`](.github/CODEOWNERS), and every
-change to `main` is PR-only by repository policy.
-
-On the current GitHub plan, CODEOWNERS is ownership documentation only. GitHub
-automatic review requests and required code-owner review become available only
-after private-repository protection is supported and this file exists on the
-pull request's base branch.
-
-The repository uses GitHub Pro with solo Stage A protection enforced on
-`main`, and the protected `tenacity-staging` environment restricts deployments
-to protected branches. Staging authentication is keyless workload identity
-federation; no service-account key exists, and the organization policy forbids
-creating one. Independent review is deferred until a second maintainer exists.
-The active settings and gates are recorded in the
-[branch-protection runbook](docs/operations/github-branch-protection.md) and
-[deployment-control runbook](docs/operations/production-deployment-controls.md).
-
-## Migration safety rules
-
-- Keep structural moves separate from behavior and schema changes.
-- Run local Firebase validation commands from the repository root with the
-  reviewed root manifest.
-- Any authorized Hosting deploy must use the guarded admin Hosting workflow,
-  which targets `hosting:admin-portal`; never use a bare Hosting deploy.
-- Do not use `firebase deploy --force` during the migration.
-- Preserve `generateXeroAuthUrl` and `xeroOAuthCallback`; their source is not in
-  the managed portal export set.
-- Keep application readers tolerant and data changes additive until released
-  clients have adopted a new contract.
-- Treat the original repositories and the three pre-monorepo tags as rollback
-  references until the archive gate is passed.
+| Doc | What it covers |
+| --- | --- |
+| [Production deployment](docs/operations/production-deployment-controls.md) | Auto-deploy rules, the orchestrator, per-surface controls, rollback |
+| [Solo production authorization](docs/operations/solo-production-authorization.md) | How production changes are authorised while one person maintains the repo |
+| [Branch protection](docs/operations/github-branch-protection.md) | `main` protection and environment settings |
+| [Mobile staging](docs/operations/mobile-staging-environment.md) | Staging project, seeding, running the app against it |
+| [Firebase staging rehearsal](docs/operations/firebase-staging-rehearsal.md) | Rules and index rehearsals on staging |
+| [Backend README](backend/firebase/README.md) | Functions package, inventory, AI model switching, live resource smoke test |
+| [Google Calendar export](docs/integrations/google-calendar-export.md) | One-way timetable sync to Google Calendar |
+| [ADR-001](docs/architecture/ADR-001-monorepo-and-backend-ownership.md) | Why this is a monorepo and who owns the backend |
+| [Migration records](docs/migrations) | The 2026 move from three repos into this one (historical) |

@@ -3,9 +3,8 @@
 Tenacity Tutoring is a cross-platform Flutter application backed by Firebase.
 It provides features for students, tutors and parents such as chat,
 announcements, timetable management and invoice payments. The app calls
-deployed Firebase services. Canonical backend source now lives under
-`../../backend/firebase`; the original portal repository remains the production
-deployment owner until cutover.
+deployed Firebase services. Backend source lives under
+`../../backend/firebase`, and store releases ship from this monorepo.
 
 ## Features
 
