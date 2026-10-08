@@ -61,6 +61,7 @@ const LATEX_COMMANDS = new Set([
   "operatorname", "overline", "underline", "hat", "widehat", "tilde",
   "widetilde", "vec", "bar", "dot", "ddot", "breve", "check", "acute",
   "grave", "boxed", "overbrace", "underbrace", "overrightarrow", "overleftarrow",
+  "overset", "underset", "stackrel", "cancel", "bcancel", "xcancel",
   // --- Spacing / punctuation ---
   "quad", "qquad", "thinspace", "negthinspace", "ldots", "cdots", "dots",
   "vdots", "ddots", "left", "right", "big", "Big", "bigg", "Bigg",
@@ -93,8 +94,11 @@ const LATEX_COMMANDS = new Set([
   "arg", "Pr", "hom",
   // --- Delimiters / misc ---
   "langle", "rangle", "lceil", "rceil", "lfloor", "rfloor", "lbrace",
-  "rbrace", "lbrack", "rbrack", "vert", "Vert", "lvert", "rvert", "backslash", "prime",
+  "rbrace", "lbrack", "rbrack", "vert", "Vert", "lvert", "rvert", "lVert", "rVert",
+  "backslash", "prime", "colon",
   "degree", "circledast", "flat", "sharp", "natural", "frown", "smile",
+  // --- Negated relations / letter-like symbols ---
+  "nleq", "ngeq", "nless", "ngtr", "ell", "hbar", "aleph", "checkmark",
 ]);
 
 const EMPTY_COMMANDS = new Set();

@@ -27,25 +27,52 @@ const BRACE_CONTENT = String.raw`[^{}]*(?:\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*
 // Up to three levels of nested parentheses: ((x+1)^2)^3, (2(x+1))^2.
 const PAREN = String.raw`\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)`;
 const LETTER = "A-Za-zα-ωΑ-Ω";
+// Set braces. LaTeX braces group, so a literal { } must not reach the
+// parser as one: \{1, 2\} and a bare {1, 2, 3} after "=" are carried as these
+// two private-use characters and turned back into braces only when the text
+// is written out (restoreBraces).
+const SET_OPEN = "\uE000";
+const SET_CLOSE = "\uE001";
+const SET_LITERAL = String.raw`\uE000[^\uE000\uE001]*\uE001`;
+
+function restoreBraces(value) {
+  return String(value ?? "").replace(/\uE000/g, "{").replace(/\uE001/g, "}");
+}
+
+// Combining marks (x̄, 0.3̇, Â, v⃗) belong to the character before them, so
+// every term pattern lets them follow a letter or digit; otherwise a span
+// would end between x and its bar and Word would draw the bar on nothing.
+const MARKS = String.raw`\u0300-\u036F\u20D0-\u20FF`;
+const NUM = String.raw`\d[\d${MARKS}]*(?:\.\d[\d${MARKS}]*)?`;
+const WORD_TAIL = String.raw`[A-Za-z0-9${MARKS}]*`;
+// Big operators take limits as scripts: ∫_{0}^{1}, ⋃_{i}, Σ_{k=1}^{n}.
+const BIG_OPS = "∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆";
 // A script argument may follow a space only when it is a number, a braced
 // group or a bracket: "x^ 2" is x², but "x^ when" is a dangling caret before
 // a word, not x to the power w followed by "hen".
 const SPACED_SCRIPT_ARG = String.raw`(?:\{${BRACE_CONTENT}\}|${PAREN}|[-−+]?\d+(?:\.\d+)?)`;
 const ADJACENT_SCRIPT_ARG = String.raw`(?:[-−+]?[${LETTER}]|\\[A-Za-z]+(?:\s*\{${BRACE_CONTENT}\}){0,2})`;
 // One ^ or _ with its argument.
-const SCRIPT = String.raw`(?:\s*[\^_](?:\s*${SPACED_SCRIPT_ARG}|${ADJACENT_SCRIPT_ARG}))`;
+// A caret after a space is still a script (x ^2), unless what follows is a
+// pre-script on the next letter: "and ^{n}C_{r}" is not "and" to the n.
+const PRESCRIPT_AHEAD = String.raw`\{[^{}]*\}(?:[\^_]\{[^{}]*\})?[A-Za-z]`;
+const SCRIPT = String.raw`(?:(?:[\^_]|\s+[\^_](?!${PRESCRIPT_AHEAD}))(?:\s*${SPACED_SCRIPT_ARG}|${ADJACENT_SCRIPT_ARG}))`;
 // Scripts interleaved with the letters that follow them, so m^3n^4 and H_2SO_4
 // are one term rather than a term plus orphaned scripts.
-const SCRIPTED = String.raw`(?:${SCRIPT}[A-Za-z0-9]*)*`;
+const SCRIPTED = String.raw`(?:${SCRIPT}${WORD_TAIL})*`;
 // A base carrying at least one script: x^2, (x+1)^{3}, H_2O, 10^{-3}.
-const SCRIPT_TERM = String.raw`(?:${PAREN}|[${LETTER}][A-Za-z0-9]*|\d+(?:\.\d+)?)(?:${SCRIPT}[A-Za-z0-9]*)+`;
+// A pre-script term: ⁿCᵣ written {}^{n}C_{r} or ^{5}P_{2}.
+const PRESCRIPT_TERM = String.raw`(?:\{\})?(?:[\^_]\{[^{}]*\})+[A-Za-z](?:${SCRIPT}${WORD_TAIL})*`;
+// A whole LaTeX environment (cases, pmatrix ...) is one term.
+const ENV_TERM = String.raw`\\begin\{[A-Za-z]+\*?\}(?:(?!\\end\{)[\s\S])*\\end\{[A-Za-z]+\*?\}`;
+const SCRIPT_TERM = String.raw`(?:${PRESCRIPT_TERM}|(?:${PAREN}|[${LETTER}]${WORD_TAIL}|[${BIG_OPS}]|${NUM})(?:${SCRIPT}${WORD_TAIL})+)`;
 
 // Anything that should have become maths but is still raw: a script between
 // two tokens, a dangling script with nothing after it ("x^", "x_ ="), or a
 // LaTeX command. Blanks ("x = ____", "x____") are not matched: a dangling
 // underscore must touch its base and not be followed by another underscore.
 // The readable fallback form x^(n+1) is not matched either.
-const RAW_MATH_MARKER = /\\[A-Za-z]+|[A-Za-z0-9α-ωΑ-Ω)\]}]\s*[\^_](?:\s*[{\d]|\s*[-−+]\d|[A-Za-zα-ωΑ-Ω\-−+\\])|[A-Za-z0-9α-ωΑ-Ω)\]}]\s*\^(?=\s*(?:$|[\s.,;:!?=<>)\]]))|[A-Za-z0-9α-ωΑ-Ω)\]}]_(?=$|[\s.,;:!?=<>)\]])/;
+const RAW_MATH_MARKER = /\\[A-Za-z]+|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]\s*[\^_](?:\s*[{\d]|\s*[-−+]\d|[A-Za-zα-ωΑ-Ω\-−+\\])|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]\s*\^(?=\s*(?:$|[\s.,;:!?=<>)\]]))|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]_(?=$|[\s.,;:!?=<>)\]])/;
 
 // Identifiers such as file_name are prose, not a subscript.
 const SNAKE_CASE_IDENTIFIER = /\b[A-Za-z]{3,}(?:_[A-Za-z0-9]+)+\b/g;
@@ -77,75 +104,178 @@ const SYMBOL_COMMANDS = {
   zeta: "ζ", eta: "η", theta: "θ", vartheta: "ϑ", iota: "ι", kappa: "κ",
   lambda: "λ", mu: "μ", nu: "ν", xi: "ξ", pi: "π", rho: "ρ", sigma: "σ",
   tau: "τ", upsilon: "υ", phi: "φ", varphi: "φ", chi: "χ", psi: "ψ", omega: "ω",
+  varpi: "ϖ", varrho: "ϱ", varsigma: "ς",
   Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ", Pi: "Π",
-  Sigma: "Σ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
+  Sigma: "Σ", Upsilon: "Υ", Phi: "Φ", Psi: "Ψ", Omega: "Ω",
+  ell: "ℓ", hbar: "ℏ", aleph: "ℵ",
   // Operators and relations
-  pm: "±", mp: "∓", times: "×", div: "÷", cdot: "·", ast: "*",
-  approx: "≈", leq: "≤", geq: "≥", le: "≤", ge: "≥", neq: "≠", ne: "≠",
+  pm: "±", mp: "∓", times: "×", div: "÷", cdot: "·", ast: "*", star: "⋆",
+  bullet: "•", oplus: "⊕", ominus: "⊖", otimes: "⊗", oslash: "⊘", odot: "⊙",
+  circledast: "⊛",
+  approx: "≈", approxeq: "≊", leq: "≤", geq: "≥", le: "≤", ge: "≥",
+  leqslant: "⩽", geqslant: "⩾", nleq: "≰", ngeq: "≱", nless: "≮", ngtr: "≯",
+  ll: "≪", gg: "≫", neq: "≠", ne: "≠",
   lt: "<", gt: ">", equiv: "≡", cong: "≅", sim: "~", simeq: "≃",
-  propto: "∝", perp: "⊥", parallel: "∥", mid: "|",
+  doteq: "≐", triangleq: "≜",
+  propto: "∝", perp: "⊥", parallel: "∥", nparallel: "∦", mid: "|", nmid: "∤",
+  colon: ":",
   infty: "∞", partial: "∂", nabla: "∇", circ: "∘", degree: "°", prime: "′",
-  angle: "∠", triangle: "△", square: "□",
-  sum: "Σ", prod: "Π", int: "∫",
+  angle: "∠", measuredangle: "∡", triangle: "△", square: "□", checkmark: "✓",
+  top: "⊤", bot: "⊥", flat: "♭", sharp: "♯", natural: "♮", frown: "⌢", smile: "⌣",
+  sum: "Σ", prod: "Π", coprod: "∐", int: "∫", iint: "∬", iiint: "∭", oint: "∮",
+  bigoplus: "⨁", bigotimes: "⨂", bigodot: "⨀", biguplus: "⨄", bigsqcup: "⨆",
   // Arrows and logic
   rightarrow: "→", to: "→", leftarrow: "←", gets: "←", Rightarrow: "⇒",
   Leftarrow: "⇐", Leftrightarrow: "⇔", leftrightarrow: "↔", implies: "⇒",
-  iff: "⇔", therefore: "∴", because: "∵", neg: "¬", land: "∧", lor: "∨",
-  forall: "∀", exists: "∃",
+  longrightarrow: "⟶", longleftarrow: "⟵", mapsto: "↦",
+  uparrow: "↑", downarrow: "↓", updownarrow: "↕",
+  nearrow: "↗", nwarrow: "↖", searrow: "↘", swarrow: "↙",
+  rightleftharpoons: "⇌", hookrightarrow: "↪", hookleftarrow: "↩",
+  iff: "⇔", therefore: "∴", because: "∵", neg: "¬", lnot: "¬", land: "∧",
+  lor: "∨", wedge: "∧", vee: "∨", bigwedge: "⋀", bigvee: "⋁",
+  forall: "∀", exists: "∃", nexists: "∄", models: "⊨", vdash: "⊢", dashv: "⊣",
   // Sets
-  in: "∈", notin: "∉", subset: "⊂", subseteq: "⊆", supset: "⊃",
-  supseteq: "⊇", cup: "∪", cap: "∩", emptyset: "∅", varnothing: "∅",
-  setminus: "∖",
+  in: "∈", notin: "∉", ni: "∋", subset: "⊂", subseteq: "⊆", subsetneq: "⊊",
+  nsubseteq: "⊈", supset: "⊃", supseteq: "⊇", supsetneq: "⊋",
+  cup: "∪", cap: "∩", bigcup: "⋃", bigcap: "⋂", emptyset: "∅", varnothing: "∅",
+  setminus: "∖", backslash: "∖", complement: "∁",
   // Brackets
   langle: "⟨", rangle: "⟩", lfloor: "⌊", rfloor: "⌋", lceil: "⌈", rceil: "⌉",
-  vert: "|", lvert: "|", rvert: "|",
+  lbrack: "[", rbrack: "]",
+  vert: "|", lvert: "|", rvert: "|", Vert: "‖", lVert: "‖", rVert: "‖",
   // Dots
-  ldots: "...", cdots: "...", dots: "...", vdots: "...",
+  ldots: "...", cdots: "...", dots: "...", vdots: "...", ddots: "...",
   // Named functions render as their plain names
   sin: "sin", cos: "cos", tan: "tan", cot: "cot", sec: "sec", csc: "csc",
   arcsin: "arcsin", arccos: "arccos", arctan: "arctan",
   sinh: "sinh", cosh: "cosh", tanh: "tanh",
-  log: "log", ln: "ln", exp: "exp", lim: "lim", min: "min", max: "max",
-  det: "det", gcd: "gcd",
+  log: "log", lg: "lg", ln: "ln", exp: "exp", lim: "lim", limsup: "lim sup",
+  liminf: "lim inf", sup: "sup", inf: "inf", min: "min", max: "max",
+  det: "det", dim: "dim", ker: "ker", deg: "deg", gcd: "gcd", arg: "arg",
+  Pr: "Pr", hom: "hom",
 };
 
+// Commands whose next brace group is their argument, never a set.
+const ARGUMENT_COMMANDS = [
+  "frac", "dfrac", "tfrac", "cfrac", "sqrt", "binom", "dbinom", "tbinom", "begin", "end",
+  "text", "textrm", "textit", "textbf", "textsf", "texttt", "mathrm", "mathbf", "mathit", "mathsf",
+  "mathtt", "mathcal", "mathfrak", "mathbb", "operatorname", "boxed", "overset", "underset", "stackrel",
+  "cancel", "bcancel", "xcancel", "underbrace", "overbrace",
+  "bar", "overline", "underline", "dot", "ddot", "hat", "widehat", "tilde", "widetilde",
+  "check", "breve", "acute", "grave", "vec", "overrightarrow", "overleftarrow",
+];
+
+// Layout-only commands with no visible output of their own.
+const IGNORED_COMMANDS = ["displaystyle", "limits", "nolimits", "thinspace", "negthinspace"];
+
 const BLACKBOARD = { R: "ℝ", N: "ℕ", Z: "ℤ", Q: "ℚ", C: "ℂ" };
+
+// Accent commands → the combining mark drawn over (or under) each character.
+const ACCENTS = {
+  bar: "\u0304", overline: "\u0305", underline: "\u0332",
+  dot: "\u0307", ddot: "\u0308",
+  hat: "\u0302", widehat: "\u0302", tilde: "\u0303", widetilde: "\u0303",
+  check: "\u030C", breve: "\u0306", acute: "\u0301", grave: "\u0300",
+  vec: "\u20D7", overrightarrow: "\u20D7", overleftarrow: "\u20D6",
+};
+
+function accentText(inner, mark) {
+  const text = String(inner).trim();
+  // A bar over a run of characters is an overline, so it joins up.
+  const perChar = mark === "\u0304" && [...text].length > 1 ? "\u0305" : mark;
+  return text.replace(/[\p{L}\p{N}]/gu, (ch) => ch + perChar);
+}
 
 // Every command name the renderer understands. aiJsonRepair's LATEX_COMMANDS
 // must contain all of these (a drift-guard test checks), or JSON repair can
 // turn \theta into a tab plus "heta" before the text ever reaches here.
 const LATEX_VOCABULARY = Object.keys(SYMBOL_COMMANDS);
 
+// A command name ends at the first non-letter. \b is not enough: "_" is a
+// word character, so \b never fires in \sum_{k=1} or \log_2 and the command
+// would reach the document with its backslash.
+const END = "(?![A-Za-z])";
+
 function normaliseLaTeXCommands(value) {
   return String(value ?? "")
     // --- Fraction variants → canonical \frac (must run before token detection) ---
-    .replace(/\\[dtc]frac\b/g, "\\frac")
-    // --- Display-mode modifier → strip ---
-    .replace(/\\displaystyle\b\s*/g, "")
+    .replace(new RegExp(String.raw`\\[dtc]frac${END}`, "g"), "\\frac")
+    // \binom{n}{r} → ⁿCᵣ, the notation NSW uses for combinations.
+    .replace(new RegExp(String.raw`\\[dt]?binom${END}\s*\{([^{}]*)\}\s*\{([^{}]*)\}`, "g"), "{}^{$1}C_{$2}")
+    // Escaped blanks \_\_\_ → ___.
+    .replace(/(?:\\_){2,}/g, (run) => "_".repeat(run.length / 2))
+    // \frac12 → \frac{1}{2}: the span detector only recognises braced fractions.
+    .replace(/\\frac\s*(\d)\s*(\d)/g, "\\frac{$1}{$2}")
+    // --- Layout-only commands → strip ---
+    .replace(new RegExp(String.raw`\\(?:${IGNORED_COMMANDS.join("|")})${END}\s*`, "g"), "")
     // --- Degrees: 90^\circ, 90^{\circ}, 90\degree → 90° (must run before \circ) ---
     .replace(/\s*\^\s*\{\s*\\circ\s*\}/g, "°")
-    .replace(/\s*\^\s*\\circ\b/g, "°")
+    .replace(new RegExp(String.raw`\s*\^\s*\\circ${END}`, "g"), "°")
     // --- Number sets: \mathbb{R} → ℝ ---
     .replace(/\\mathbb\s*\{\s*([RNZQC])\s*\}/g, (_, letter) => BLACKBOARD[letter])
     // --- Font/style wrappers → extract inner content ---
     // e.g. \text{cm}, \mathrm{sin}, \mathbf{x}, \operatorname{log}
-    .replace(/\\(?:text|textrm|textit|textbf|mathrm|mathbf|mathit|mathsf|mathtt|mathcal|operatorname|boxed)\s*\{([^{}]*)\}/g, "$1")
-    // --- Decoration wrappers → extract inner content ---
-    // e.g. \overline{AB}, \hat{x}, \vec{v}, \overrightarrow{AB}
-    .replace(/\\(?:overline|underline|overrightarrow|overleftarrow|hat|tilde|vec|bar|dot|ddot|widehat|widetilde)\s*\{([^{}]*)\}/g, "$1")
+    .replace(/\\(?:text|textrm|textit|textbf|textsf|texttt|mathrm|mathbf|mathit|mathsf|mathtt|mathcal|mathfrak|operatorname|boxed)\s*\{([^{}]*)\}/g, "$1")
+    // --- Accents → combining marks on each letter/digit: \bar{x} → x̄,
+    // 0.\dot{3} → 0.3̇, \overline{AB} → A̅B̅. Dropping them changes the maths
+    // (a recurring decimal, a mean, a complement).
+    .replace(new RegExp(String.raw`\\(${Object.keys(ACCENTS).join("|")})${END}\s*(?:\{([^{}]*)\}|([A-Za-z0-9]))`, "g"),
+      (_, name, braced, single) => accentText(braced ?? single, ACCENTS[name]))
+    // Arc over two points: \overset{\frown}{AB} → A͡B. Any other \overset
+    // keeps its base.
+    .replace(/\\overset\s*\{\s*\\frown\s*\}\s*\{\s*([A-Za-z])\s*([A-Za-z])\s*\}/g, "$1\u0361$2")
+    .replace(/\\(?:overset|underset|stackrel)\s*\{[^{}]*\}\s*\{([^{}]*)\}/g, "$1")
+    // Struck-through working: \cancel{x} → x̶.
+    .replace(/\\(?:cancel|bcancel|xcancel)\s*\{([^{}]*)\}/g, (_, inner) => accentText(inner, "\u0336"))
+    // Braces with a label: keep the expression, drop the label.
+    .replace(/\\(?:underbrace|overbrace)\s*\{([^{}]*)\}\s*(?:[_^]\s*\{[^{}]*\})?/g, "$1")
     // --- Spacing commands → single space ---
-    .replace(/\\(?:qquad|quad)\b/g, " ")
+    .replace(new RegExp(String.raw`\\(?:qquad|quad)${END}`, "g"), " ")
     .replace(/\\[,;:!]\s*/g, " ")
     // --- Size qualifiers → strip keyword, keep delimiter ---
-    .replace(/\\(?:left|right|big|Big|bigg|Bigg)\b\s*/g, "")
+    .replace(new RegExp(String.raw`\\(?:left|right|big|Big|bigg|Bigg)${END}\s*`, "g"), "")
+    // --- Set braces: \{...\}, \lbrace ... \rbrace, and a bare {...} that
+    // opens after a space, =, ( or a set operator (a LaTeX group never does;
+    // it follows ^, _, a command or another group). {} stays an empty group.
+    // An argument group may follow its command after a space (\frac {1} {2},
+    // \sqrt {4}, x^ {2}, \begin {cases}). Join them first, so the space does
+    // not make the group look like a set opening after a space.
+    .replace(new RegExp(String.raw`(\\(?:${ARGUMENT_COMMANDS.join("|")})${END}|\\sqrt\s*\[[^\]]*\]|[\^_}])\s+(?=\{)`, "g"), "$1")
+    .replace(new RegExp(String.raw`\\(?:\{|lbrace${END})`, "g"), SET_OPEN)
+    .replace(new RegExp(String.raw`\\(?:\}|rbrace${END})`, "g"), SET_CLOSE)
+    .replace(/(^|[\s=(,:∈∉∪∩⊂⊆])\{(?!\})([^{}]*)\}/g, `$1${SET_OPEN}$2${SET_CLOSE}`)
     // --- Escaped characters → the character itself ---
-    .replace(/\\\{/g, "(")
-    .replace(/\\\}/g, ")")
     .replace(/\\([%$#&])/g, "$1")
     // --- Named symbols ---
-    .replace(/\\([A-Za-z]+)\b/g, (match, name) => (
+    .replace(new RegExp(String.raw`\\([A-Za-z]+)${END}`, "g"), (match, name) => (
       Object.prototype.hasOwnProperty.call(SYMBOL_COMMANDS, name) ? SYMBOL_COMMANDS[name] : match
     ));
+}
+
+/**
+ * Turns LaTeX line breaks (\\) into newlines, except inside an environment,
+ * where they separate rows.
+ */
+function splitLatexLines(value) {
+  const text = String(value ?? "");
+  let depth = 0;
+  let out = "";
+  for (let i = 0; i < text.length; i += 1) {
+    if (/^\\begin\s*\{/.test(text.slice(i, i + 12))) depth += 1;
+    else if (/^\\end\s*\{/.test(text.slice(i, i + 10))) depth = Math.max(0, depth - 1);
+    if (depth === 0 && text[i] === "\\" && text[i + 1] === "\\" && !/[A-Za-z]/.test(text[i + 2] || "")) {
+      out += "\n";
+      i += 1;
+      continue;
+    }
+    if (text[i] === "\\" && text[i + 1] === "\\") {
+      out += "\\\\";
+      i += 1;
+      continue;
+    }
+    out += text[i];
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,12 +289,40 @@ const UNICODE_SUPERSCRIPTS = {
 };
 
 const SINGLE_CHAR_SCRIPT = /[\p{L}\p{N}°′*∞]/u;
-const TRAILING_ATOM = /(\d+(?:\.\d+)?|\p{L}[′']*)$/u;
+// A function name is one base (log₂, sin²), not a word whose last letter
+// carries the script.
+const FUNCTION_BASE = "arcsin|arccos|arctan|sinh|cosh|tanh|sin|cos|tan|cot|sec|csc|log|ln|exp|lim|max|min";
+const TRAILING_ATOM = new RegExp(String.raw`(\d[\d\p{M}]*(?:\.\d[\d\p{M}]*)?|(?<![A-Za-z])(?:${FUNCTION_BASE})|\p{L}\p{M}*[′']*|[${BIG_OPS}])$`, "u");
 // Operands of a slash fraction, matching what the span detector accepts.
-const SLASH_ATOM_END = /(?:\d+[A-Za-z]+|\d+(?:\.\d+)?|[A-Za-zα-ωΑ-Ω][A-Za-z0-9]*)$/;
-const SLASH_ATOM_START = /^(?:\d+[A-Za-z]+|\d+(?:\.\d+)?|[A-Za-zα-ωΑ-Ω][A-Za-z0-9]*)/;
+const SLASH_ATOM = String.raw`(?:\d+[A-Za-z]+|${NUM}|[A-Za-zα-ωΑ-Ω]${WORD_TAIL})`;
+const SLASH_ATOM_END = new RegExp(`${SLASH_ATOM}$`);
+const SLASH_ATOM_START = new RegExp(`^${SLASH_ATOM}`);
 
 class MathParseError extends Error {}
+
+// LaTeX environments the parser understands. "lines" are stacked equations
+// (a brace on the left for cases); "grid" is a matrix or column vector.
+const ENVIRONMENTS = {
+  cases: { layout: "lines", open: "{", close: "" },
+  aligned: { layout: "lines", open: "", close: "" },
+  align: { layout: "lines", open: "", close: "" },
+  "align*": { layout: "lines", open: "", close: "" },
+  gathered: { layout: "lines", open: "", close: "" },
+  split: { layout: "lines", open: "", close: "" },
+  eqnarray: { layout: "lines", open: "", close: "" },
+  matrix: { layout: "grid", open: "", close: "" },
+  array: { layout: "grid", open: "", close: "" },
+  pmatrix: { layout: "grid", open: "(", close: ")" },
+  bmatrix: { layout: "grid", open: "[", close: "]" },
+  Bmatrix: { layout: "grid", open: "{", close: "}" },
+  vmatrix: { layout: "grid", open: "|", close: "|" },
+  Vmatrix: { layout: "grid", open: "‖", close: "‖" },
+};
+
+// A base made only of empty groups ({}^{5}P_{2}) is no base at all.
+function isEmptyBase(base) {
+  return base.every((node) => node.type === "group" && isEmptyBase(node.children));
+}
 
 /**
  * Parses a maths string into a node tree. Returns { ok: true, nodes } or
@@ -259,6 +417,10 @@ function parseMath(source) {
       return;
     }
     pos += name.length;
+    if (name === "begin") {
+      nodes.push(parseEnvironment());
+      return;
+    }
     if (name === "frac") {
       const num = parseCommandArgument();
       const den = parseCommandArgument();
@@ -278,6 +440,36 @@ function parseMath(source) {
       return;
     }
     fail(`unknown command \\${name}`);
+  }
+
+  // \begin{cases} ... \end{cases} and friends: rows split on \\, cells on &.
+  function parseEnvironment() {
+    const open = /^\s*\{([A-Za-z]+\*?)\}/.exec(text.slice(pos));
+    if (!open) fail("\\begin without an environment name");
+    const env = open[1];
+    if (!ENVIRONMENTS[env]) fail(`unknown environment ${env}`);
+    pos += open[0].length;
+    // \begin{array}{cc}: the column spec is layout only.
+    if (env === "array") {
+      const spec = /^\s*\{[^{}]*\}/.exec(text.slice(pos));
+      if (spec) pos += spec[0].length;
+    }
+    const endTag = `\\end{${env}}`;
+    const end = text.indexOf(endTag, pos);
+    if (end < 0) fail(`missing ${endTag}`);
+    const content = text.slice(pos, end);
+    pos = end + endTag.length;
+    const rows = content
+      .split(/\\\\/)
+      .map((row) => row.trim())
+      .filter(Boolean)
+      .map((row) => row.split("&").map((cell) => {
+        const parsed = parseMath(cell.trim());
+        if (!parsed.ok) fail(parsed.error);
+        return parsed.nodes;
+      }));
+    if (!rows.length) fail(`empty ${env}`);
+    return { type: "array", env, rows };
   }
 
   function parseScriptArgument() {
@@ -460,11 +652,23 @@ function parseMath(source) {
         nodes.push({ type: "group", children: parseBraced() });
       } else if ((ch === "(" || ch === "[") && hasMatchingClose(pos, ch, ch === "(" ? ")" : "]")) {
         nodes.push(parseBracketed(ch, ch === "(" ? ")" : "]"));
+      } else if (ch === "_" && text[pos + 1] === "_") {
+        // A run of underscores is a fill-in blank, not a subscript.
+        const run = /^_+/.exec(text.slice(pos))[0];
+        pushText(nodes, run);
+        pos += run.length;
       } else if (ch === "^" || ch === "_") {
+        // After a space, ^{n}C is a pre-script on C, not a power of the word
+        // before it.
+        const spacedPrescript = /\s$/.test(text.slice(0, pos)) && new RegExp(`^${PRESCRIPT_AHEAD}`).test(text.slice(pos + 1));
         pos += 1;
+        const kind = ch === "^" ? "sup" : "sub";
         const argument = parseScriptArgument();
-        if (!attachScript(nodes, ch === "^" ? "sup" : "sub", argument)) {
-          fail("script has no base");
+        if (spacedPrescript || !attachScript(nodes, kind, argument)) {
+          // Nothing before it but a letter after it: a pre-script, as in
+          // ⁿCᵣ ({}^{n}C_{r}). Anything else really has no base.
+          if (!/^(?:\s*[\^_]\s*\{[^{}]*\})*[A-Za-z]/.test(text.slice(pos))) fail("script has no base");
+          nodes.push({ type: "script", base: [], sup: kind === "sup" ? argument : null, sub: kind === "sub" ? argument : null });
         }
       } else if (ch === "\\") {
         parseCommand(nodes);
@@ -526,12 +730,12 @@ function readableFallback(source) {
   value = replaceUntilStable(value, /\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "($1)/($2)");
   value = replaceUntilStable(value, /\\sqrt\s*\{([^{}]*)\}/g, "√($1)");
   value = replaceUntilStable(value, /([\^_])\s*\{([^{}]*)\}/g, "$1($2)");
-  return value
+  return restoreBraces(value
     .replace(/([\^_])([-−+]?[A-Za-z0-9α-ωΑ-Ω]+)/g, "$1($2)")
     .replace(/\\([A-Za-z]+)/g, "$1")
     .replace(/\\(.)/g, "$1")
     .replace(/\{/g, "(")
-    .replace(/\}/g, ")");
+    .replace(/\}/g, ")"));
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +779,19 @@ function scriptSegments(nodes, level = []) {
         walk(wrap(node.num), lvl);
         push("/", lvl);
         walk(wrap(node.den), lvl);
+      } else if (node.type === "array") {
+        // One line of text can only list the rows: {2x + y = 7; x − y = 2},
+        // (3, −2) for a column vector.
+        const { layout, open, close } = ENVIRONMENTS[node.env];
+        push(open, lvl);
+        node.rows.forEach((row, rowIndex) => {
+          if (rowIndex) push(layout === "lines" ? "; " : ", ", lvl);
+          row.forEach((cell, cellIndex) => {
+            if (cellIndex) push(layout === "lines" ? " " : ", ", lvl);
+            walk(cell, lvl);
+          });
+        });
+        push(close || (open === "{" ? "}" : ""), lvl);
       } else if (node.type === "sqrt") {
         if (node.index) walk(node.index, [...lvl, "sup"]);
         push("√", lvl);
@@ -587,7 +804,7 @@ function scriptSegments(nodes, level = []) {
 }
 
 const SCRIPT_TERM_PATTERN = new RegExp(
-  String.raw`\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${SCRIPT_TERM}`,
+  String.raw`${ENV_TERM}|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${SCRIPT_TERM}`,
   "g"
 );
 
@@ -598,7 +815,8 @@ const SCRIPT_TERM_PATTERN = new RegExp(
  * back as their readable fallback and are recorded as math issues.
  */
 function inlineScriptSegments(value) {
-  const text = normaliseLaTeXCommands(value);
+  // One line of text: a LaTeX line break is just a space here.
+  const text = normaliseLaTeXCommands(splitLatexLines(value).replace(/\s*\n\s*/g, " "));
   const out = [];
   let cursor = 0;
   SCRIPT_TERM_PATTERN.lastIndex = 0;
@@ -643,7 +861,7 @@ function inlineScriptSegments(value) {
 const SCRIPT_SCALE = 0.7;
 
 function escapeXml(value) {
-  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return restoreBraces(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /**
@@ -683,7 +901,7 @@ function svgTextContent(value, fontSize) {
 function displayTextLength(value) {
   const segments = inlineScriptSegments.withoutRecording(value);
   return segments.reduce(
-    (total, segment) => total + [...segment.text].length * SCRIPT_SCALE ** segment.level.length,
+    (total, segment) => total + [...segment.text.replace(/\p{M}/gu, "")].length * SCRIPT_SCALE ** segment.level.length,
     0
   );
 }
@@ -774,11 +992,19 @@ function mathFallbackWarning(issues) {
 }
 
 module.exports = {
+  BIG_OPS,
   BRACE_CONTENT,
+  ENVIRONMENTS,
+  ENV_TERM,
+  LETTER,
+  MARKS,
+  NUM,
+  WORD_TAIL,
   LATEX_VOCABULARY,
   MATH_FALLBACK,
   PAREN,
   RAW_MATH_MARKER,
+  SET_LITERAL,
   SCRIPT,
   SCRIPTED,
   SCRIPT_TERM,
@@ -787,14 +1013,17 @@ module.exports = {
   getMathLocation,
   hasRawMath,
   inlineScriptSegments,
+  isEmptyBase,
   mathFallbackWarning,
   normaliseLaTeXCommands,
   parseMath,
   rawMathExcerpt,
+  restoreBraces,
   readableFallback,
   recordMathIssue,
   scriptSegments,
   setMathLocation,
+  splitLatexLines,
   svgTextContent,
   withMathLocation,
 };

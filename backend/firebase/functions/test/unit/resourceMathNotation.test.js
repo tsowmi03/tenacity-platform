@@ -197,7 +197,9 @@ describe("Word output (audit cases)", () => {
       "Simplify ((x+1)^2)^3.",
       "Simplify (2(x+1))^2.",
     ]);
-    assert.match(plainText(xml), /90°/);
+    // "ABC = 90°" is one equation since RES-31, so the degree sign is in the
+    // equation runs rather than the plain text.
+    assert.match(tree, /ABC = 90°/);
     assert.match(tree, /sSup\(e\(x\)sup\(−1\)\)/);
     assert.match(tree, /sSup\(e\(\(sSup\(e\(\(x\+1\)\)sup\(2\)\)\)\)sup\(3\)\)/);
     assert.match(tree, /sSup\(e\(\(2\(x\+1\)\)\)sup\(2\)\)/);

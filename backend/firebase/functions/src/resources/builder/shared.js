@@ -10,10 +10,12 @@ const {
   HeadingLevel,
   ImageRun,
   LineRuleType,
+  BuilderElement,
+  RunProperties,
+  XmlComponent,
   Math: DocxMath,
   MathFraction,
   MathRadical,
-  MathRun,
   MathSubScript,
   MathSubSuperScript,
   MathSuperScript,
@@ -38,19 +40,30 @@ const {
 
 const { BRAND, PAGE, loadLogoBuffer } = require("./branding");
 const {
+  BIG_OPS,
   BRACE_CONTENT,
+  ENVIRONMENTS,
+  ENV_TERM,
+  NUM,
+  LETTER,
   PAREN,
   SCRIPTED,
   SCRIPT_TERM,
+  SET_LITERAL,
+  WORD_TAIL,
   getMathLocation,
   hasRawMath,
   inlineScriptSegments,
+  isEmptyBase,
   normaliseLaTeXCommands,
   parseMath,
   rawMathExcerpt,
   readableFallback,
   recordMathIssue,
+  restoreBraces,
+  scriptSegments,
   setMathLocation,
+  splitLatexLines,
 } = require("../mathNotation");
 const { deAiPunctuation } = require("../humanStyle");
 
@@ -142,7 +155,7 @@ function guardRawMath(value, opts = {}) {
 
 function textRun(text, opts = {}) {
   return new TextRun({
-    text: guardRawMath(cleanText(text, { verbatim: opts.verbatim }), opts),
+    text: restoreBraces(guardRawMath(cleanText(text, { verbatim: opts.verbatim }), opts)),
     font: BRAND.FONT,
     size: opts.size || BRAND.FONT_SIZE_BODY,
     bold: opts.bold,
@@ -153,7 +166,7 @@ function textRun(text, opts = {}) {
 
 function rawTextRun(text, opts = {}) {
   return new TextRun({
-    text: guardRawMath(stripXmlIllegalChars(text), opts),
+    text: restoreBraces(guardRawMath(stripXmlIllegalChars(text), opts)),
     font: BRAND.FONT,
     size: opts.size || BRAND.FONT_SIZE_BODY,
     bold: opts.bold,
@@ -174,7 +187,7 @@ function textRuns(text, opts = {}) {
   return segments.map((segment) => {
     const kind = segment.level[segment.level.length - 1];
     return new TextRun({
-      text: stripXmlIllegalChars(segment.text),
+      text: restoreBraces(stripXmlIllegalChars(segment.text)),
       font: BRAND.FONT,
       size: opts.size || BRAND.FONT_SIZE_BODY,
       bold: opts.bold,
@@ -186,12 +199,25 @@ function textRuns(text, opts = {}) {
   });
 }
 
+// The prompt tells the model never to wrap maths in $ delimiters, so a $ in
+// a maths resource is almost always money ("Tom has $15 and Sam has $20").
+// A pair only counts as delimiters when it hugs its content the way LaTeX
+// does ($x + 3$, not "$15 and Sam has $") and the content is not itself an
+// amount ($5-$10). Escaped \$ is always money.
+const DISPLAY_MATH = /(?<!\\)\$\$(?=\S)([^$]+?)(?<=\S)\$\$/g;
+const INLINE_MATH = /(?<![\\$])\$(?!\$)(?=\S)([^$\n]+?)(?<=\S)\$(?![\d$])/g;
+
+function looksLikeMoney(inner) {
+  return /^[\d.,]/.test(inner) && !/[\\^_A-Za-z]/.test(inner);
+}
+
 function stripDollarDelimiters(value) {
-  // Strip $$...$$ (display math) and $...$ (inline math) delimiters, keeping
-  // the inner content so the rest of the math pipeline processes it normally.
   return String(value ?? "")
-    .replace(/\$\$([^$]+)\$\$/g, (_, inner) => ` ${inner.trim()} `)
-    .replace(/\$([^$\n]+)\$/g, (_, inner) => ` ${inner.trim()} `);
+    // \( ... \) and \[ ... \] are always maths delimiters.
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, inner) => ` ${inner.trim()} `)
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, inner) => ` ${inner.trim()} `)
+    .replace(DISPLAY_MATH, (_, inner) => ` ${inner.trim()} `)
+    .replace(INLINE_MATH, (match, inner) => (looksLikeMoney(inner) ? match : ` ${inner.trim()} `));
 }
 
 function mathText(value) {
@@ -206,16 +232,157 @@ function mathText(value) {
   );
 }
 
+// Formatting of the paragraph the equation sits in. Equation runs carry no
+// formatting of their own, so without this they came out at the default size
+// and black: small in titles and headings, invisible on a dark header band.
+// Set by mathSpanRuns for the (synchronous) build of one equation.
+let currentMathStyle = {};
+
+class MathTextElement extends XmlComponent {
+  constructor(text) {
+    super("m:t");
+    this.root.push(text);
+  }
+}
+
+// An equation run in the surrounding text's size, colour and weight;
+// `plain` sets it upright (function names, words, units).
+function mathRun(text, { plain = false } = {}) {
+  const run = new BuilderElement({ name: "m:r", children: [] });
+  if (plain) run.root.push(ommlElement("m:rPr", [ommlElement("m:sty", [], "p")]));
+  const { size, color, bold } = currentMathStyle;
+  if (size || color || bold) run.root.push(new RunProperties({ size, color, bold }));
+  run.root.push(new MathTextElement(text));
+  return run;
+}
+
+// Function names and real words (sin, log, Area, distance) are upright in
+// maths. Variables stay italic: single letters, products like ac or lwh, and
+// point names like ABC.
+const FUNCTION_NAMES = new Set(["arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "sin", "cos", "tan",
+  "cot", "sec", "csc", "log", "ln", "exp", "lim", "max", "min", "det", "gcd", "deg", "Pr"]);
+
+function isUprightWord(word) {
+  if (FUNCTION_NAMES.has(word)) return true;
+  return word.length >= 3 && /[aeiou]/i.test(word) && word !== word.toUpperCase();
+}
+
+function textMathRuns(value) {
+  const out = [];
+  let cursor = 0;
+  for (const match of value.matchAll(/(?<![A-Za-z])[A-Za-z]{2,}(?![A-Za-z])/g)) {
+    if (!isUprightWord(match[0])) continue;
+    if (match.index > cursor) out.push(mathRun(value.slice(cursor, match.index)));
+    out.push(mathRun(match[0], { plain: true }));
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < value.length) out.push(mathRun(value.slice(cursor)));
+  return out;
+}
+
+const SUPERSCRIPT_CHARS = {
+  0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹",
+  "+": "⁺", "-": "⁻", "−": "⁻", "(": "⁽", ")": "⁾", n: "ⁿ", i: "ⁱ",
+  a: "ᵃ", b: "ᵇ", c: "ᶜ", d: "ᵈ", e: "ᵉ", f: "ᶠ", g: "ᵍ", h: "ʰ", j: "ʲ", k: "ᵏ",
+  l: "ˡ", m: "ᵐ", o: "ᵒ", p: "ᵖ", r: "ʳ", s: "ˢ", t: "ᵗ", u: "ᵘ", v: "ᵛ", w: "ʷ",
+  x: "ˣ", y: "ʸ", z: "ᶻ",
+};
+
+// The Unicode superscript form of a plain script (5, n, 10), or null.
+function unicodeSuperscript(nodes) {
+  if (!nodes || !nodes.every((node) => node.type === "text")) return null;
+  const chars = [...nodes.map((node) => node.value).join("")];
+  if (!chars.length || !chars.every((ch) => SUPERSCRIPT_CHARS[ch])) return null;
+  return chars.map((ch) => SUPERSCRIPT_CHARS[ch]).join("");
+}
+
+// Raw OMML element: <m:name m:val="..."> with children.
+function ommlElement(name, children = [], val) {
+  return new BuilderElement({
+    name,
+    ...(val === undefined ? {} : { attributes: { val: { key: "m:val", value: val } } }),
+    children,
+  });
+}
+
+// A delimiter pair around content: ( ), [ ], or a lone { for cases.
+function ommlDelimited(open, close, children) {
+  if (!open && !close) return children;
+  return [ommlElement("m:d", [
+    ommlElement("m:dPr", [ommlElement("m:begChr", [], open), ommlElement("m:endChr", [], close)]),
+    ommlElement("m:e", children),
+  ])];
+}
+
+// Stacked equations (cases, aligned) as an equation array; matrices and
+// column vectors as a matrix.
+function ommlArray(node) {
+  const { layout, open, close } = ENVIRONMENTS[node.env];
+  let inner;
+  if (layout === "lines") {
+    inner = ommlElement("m:eqArr", node.rows.map((row) => ommlElement(
+      "m:e",
+      row.flatMap((cell, index) => [...(index ? [mathRun("  ")] : []), ...ommlChildren(cell)])
+    )));
+  } else {
+    const columns = Math.max(...node.rows.map((row) => row.length));
+    inner = ommlElement("m:m", [
+      ommlElement("m:mPr", [ommlElement("m:mcs", [ommlElement("m:mc", [ommlElement("m:mcPr", [
+        ommlElement("m:count", [], String(columns)),
+        ommlElement("m:mcJc", [], "center"),
+      ])])])]),
+      ...node.rows.map((row) => ommlElement("m:mr", Array.from({ length: columns }, (_, index) => (
+        ommlElement("m:e", ommlChildren(row[index] || []))
+      )))),
+    ]);
+  }
+  return ommlDelimited(open, close, [inner]);
+}
+
 // Word equation components for a parsed node tree (see mathNotation.js).
 function ommlChildren(nodes) {
   const out = [];
-  for (const node of nodes) {
-    if (node.type === "text") {
-      if (node.value) out.push(new MathRun(normaliseMathSymbols(node.value)));
+  for (let index = 0; index < nodes.length; index += 1) {
+    const node = nodes[index];
+    if (node.type === "script" && isEmptyBase(node.base)) {
+      // Pre-script (ⁿCᵣ): the scripts sit before the next atom.
+      const next = nodes[index + 1];
+      let base = [];
+      if (next?.type === "text") {
+        const [first, ...rest] = [...next.value];
+        base = [{ type: "text", value: first }];
+        if (rest.length) nodes = [...nodes.slice(0, index + 1), { type: "text", value: rest.join("") }, ...nodes.slice(index + 2)];
+        else index += 1;
+      } else if (next) {
+        base = [next];
+        index += 1;
+      }
+      // ⁿCᵣ: a pre-superscript that has a Unicode superscript form is written
+      // as those characters. Both Word and LibreOffice (the preview) draw an
+      // empty pre-subscript slot as a placeholder box, so m:sPre is only the
+      // fallback, built by hand because docx writes its children out of
+      // schema order (base first) and LibreOffice then drops the base.
+      const flatSup = !node.sub && unicodeSuperscript(node.sup);
+      if (flatSup) {
+        out.push(mathRun(flatSup), ...ommlChildren(base));
+      } else {
+        const slot = (part) => (part ? ommlChildren(part) : []);
+        out.push(ommlElement("m:sPre", [
+          ommlElement("m:sub", slot(node.sub)),
+          ommlElement("m:sup", slot(node.sup)),
+          ommlElement("m:e", ommlChildren(base)),
+        ]));
+      }
+      continue;
+    }
+    if (node.type === "array") {
+      out.push(...ommlArray(node));
+    } else if (node.type === "text") {
+      if (node.value) out.push(...textMathRuns(restoreBraces(normaliseMathSymbols(node.value))));
     } else if (node.type === "group") {
       out.push(...ommlChildren(node.children));
     } else if (node.type === "paren") {
-      out.push(new MathRun(node.open), ...ommlChildren(node.children), new MathRun(node.close));
+      out.push(mathRun(node.open), ...ommlChildren(node.children), mathRun(node.close));
     } else if (node.type === "script") {
       const children = ommlChildren(node.base);
       if (node.sup && node.sub) {
@@ -256,43 +423,137 @@ function normaliseMathSymbols(value) {
 
 // One inline maths span as runs: a Word equation when it parses, otherwise
 // its readable plain-text form plus a recorded issue (→ MATH_FALLBACK warning).
+// An equation is one unbreakable box in the LibreOffice preview, so a long
+// formula in a narrow table cell ran past the cell edge. Long equations are
+// cut before top-level relations and operators ("P(A ∪ B)" | " = P(A)" |
+// " + P(B)"), each piece its own equation, so the line can wrap there with
+// the operator starting the new line, as Word does. Word draws the pieces
+// exactly as one.
+const LONG_EQUATION = 28;
+const CHUNK_LENGTH = 18;
+const BREAK_BEFORE = /(?= [=<>≤≥≈≠⇒⇔→+−\-×÷] )/;
+
+function nodesLength(nodes) {
+  return scriptSegments(nodes).reduce((total, segment) => total + segment.text.length, 0);
+}
+
+function breakableChunks(nodes) {
+  if (nodesLength(nodes) <= LONG_EQUATION) return [nodes];
+  // Cut before every top-level " op ", then merge neighbours while they fit.
+  const segments = [[]];
+  for (const node of nodes) {
+    const parts = node.type === "text"
+      ? node.value.split(BREAK_BEFORE).filter(Boolean).map((value) => ({ type: "text", value }))
+      : [node];
+    for (const part of parts) {
+      if (part.type === "text" && /^ [=<>≤≥≈≠⇒⇔→+−\-×÷] /.test(part.value)) segments.push([]);
+      segments[segments.length - 1].push(part);
+    }
+  }
+  const chunks = [];
+  for (const segment of segments.filter((part) => part.length)) {
+    const last = chunks[chunks.length - 1];
+    if (last && nodesLength(last) + nodesLength(segment) <= CHUNK_LENGTH) last.push(...segment);
+    else chunks.push([...segment]);
+  }
+  // The space before a piece is written between the equations instead.
+  for (const chunk of chunks.slice(1)) {
+    if (chunk[0].type === "text") chunk[0] = { type: "text", value: chunk[0].value.replace(/^\s+/, "") };
+  }
+  return chunks;
+}
+
 function mathSpanRuns(value, opts = {}) {
   const parsed = parseMath(mathText(value));
   if (parsed.ok) {
-    const children = ommlChildren(parsed.nodes);
-    if (children.length) return [new DocxMath({ children })];
+    currentMathStyle = { size: opts.size || BRAND.FONT_SIZE_BODY, color: opts.color, bold: opts.bold };
+    let children;
+    try {
+      children = ommlChildren(parsed.nodes);
+    } finally {
+      currentMathStyle = {};
+    }
+    if (children.length) {
+      return breakableChunks(parsed.nodes).flatMap((chunk, index) => {
+        currentMathStyle = { size: opts.size || BRAND.FONT_SIZE_BODY, color: opts.color, bold: opts.bold };
+        try {
+          return [
+            // The space before each piece's operator is ordinary text: it keeps
+            // the operator's gap and is where the line may break.
+            ...(index ? [new TextRun({ text: " ", size: opts.size || BRAND.FONT_SIZE_BODY })] : []),
+            new DocxMath({ children: ommlChildren(chunk) }),
+          ];
+        } finally {
+          currentMathStyle = {};
+        }
+      });
+    }
   }
   const shownAs = readableFallback(value);
   recordMathIssue({ source: value, shownAs });
   return [rawTextRun(shownAs, opts)];
 }
 
-// MATH_TERM: every alternative can carry scripts (SCRIPTED), interleaved with
-// the letters that follow them, so 5t^{2}, (x+1)^{3}, m^3n^4 and H_2O are each
-// captured as one term rather than having a base consumed by one span and its
-// ^{...} or _{...} orphaned as a literal text run.
-const MATH_TERM = String.raw`(?:\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}|${PAREN}${SCRIPTED}|[-−]?\$?\d+(?:\.\d+)?%?(?:\s*\/\s*[A-Za-z0-9]+)?[A-Za-z]*${SCRIPTED}|[A-Za-z][A-Za-z0-9]*${SCRIPTED})`;
-const MATH_OPERATOR = String.raw`(?:<=|>=|!=|->|[+\-−=<>≤≥×÷±·*/^]|→|≠|≈)`;
-// The trailing lone-letter group lets a span keep a detached variable ("= 5 x"),
-// but the negative lookahead stops it from biting the first letter off an
-// ordinary word ("= 0 by factorising" must not become "= 0 b" + "y factorising").
+// Span grammar. An ATOM is one indivisible piece of maths; a TERM is atoms
+// written side by side (2πr, \frac{1}{2}bh, (x+1)(x−2), P(A)); a span is
+// terms joined by operators, or by a single space when the next piece is
+// plainly maths (π r², 2bc cos A, 12 tan 35°). Every piece can carry scripts
+// (SCRIPTED) so 5t^{2}, (x+1)^{3} and H_2O stay whole. Keeping an expression
+// in one span matters: anything left between spans is body-font text, so
+// "A = π r²" used to come out as three differently styled pieces.
+const FUNCTION_WORD = String.raw`(?:arcsin|arccos|arctan|sinh|cosh|tanh|sin|cos|tan|cot|sec|csc|log|ln|exp|lim|max|min|det|gcd)(?![A-Za-z])`;
+const PREFIX = String.raw`[∠△∡∴∵¬]\s?`;
+const SUFFIX = String.raw`(?:[°′″'%!]|[⁰¹²³⁴⁵⁶⁷⁸⁹⁻ⁿ]+|[₀₁₂₃₄₅₆₇₈₉ₙᵢ]+)*`;
+// 10 000, 3 456.5: NSW writes thousands with a space.
+const GROUPED_NUM = String.raw`\d{1,3}(?:[  ]\d{3})+(?!\d)(?:\.\d+)?`;
+// x:y, a:b:c, AB:DE, 12 : 18. Letter ratios must be tight so "Q: x" is not one.
+const RATIO_PART = String.raw`(?:${NUM}|[A-Za-z]{1,2}(?![A-Za-z]))`;
+// A spaced numeric ratio is spaced on both sides (12 : 18); "Step 1: 3" is a label.
+const RATIO = String.raw`(?:${NUM}(?:(?: : |:)${NUM})+|${RATIO_PART}(?::${RATIO_PART})+)`;
+// Intervals: (−∞, 3], [0, 1).
+const INTERVAL = String.raw`[(\[]\s?[-−]?(?:∞|${NUM})\s?,\s?[-−]?(?:∞|${NUM})\s?[)\]]`;
+// Brackets holding words ("(31 degrees)", "(angle from north)") are prose,
+// not part of an expression; function names inside are fine: (sin x + 1).
+const MATHS_PAREN = String.raw`(?!\([^()]*?(?<![A-Za-z])(?!(?:sin|cos|tan|log|exp|lim|max|min)(?![a-z]))[a-z]{3,})${PAREN}`;
+const ATOM = String.raw`(?:${ENV_TERM}|${SET_LITERAL}|${INTERVAL}|□|_{2,}|[∅∞ℝℕℤℚℂ]|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}|${MATHS_PAREN}|\|[^|\n]{1,40}?\||${RATIO}|\$?(?:${GROUPED_NUM}|${NUM})|${FUNCTION_WORD}|[${BIG_OPS}]|[${LETTER}]${WORD_TAIL})${SCRIPTED}${SUFFIX}`;
+const TERM = String.raw`(?:${PREFIX})?${ATOM}(?:(?:${PREFIX})?${ATOM})*`;
+// What may follow a single space with no operator in between.
+// Two-letter English words that would otherwise pass as a product of two
+// variables ("If x = 2", "is x = −b/2a", "or x = 3").
+const SHORT_WORDS = [
+  "if", "is", "or", "of", "to", "in", "on", "at", "by", "be", "as", "an", "so",
+  "we", "it", "no", "do", "up", "us", "my", "he", "me", "am", "go", "eg", "ie",
+];
+const JUXT_TERM = String.raw`(?=[${LETTER}](?![A-Za-z])|(?!(?:${SHORT_WORDS.join("|")})(?![A-Za-z]))[a-z]{2}(?![A-Za-z])|${FUNCTION_WORD}|[∠△∡∴∵¬\\${BIG_OPS}□∅∞]|\((?![^()]*[A-Za-z]{3})|\d)${TERM}`;
+const MATH_OPERATOR = String.raw`(?:<=>|<=|>=|!=|->|=>|[+\-−=<>≤≥≠≈×÷±∓·*/^∪∩∈∉∋⊂⊆⊊⊃⊇∖⇒⇔⇐→↦↔⟶∝≡≅≃~∥⊥⩽⩾≰≱≮≯≪≫∘])`;
+const SIGN = String.raw`(?:[±∓+\-−]\s?)`;
+const MATH_SPAN = String.raw`${SIGN}?${TERM}(?:\s*${MATH_OPERATOR}\s*${SIGN}?${TERM}|\s${JUXT_TERM})*`;
+// A span is only worth typesetting when it has a real operator: P(A) alone or
+// a ratio or time on its own (2:3, 3:45) reads fine as text.
+const HAS_OPERATOR = /[+\-−=<>≤≥≠≈×÷±∓·*/^∪∩∈∉∋⊂⊆⊊⊃⊇∖⇒⇔⇐→↦↔⟶∝≡≅≃~∥⊥⩽⩾≰≱≮≯≪≫∘]/;
 const MATH_SPAN_MATCHERS = [
+  // \begin{cases} ... \end{cases}, \begin{pmatrix} ... \end{pmatrix}
+  { regex: new RegExp(ENV_TERM, "g") },
   // \sqrt{...} and \sqrt[n]{...}
   { regex: new RegExp(String.raw`\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}${SCRIPTED}`, "g") },
   // \frac{...}{...}, including nested expressions
   { regex: new RegExp(String.raw`\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}${SCRIPTED}`, "g") },
   {
-    regex: new RegExp(
-      String.raw`${MATH_TERM}(?:\s*${MATH_OPERATOR}\s*${MATH_TERM})+(?:\s*[A-Za-z](?![A-Za-z0-9]))?`,
-      "g"
-    ),
+    regex: new RegExp(MATH_SPAN, "g"),
     // Bare words count as terms, so prose joined by an operator ("Test - for",
     // "the ± gives") matches too — reject those instead of typesetting them.
     rejectProse: true,
+    needsOperator: true,
   },
-  { regex: /\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g },
-  { regex: /(?<![\w])[-−]\d+(?:\.\d+)?%?\b/g },
-  { regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g },
+  // A function applied with no operator: log₂ 8, sin θ, tan 35°.
+  { regex: new RegExp(String.raw`${FUNCTION_WORD}${SCRIPTED}(?:\s?${TERM})`, "g"), rejectProse: true },
+  // A point, with its letter if it has one: (3, −4), B(4, 7).
+  { regex: /(?<![A-Za-z])[A-Z]?\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g },
+  // A negative number, with any power: -2^{2} is one term, not −2 + "^{2}".
+  { regex: new RegExp(String.raw`(?<![\w])[-−]\d+(?:\.\d+)?%?\b${SCRIPTED}`, "g") },
+  // a/b, 3x/4. Two words ("outcomes / total" in "favourable outcomes /
+  // total outcomes") are prose: one word over the other is not the fraction.
+  { regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g, rejectWordFraction: true },
   // A single scripted term: x^2, x_1, (x+1)^{3}, 10^{-3}, H_2O. Identifiers
   // like file_name are prose, not a subscript, and are rejected.
   { regex: new RegExp(SCRIPT_TERM, "g"), rejectIdentifier: true },
@@ -303,8 +564,13 @@ function isSnakeCaseIdentifier(value) {
   return /^[A-Za-z]{3,}_[A-Za-z]{2,}/.test(value);
 }
 
+// co-interior, 45-45-90, MA5-DAT-C-01: hyphenated names and codes, not
+// subtraction. x-1 and 2x-3 are still maths.
 function isLikelyHyphenatedWord(value) {
-  return /^[A-Za-z]+-[A-Za-z]+$/.test(value);
+  if (/^[A-Za-z]+-[A-Za-z]+$/.test(value)) return true;
+  if (!/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$/.test(value)) return false;
+  const parts = value.split("-");
+  return parts.length >= 3 || parts.some((part) => /[A-Za-z]{2,}/.test(part));
 }
 
 // Function names plus the logic literals, which legitimately appear inside
@@ -312,6 +578,7 @@ function isLikelyHyphenatedWord(value) {
 // normaliseLaTeXCommands ("x = \frac{1}{2}" must stay one span).
 const MATH_SPAN_FUNCTION_WORDS = new Set([
   "sin", "cos", "tan", "cot", "sec", "csc", "log", "ln", "exp",
+  "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "lim", "max", "min", "det", "gcd",
   "true", "false",
   "frac", "sqrt",
 ]);
@@ -321,25 +588,48 @@ const MATH_SPAN_FUNCTION_WORDS = new Set([
 // function names. Any longer word means the "span" is really prose that happens
 // to sit around an operator ("Diagnostic Test - for tutor use", "the ± gives
 // only one root") and must stay ordinary text.
+const SHORT_WORD_SET = new Set(SHORT_WORDS);
+
 function isProseSpan(value) {
-  const words = String(value).match(/[A-Za-z]{3,}/g) || [];
-  return words.some((word) => !MATH_SPAN_FUNCTION_WORDS.has(word.toLowerCase()));
+  // LaTeX commands and environment names are notation, not words.
+  const text = String(value)
+    .replace(/\\(?:begin|end)\{[A-Za-z]+\*?\}/g, " ")
+    .replace(/\\[A-Za-z]+/g, " ");
+  const words = text.match(/[A-Za-z]{3,}/g) || [];
+  // Capitalised point names (AOB, ABC, PQR) are geometry, not prose.
+  // Capitalised point names (AOB, ABC, PQR) are geometry, and a short run with
+  // no vowel is a product of variables (lwh, Prn), not a word.
+  const prose = words.some((word) => !MATH_SPAN_FUNCTION_WORDS.has(word.toLowerCase())
+    && !/^[A-Z]{3,4}$/.test(word)
+    && !(word.length <= 4 && !/[aeiouAEIOU]/.test(word)));
+  const shortWords = text.match(/(?<![A-Za-z])[A-Za-z]{2}(?![A-Za-z])/g) || [];
+  return prose || shortWords.some((word) => SHORT_WORD_SET.has(word.toLowerCase()) && word !== word.toUpperCase());
 }
 
 function normaliseMathMatch(match) {
-  const leadingWordBeforeNegative = /^([A-Za-z]{2,}\s+)([-−]\d[\s\S]*)$/.exec(match[0]);
-  if (leadingWordBeforeNegative) {
-    return {
-      index: match.index + leadingWordBeforeNegative[1].length,
-      text: leadingWordBeforeNegative[2],
-    };
-  }
-  return { index: match.index, text: match[0] };
+  let index = match.index;
+  let text = match[0];
+  const trimStart = (pattern) => {
+    const lead = pattern.exec(text);
+    if (lead) {
+      index += lead[0].length;
+      text = text.slice(lead[0].length);
+    }
+  };
+  // Not part of the maths: a word before a negative amount ("is −$20"), the
+  // article in "a 45° angle", and an option label ("(A) 4.73 × 10⁻⁴").
+  trimStart(/^[A-Za-z]{2,}\s+(?=[-−]\$?\d)/);
+  trimStart(/^[aA]\s+(?=[\d(])/);
+  trimStart(/^\([A-Ea-e]\)\s+/);
+  // A function name with nothing after it ("= (d + 30) tan" before
+  // "(31 degrees)") belongs to the words that follow, not the equation.
+  text = text.replace(/\s+(?:sin|cos|tan|log|ln)$/, "");
+  return { index, text };
 }
 
 function findMathSpan(text, start) {
   let best = null;
-  for (const { regex, rejectProse, rejectIdentifier } of MATH_SPAN_MATCHERS) {
+  for (const { regex, rejectProse, rejectIdentifier, needsOperator, rejectWordFraction } of MATH_SPAN_MATCHERS) {
     regex.lastIndex = start;
     let match = regex.exec(text);
     // Skip rejected candidates one character at a time rather than jumping past
@@ -349,6 +639,11 @@ function findMathSpan(text, start) {
     // prose, and re-scanning it must not accept "th = 5".
     const rejects = (m) =>
       isLikelyHyphenatedWord(m[0]) ||
+      isLikelyHyphenatedWord(normaliseMathMatch(m).text) ||
+      // The tail of a hyphenated code (the "C-01" of MA5-DAT-C-01).
+      (m.index > 1 && text[m.index - 1] === "-" && /[A-Za-z0-9]/.test(text[m.index - 2])) ||
+      (rejectWordFraction && /^[A-Za-z]{3,}\s*\/\s*[A-Za-z]{3,}$/.test(m[0])) ||
+      (needsOperator && !HAS_OPERATOR.test(m[0].replace(/\\[A-Za-z]+/g, "").replace(/^[±∓+\-−]\s?/, ""))) ||
       (rejectIdentifier && isSnakeCaseIdentifier(m[0])) ||
       (rejectProse &&
         (isProseSpan(m[0]) ||
@@ -359,20 +654,34 @@ function findMathSpan(text, start) {
     }
     if (!match) continue;
     const normalised = normaliseMathMatch(match);
-    if (!best || normalised.index < best.index) {
+    // A letter right before a bracket of words ("− P" of "− P(A and B)") goes
+    // with the words, and so does the operator before it.
+    if (text[normalised.index + normalised.text.length] === "(") {
+      const trimmed = normalised.text.replace(new RegExp(String.raw`(?:\s*${MATH_OPERATOR}\s*)?[A-Za-z]$`), "");
+      if (trimmed.trim() && HAS_OPERATOR.test(trimmed)) normalised.text = trimmed;
+    }
+    // At the same start the longer span wins: \frac{3}{4} + \frac{1}{6} is one
+    // expression, not a fraction followed by "+ \frac{1}{6}".
+    if (!best || normalised.index < best.index
+      || (normalised.index === best.index && normalised.text.length > best.text.length)) {
       best = normalised;
     }
   }
   return best;
 }
 
-function inlineMarkdownSegments(value) {
+// **bold** is safe everywhere: no maths writes a doubled asterisk. Single
+// * and _ emphasis stays opt-in, because in maths they are multiplication,
+// subscripts and blanks ("{}_{n}C_{r}" must not italicise "{n}C").
+const BOLD_ONLY = /(?<![\p{L}\p{N}*])(\*\*)(\S(?:.*?\S)?)\*\*(?![\p{L}\p{N}*])/gu;
+
+function inlineMarkdownSegments(value, { boldOnly = false } = {}) {
   const text = String(value ?? "");
   // Keep this deliberately small: booklet sections only need inline emphasis,
   // while paragraph and list structure is handled by makeParagraphs. The
   // single-marker boundary checks avoid treating maths such as 2*3*4 or x_1 as
   // emphasis.
-  const pattern = /(?<![\p{L}\p{N}])(\*\*|__)(\S(?:.*?\S)?)\1(?![\p{L}\p{N}])|(?<![\p{L}\p{N}*])\*(?!\*)(\S(?:.*?\S)?)\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_(?!_)(\S(?:.*?\S)?)_(?![\p{L}\p{N}_])/gu;
+  const pattern = boldOnly ? BOLD_ONLY : /(?<![\p{L}\p{N}])(\*\*|__)(\S(?:.*?\S)?)\1(?![\p{L}\p{N}])|(?<![\p{L}\p{N}*])\*(?!\*)(\S(?:.*?\S)?)\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_(?!_)(\S(?:.*?\S)?)_(?![\p{L}\p{N}_])/gu;
   const segments = [];
   let cursor = 0;
 
@@ -392,13 +701,57 @@ function inlineMarkdownSegments(value) {
   return segments.length ? segments : [{ text }];
 }
 
-function mathAwareTextRuns(value, opts = {}) {
-  if (!value) return [rawTextRun("", opts)];
+// Units after a number (60 km/h, 25 cm², 9.8 m/s², $4.50/kg, 7.5 L/100 km)
+// are ordinary upright text. They are hidden from span detection, so they are
+// never set as italic variables or stacked as fractions, and their powers are
+// written as superscript characters. Longest names first so "min" is not "m".
+const UNIT_NAMES = ["kWh", "sec", "min", "hrs", "mm", "cm", "km", "mL", "ml", "kL", "mg", "kg", "ms", "hr", "ha", "kW",
+  "°C", "°F", "m", "L", "g", "s", "h"];
+const UNIT = String.raw`(?:${UNIT_NAMES.join("|")})`;
+const UNIT_POWER = String.raw`(?:\s?\^\s?\{?[-−]?[123]\}?|[²³]|⁻[¹²³])?`;
+const UNIT_PHRASE = new RegExp(
+  String.raw`(\d\s?)(\/?${UNIT}${UNIT_POWER}(?:\/(?:\d+\s?)?${UNIT}${UNIT_POWER})?)(?![A-Za-z0-9])`,
+  "g"
+);
+const UNIT_POWER_CHARS = { 1: "¹", 2: "²", 3: "³" };
+
+function unitPowersAsCharacters(phrase) {
+  return phrase.replace(/\s?\^\s?\{?([-−]?)([123])\}?/g, (_, sign, digit) => `${sign ? "⁻" : ""}${UNIT_POWER_CHARS[digit]}`);
+}
+
+// A rate written without a number ("speed in km/h", "Rate (km/h)"). Two
+// single letters are only a unit pair as m/s; d/t and V/h are fractions.
+const UNIT_RATE = new RegExp(String.raw`(?<![A-Za-z0-9])(${UNIT})\/(${UNIT})(?![A-Za-z0-9])`, "g");
+
+// A one-letter unit needs a space after its number: "5 m" is five metres,
+// but "4m^2" and "12m" are algebra. Longer units can touch (12km, 5mL).
+function isUnitAfter(number, phrase) {
+  return /\s$/.test(number) || !/^(?:m|L|g|s|h)(?![A-Za-z])/.test(phrase) || /^[^/]+\/./.test(phrase);
+}
+
+function maskUnits(value) {
+  const text = value.replace(UNIT_PHRASE, (match, number, phrase) => (
+    isUnitAfter(number, phrase) ? number + unitPowersAsCharacters(phrase) : match
+  ));
+  const masked = text
+    .replace(UNIT_PHRASE, (match, number, phrase) => (
+      isUnitAfter(number, phrase) ? number + "\u0001".repeat(phrase.length) : match
+    ))
+    .replace(UNIT_RATE, (rate, top, bottom) => (
+      top.length > 1 || bottom.length > 1 || rate === "m/s" ? "\u0001".repeat(rate.length) : rate
+    ));
+  return { text, masked };
+}
+
+function mathAwareTextRuns(input, opts = {}) {
+  if (!input) return [rawTextRun("", opts)];
+  const { text: value, masked } = maskUnits(input);
 
   const runs = [];
   let cursor = 0;
   while (cursor < value.length) {
-    const span = findMathSpan(value, cursor);
+    const found = findMathSpan(masked, cursor);
+    const span = found && { index: found.index, text: value.slice(found.index, found.index + found.text.length) };
     if (!span) break;
     if (span.index > cursor) {
       runs.push(rawTextRun(value.slice(cursor, span.index), opts));
@@ -413,18 +766,42 @@ function mathAwareTextRuns(value, opts = {}) {
   return runs.length ? runs : [rawTextRun(value, opts)];
 }
 
+function isStyledText(opts) {
+  const color = String(opts.color || "").toUpperCase();
+  return (opts.size && opts.size > BRAND.FONT_SIZE_BODY) || (color && color !== "000000");
+}
+
 function richTextRuns(text, opts = {}) {
   // When math is disabled (e.g. English documents), keep prose punctuation
   // literal. Maths documents still run through the expression renderer. Clean
   // the whole value before splitting Markdown so whitespace around styled runs
   // survives rather than being trimmed from every segment independently.
   const mathEnabled = mathRenderingEnabled();
+  // Headings, titles and coloured text set their maths inline (raised and
+  // lowered runs in the text's own font): Word equations ignore the run's
+  // size and colour in the LibreOffice preview, so a title's maths came out
+  // small and black, and white header text came out black on navy.
+  if (mathEnabled && !opts.verbatim && isStyledText(opts)) {
+    return textRuns(text, opts);
+  }
+  if (mathEnabled) {
+    // Stacked working ("2 × $12 = $24" over "3 × $12 = $36") and LaTeX \\
+    // keep their line breaks; joining them reads 24 3 as 243.
+    const lines = splitLatexLines(stripDollarDelimiters(text))
+      .split(/\r\n|\r|\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length > 1) {
+      return lines.flatMap((line, index) => [
+        ...(index ? [new TextRun({ break: 1 })] : []),
+        ...richTextRuns(line, opts),
+      ]);
+    }
+  }
   const value = mathEnabled
     ? mathText(stripDollarDelimiters(text))
     : cleanText(text, { verbatim: opts.verbatim });
-  const segments = opts.inlineMarkdown
-    ? inlineMarkdownSegments(value)
-    : [{ text: value }];
+  const segments = inlineMarkdownSegments(value, { boldOnly: !opts.inlineMarkdown });
 
   return segments.flatMap((segment) => {
     const runOpts = {
