@@ -475,3 +475,69 @@ describe("preview layout", () => {
     assert.equal(xml.match(/<m:oMath>/g).length, 1);
   });
 });
+
+// Found by rendering the 9,164 text fields of production maths jobs.
+describe("real job regressions", () => {
+  it("strips \\( \\) and \\[ \\] delimiters like $", async () => {
+    for (const [input, expected] of [
+      ["\\(\\dfrac{x + 4}{3} = 6\\)", /«\[x \+ 4\/3\] = 6»/],
+      ["The area of a trapezium is \\(A = \\dfrac{1}{2}(a + b)h\\).", /«A = \[1\/2\]\(a \+ b\)h»/],
+      ["\\[x^{2} = 9\\]", /«x⁽2⁾ = 9»/],
+    ]) {
+      const { shown, issues } = await body(input);
+      assert.match(shown, expected, input);
+      assert.doesNotMatch(shown, /\\/, input);
+      assert.deepEqual(issues, [], input);
+    }
+  });
+
+  it("reads 4m^2 as algebra, not 4 square metres", async () => {
+    const { shown, issues } = await body("\\frac{12m^5}{4m^2}");
+    assert.equal(shown, "«[12m⁽5⁾/4m⁽2⁾]»");
+    assert.deepEqual(issues, []);
+    assert.equal((await body("The room is 4 m^{2}.")).shown, "The room is 4 m².");
+    assert.equal((await body("It is 5 km away, 12km by road.")).shown, "It is 5 km away, 12km by road.");
+  });
+
+  it("does not pull the word after a function name into maths", async () => {
+    for (const input of ["Use SHIFT + sin on the calculator.", "adding two logs gives the log of a product"]) {
+      const { shown } = await body(input);
+      assert.doesNotMatch(shown, /«(sin on|log of)/, shown);
+    }
+    assert.match((await body("Find sin 30° and log_{2} 8.")).shown, /«sin 30°».*«log₍2₎ 8»/);
+  });
+
+  it("does not stack one word over another", async () => {
+    const { shown } = await body("P(A) = number of favourable outcomes / total number of possible outcomes");
+    assert.doesNotMatch(shown, /\[outcomes\/total\]/);
+    assert.match((await body("Speed = \\frac{distance}{time}")).shown, /\[distance\/time\]/);
+    assert.match((await body("Evaluate 3x/4 + y/2.")).shown, /\[3x\/4\]/);
+  });
+});
+
+describe("real job regressions, second pass", () => {
+  for (const [input, check] of [
+    ["In a 45-45-90 triangle, both legs are equal.", (s) => !/«/.test(s)],
+    ["MA5-DAT-C-01 Compares and analyses datasets", (s) => !/«/.test(s)],
+    ["Find x - 1 and 2x-3.", (s) => /«x − 1»/.test(s)],
+    ["h = (d + 30) tan(31 degrees)", (s) => s.startsWith("«h = (d + 30)»")],
+    ["(A) 4.73 \\times 10^{-4}", (s) => s.startsWith("(A) «")],
+    ["One angle is a 30° angle and x = 2.", (s) => !/«a /.test(s)],
+  ]) {
+    it(`renders "${input}" sensibly`, async () => {
+      const { shown } = await body(input);
+      assert.ok(check(shown), shown);
+    });
+  }
+});
+
+describe("real job regressions, third pass", () => {
+  it("keeps Unicode subscripts in the expression", async () => {
+    assert.match((await body("Use y − y₁ = m(x − x₁) to find the line.")).shown, /«y − y₁ = m\(x − x₁\)»/);
+  });
+
+  it("leaves a letter before a bracket of words with the words", async () => {
+    const { shown } = await body("P(A or B) = P(A) + P(B) - P(A and B)");
+    assert.doesNotMatch(shown, /− P»/);
+  });
+});

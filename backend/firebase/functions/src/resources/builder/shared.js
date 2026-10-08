@@ -213,6 +213,9 @@ function looksLikeMoney(inner) {
 
 function stripDollarDelimiters(value) {
   return String(value ?? "")
+    // \( ... \) and \[ ... \] are always maths delimiters.
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, inner) => ` ${inner.trim()} `)
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, inner) => ` ${inner.trim()} `)
     .replace(DISPLAY_MATH, (_, inner) => ` ${inner.trim()} `)
     .replace(INLINE_MATH, (match, inner) => (looksLikeMoney(inner) ? match : ` ${inner.trim()} `));
 }
@@ -500,7 +503,7 @@ function mathSpanRuns(value, opts = {}) {
 // "A = π r²" used to come out as three differently styled pieces.
 const FUNCTION_WORD = String.raw`(?:arcsin|arccos|arctan|sinh|cosh|tanh|sin|cos|tan|cot|sec|csc|log|ln|exp|lim|max|min|det|gcd)(?![A-Za-z])`;
 const PREFIX = String.raw`[∠△∡∴∵¬]\s?`;
-const SUFFIX = String.raw`(?:[°′″'%!]|[⁰¹²³⁴⁵⁶⁷⁸⁹⁻ⁿ]+)*`;
+const SUFFIX = String.raw`(?:[°′″'%!]|[⁰¹²³⁴⁵⁶⁷⁸⁹⁻ⁿ]+|[₀₁₂₃₄₅₆₇₈₉ₙᵢ]+)*`;
 // 10 000, 3 456.5: NSW writes thousands with a space.
 const GROUPED_NUM = String.raw`\d{1,3}(?:[  ]\d{3})+(?!\d)(?:\.\d+)?`;
 // x:y, a:b:c, AB:DE, 12 : 18. Letter ratios must be tight so "Q: x" is not one.
@@ -509,7 +512,10 @@ const RATIO_PART = String.raw`(?:${NUM}|[A-Za-z]{1,2}(?![A-Za-z]))`;
 const RATIO = String.raw`(?:${NUM}(?:(?: : |:)${NUM})+|${RATIO_PART}(?::${RATIO_PART})+)`;
 // Intervals: (−∞, 3], [0, 1).
 const INTERVAL = String.raw`[(\[]\s?[-−]?(?:∞|${NUM})\s?,\s?[-−]?(?:∞|${NUM})\s?[)\]]`;
-const ATOM = String.raw`(?:${ENV_TERM}|${SET_LITERAL}|${INTERVAL}|□|_{2,}|[∅∞ℝℕℤℚℂ]|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}|${PAREN}|\|[^|\n]{1,40}?\||${RATIO}|\$?(?:${GROUPED_NUM}|${NUM})|${FUNCTION_WORD}|[${BIG_OPS}]|[${LETTER}]${WORD_TAIL})${SCRIPTED}${SUFFIX}`;
+// Brackets holding words ("(31 degrees)", "(angle from north)") are prose,
+// not part of an expression; function names inside are fine: (sin x + 1).
+const MATHS_PAREN = String.raw`(?!\([^()]*?(?<![A-Za-z])(?!(?:sin|cos|tan|log|exp|lim|max|min)(?![a-z]))[a-z]{3,})${PAREN}`;
+const ATOM = String.raw`(?:${ENV_TERM}|${SET_LITERAL}|${INTERVAL}|□|_{2,}|[∅∞ℝℕℤℚℂ]|\\frac\s*\{${BRACE_CONTENT}\}\s*\{${BRACE_CONTENT}\}|\\sqrt\s*(?:\[[^\]]+\])?\s*\{${BRACE_CONTENT}\}|${MATHS_PAREN}|\|[^|\n]{1,40}?\||${RATIO}|\$?(?:${GROUPED_NUM}|${NUM})|${FUNCTION_WORD}|[${BIG_OPS}]|[${LETTER}]${WORD_TAIL})${SCRIPTED}${SUFFIX}`;
 const TERM = String.raw`(?:${PREFIX})?${ATOM}(?:(?:${PREFIX})?${ATOM})*`;
 // What may follow a single space with no operator in between.
 // Two-letter English words that would otherwise pass as a product of two
@@ -540,12 +546,14 @@ const MATH_SPAN_MATCHERS = [
     needsOperator: true,
   },
   // A function applied with no operator: log₂ 8, sin θ, tan 35°.
-  { regex: new RegExp(String.raw`${FUNCTION_WORD}${SCRIPTED}(?:\s?${TERM})`, "g") },
+  { regex: new RegExp(String.raw`${FUNCTION_WORD}${SCRIPTED}(?:\s?${TERM})`, "g"), rejectProse: true },
   // A point, with its letter if it has one: (3, −4), B(4, 7).
   { regex: /(?<![A-Za-z])[A-Z]?\([-−]?\d+(?:\.\d+)?,\s*[-−]?\d+(?:\.\d+)?\)/g },
   // A negative number, with any power: -2^{2} is one term, not −2 + "^{2}".
   { regex: new RegExp(String.raw`(?<![\w])[-−]\d+(?:\.\d+)?%?\b${SCRIPTED}`, "g") },
-  { regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g },
+  // a/b, 3x/4. Two words ("outcomes / total" in "favourable outcomes /
+  // total outcomes") are prose: one word over the other is not the fraction.
+  { regex: /\b([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\s*\/\s*([A-Za-z]\w*|\d+(?:\.\d+)?|\d+[A-Za-z]+)\b/g, rejectWordFraction: true },
   // A single scripted term: x^2, x_1, (x+1)^{3}, 10^{-3}, H_2O. Identifiers
   // like file_name are prose, not a subscript, and are rejected.
   { regex: new RegExp(SCRIPT_TERM, "g"), rejectIdentifier: true },
@@ -556,8 +564,13 @@ function isSnakeCaseIdentifier(value) {
   return /^[A-Za-z]{3,}_[A-Za-z]{2,}/.test(value);
 }
 
+// co-interior, 45-45-90, MA5-DAT-C-01: hyphenated names and codes, not
+// subtraction. x-1 and 2x-3 are still maths.
 function isLikelyHyphenatedWord(value) {
-  return /^[A-Za-z]+-[A-Za-z]+$/.test(value);
+  if (/^[A-Za-z]+-[A-Za-z]+$/.test(value)) return true;
+  if (!/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$/.test(value)) return false;
+  const parts = value.split("-");
+  return parts.length >= 3 || parts.some((part) => /[A-Za-z]{2,}/.test(part));
 }
 
 // Function names plus the logic literals, which legitimately appear inside
@@ -594,19 +607,29 @@ function isProseSpan(value) {
 }
 
 function normaliseMathMatch(match) {
-  const leadingWordBeforeNegative = /^([A-Za-z]{2,}\s+)([-−]\$?\d[\s\S]*)$/.exec(match[0]);
-  if (leadingWordBeforeNegative) {
-    return {
-      index: match.index + leadingWordBeforeNegative[1].length,
-      text: leadingWordBeforeNegative[2],
-    };
-  }
-  return { index: match.index, text: match[0] };
+  let index = match.index;
+  let text = match[0];
+  const trimStart = (pattern) => {
+    const lead = pattern.exec(text);
+    if (lead) {
+      index += lead[0].length;
+      text = text.slice(lead[0].length);
+    }
+  };
+  // Not part of the maths: a word before a negative amount ("is −$20"), the
+  // article in "a 45° angle", and an option label ("(A) 4.73 × 10⁻⁴").
+  trimStart(/^[A-Za-z]{2,}\s+(?=[-−]\$?\d)/);
+  trimStart(/^[aA]\s+(?=[\d(])/);
+  trimStart(/^\([A-Ea-e]\)\s+/);
+  // A function name with nothing after it ("= (d + 30) tan" before
+  // "(31 degrees)") belongs to the words that follow, not the equation.
+  text = text.replace(/\s+(?:sin|cos|tan|log|ln)$/, "");
+  return { index, text };
 }
 
 function findMathSpan(text, start) {
   let best = null;
-  for (const { regex, rejectProse, rejectIdentifier, needsOperator } of MATH_SPAN_MATCHERS) {
+  for (const { regex, rejectProse, rejectIdentifier, needsOperator, rejectWordFraction } of MATH_SPAN_MATCHERS) {
     regex.lastIndex = start;
     let match = regex.exec(text);
     // Skip rejected candidates one character at a time rather than jumping past
@@ -616,6 +639,10 @@ function findMathSpan(text, start) {
     // prose, and re-scanning it must not accept "th = 5".
     const rejects = (m) =>
       isLikelyHyphenatedWord(m[0]) ||
+      isLikelyHyphenatedWord(normaliseMathMatch(m).text) ||
+      // The tail of a hyphenated code (the "C-01" of MA5-DAT-C-01).
+      (m.index > 1 && text[m.index - 1] === "-" && /[A-Za-z0-9]/.test(text[m.index - 2])) ||
+      (rejectWordFraction && /^[A-Za-z]{3,}\s*\/\s*[A-Za-z]{3,}$/.test(m[0])) ||
       (needsOperator && !HAS_OPERATOR.test(m[0].replace(/\\[A-Za-z]+/g, "").replace(/^[±∓+\-−]\s?/, ""))) ||
       (rejectIdentifier && isSnakeCaseIdentifier(m[0])) ||
       (rejectProse &&
@@ -627,6 +654,12 @@ function findMathSpan(text, start) {
     }
     if (!match) continue;
     const normalised = normaliseMathMatch(match);
+    // A letter right before a bracket of words ("− P" of "− P(A and B)") goes
+    // with the words, and so does the operator before it.
+    if (text[normalised.index + normalised.text.length] === "(") {
+      const trimmed = normalised.text.replace(new RegExp(String.raw`(?:\s*${MATH_OPERATOR}\s*)?[A-Za-z]$`), "");
+      if (trimmed.trim() && HAS_OPERATOR.test(trimmed)) normalised.text = trimmed;
+    }
     // At the same start the longer span wins: \frac{3}{4} + \frac{1}{6} is one
     // expression, not a fraction followed by "+ \frac{1}{6}".
     if (!best || normalised.index < best.index
@@ -690,10 +723,20 @@ function unitPowersAsCharacters(phrase) {
 // single letters are only a unit pair as m/s; d/t and V/h are fractions.
 const UNIT_RATE = new RegExp(String.raw`(?<![A-Za-z0-9])(${UNIT})\/(${UNIT})(?![A-Za-z0-9])`, "g");
 
+// A one-letter unit needs a space after its number: "5 m" is five metres,
+// but "4m^2" and "12m" are algebra. Longer units can touch (12km, 5mL).
+function isUnitAfter(number, phrase) {
+  return /\s$/.test(number) || !/^(?:m|L|g|s|h)(?![A-Za-z])/.test(phrase) || /^[^/]+\/./.test(phrase);
+}
+
 function maskUnits(value) {
-  const text = value.replace(UNIT_PHRASE, (_, number, phrase) => number + unitPowersAsCharacters(phrase));
+  const text = value.replace(UNIT_PHRASE, (match, number, phrase) => (
+    isUnitAfter(number, phrase) ? number + unitPowersAsCharacters(phrase) : match
+  ));
   const masked = text
-    .replace(UNIT_PHRASE, (_, number, phrase) => number + "\u0001".repeat(phrase.length))
+    .replace(UNIT_PHRASE, (match, number, phrase) => (
+      isUnitAfter(number, phrase) ? number + "\u0001".repeat(phrase.length) : match
+    ))
     .replace(UNIT_RATE, (rate, top, bottom) => (
       top.length > 1 || bottom.length > 1 || rate === "m/s" ? "\u0001".repeat(rate.length) : rate
     ));
