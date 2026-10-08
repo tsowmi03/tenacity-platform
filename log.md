@@ -195,18 +195,17 @@ omitted, and open follow-ups are tracked at the bottom.
   every test run (`test/fixtures/mathRenderingCorpus.js`). It fails on leaked
   LaTeX, raw scripts, lost dollar signs or fallback warnings. Against the old
   code it fails 17 lines. RES-15 (ratios) was merged into RES-31.
+- Checked against all 72 production maths jobs (9,164 text fields). Fields
+  that lost dollar signs went from 81 to 0, raw scripts from 10 to 0, and
+  fallback warnings from 4 to 0. Every job builds the same as before.
 
 **Why:** Booklets were printing different maths from what the model wrote,
 mostly with no warning to the tutor: lost dollar signs, dropped accents,
 merged working lines, sets as brackets, and LaTeX shown as words.
 
 **Status:** Live. [#224](https://github.com/tsowmi03/tenacity-platform/pull/224),
-Functions deployed with the merge.
-
-**Next steps**
-- Run the corpus checks over real `resourceJobs.generatedJson` from
-  production. This needs a fresh `gcloud auth application-default login`.
-  About an hour.
+Functions deployed with the merge. Diagram and layout polish continues in
+RES-40.
 
 ---
 
