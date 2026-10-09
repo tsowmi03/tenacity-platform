@@ -35,6 +35,25 @@ export function normalizeYear11Interest(id, data = {}) {
   };
 }
 
+export function normalizeReferral(id, data = {}) {
+  const status = ["pending", "successful", "rejected"].includes(data.status)
+    ? data.status
+    : "pending";
+  return {
+    id,
+    ...data,
+    status,
+    rewardApplied: data.rewardApplied === true,
+    newParentExisted: data.newParentExisted === true,
+    enrolmentIds: Array.isArray(data.enrolmentIds)
+      ? data.enrolmentIds.filter((value) => typeof value === "string")
+      : [],
+    createdAtIso: timestampToIso(data.createdAt),
+    updatedAtIso: timestampToIso(data.updatedAt),
+    rewardAppliedAtIso: timestampToIso(data.rewardAppliedAt),
+  };
+}
+
 export function normalizeEnrolment(id, data = {}) {
   const archived = data.archived === true;
   const status = data.status || (archived ? "archived" : "pending");
