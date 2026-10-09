@@ -190,8 +190,8 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** Last admin step of refer-a-friend. Referrals recorded on acceptance
 (TP-33) need somewhere to be decided and their rewards tracked.
 
-**Status:** Live. The admin portal and the `adminUpdateReferral` Function
-deployed with the merge.
+**Status:** Live. [#228](https://github.com/tsowmi03/tenacity-platform/pull/228),
+the admin portal and the `adminUpdateReferral` Function deployed with the merge.
 
 ---
 
