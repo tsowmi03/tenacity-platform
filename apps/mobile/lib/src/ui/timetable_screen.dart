@@ -8,10 +8,12 @@ import 'package:intl/intl.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
+import 'package:tenacity/src/controllers/referral_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/helpers/one_off_booking_plan.dart';
 import 'package:tenacity/src/helpers/parent_class_availability.dart';
+import 'package:tenacity/src/helpers/referral_prompt_policy.dart';
 import 'package:tenacity/src/helpers/same_day_booking_cutoff.dart';
 import 'package:tenacity/src/models/attendance_model.dart';
 import 'package:tenacity/src/models/class_model.dart';
@@ -929,16 +931,25 @@ class TimetableScreenState extends State<TimetableScreen>
 
     if (bookingPlan.requiresPayment) {
       if (!mounted) return false;
-      await _showOneOffPaymentMessage(
-        oneOffBookingOutcomeMessage(
-          paymentConfirmed: paymentConfirmed,
-          requestedCount: bookingPlan.paidBookings,
-          bookedCount: paidBookedChildIds.length,
-          alreadyBookedCount: alreadyBookedChildIds.length,
-          invoiceRecorded: true,
-          classLabel: classLabel,
-        ),
+      final outcome = oneOffBookingOutcomeMessage(
+        paymentConfirmed: paymentConfirmed,
+        requestedCount: bookingPlan.paidBookings,
+        bookedCount: paidBookedChildIds.length,
+        alreadyBookedCount: alreadyBookedChildIds.length,
+        invoiceRecorded: true,
+        classLabel: classLabel,
       );
+      await _showOneOffPaymentMessage(outcome);
+      // Only a clean, confirmed booking is a referral moment: never after a
+      // warning or a payment we could not confirm.
+      if (paymentConfirmed &&
+          paidBookedChildIds.isNotEmpty &&
+          outcome.tone == OneOffMessageTone.success) {
+        _triggerReferral(
+          ReferralTrigger.oneOffPaid,
+          afterSnackBar: !outcome.requiresAcknowledgement,
+        );
+      }
     } else {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -952,6 +963,9 @@ class TimetableScreenState extends State<TimetableScreen>
           ),
         ),
       );
+      if (bookedChildIds.isNotEmpty && failedChildIds.isEmpty) {
+        _triggerReferral(ReferralTrigger.oneOffTokens, afterSnackBar: true);
+      }
     }
     debugPrint('[TimetableScreen] _processOneOffBooking complete');
     return true;
@@ -1139,6 +1153,22 @@ class TimetableScreenState extends State<TimetableScreen>
         backgroundColor: invoiceCreationFailed ? Colors.red : null,
       ),
     );
+    if (enrolledChildIds.isNotEmpty &&
+        failedChildIds.isEmpty &&
+        !invoiceCreationFailed) {
+      _triggerReferral(ReferralTrigger.permanentEnrolment, afterSnackBar: true);
+    }
+  }
+
+  /// Reports a refer-a-friend moment (MOB-51). After a snack bar it waits for
+  /// the bar to go, so the sheet never lands on top of the confirmation.
+  void _triggerReferral(ReferralTrigger trigger, {required bool afterSnackBar}) {
+    final referrals = maybeReferralController(context);
+    if (referrals == null) return;
+    unawaited(referrals.trigger(
+      trigger,
+      delay: afterSnackBar ? const Duration(seconds: 4) : Duration.zero,
+    ));
   }
 
   Future<void> _processParentWaitlistJoin(

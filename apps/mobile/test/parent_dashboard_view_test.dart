@@ -87,6 +87,7 @@ Future<Taps> pumpDashboard(
   ParentDashboardViewData data, {
   Size size = const Size(402, 874),
   double textScale = 1.0,
+  bool withReferral = true,
 }) async {
   final taps = Taps();
 
@@ -108,6 +109,7 @@ Future<Taps> pumpDashboard(
           onOpenInvoices: () => taps.invoices++,
           onOpenProfile: () => taps.profile++,
           onOpenFeedback: () => taps.feedback++,
+          onShareReferral: withReferral ? () => taps.referrals++ : null,
         ),
       ),
     ),
@@ -125,9 +127,32 @@ class Taps {
   int invoices = 0;
   int profile = 0;
   int feedback = 0;
+  int referrals = 0;
 }
 
 void main() {
+  group('refer a friend', () {
+    testWidgets('the card is always there and shares on tap', (tester) async {
+      final taps = await pumpDashboard(tester, _data());
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('referral-card')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('Refer a friend'), findsOneWidget);
+      expect(find.text(r'You both get $10/hr off for a term.'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('referral-card')));
+      expect(taps.referrals, 1);
+    });
+
+    testWidgets('no card where sharing is not wired up', (tester) async {
+      await pumpDashboard(tester, _data(), withReferral: false);
+      expect(find.byKey(const Key('referral-card')), findsNothing);
+    });
+  });
+
   group('hierarchy', () {
     testWidgets('renders every section of the reference design',
         (tester) async {

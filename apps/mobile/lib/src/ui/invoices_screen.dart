@@ -7,6 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/connectivity_controller.dart';
 import '../controllers/invoice_controller.dart';
+import '../controllers/referral_controller.dart';
+import '../helpers/referral_prompt_policy.dart';
 import '../models/invoice_model.dart';
 import '../helpers/offline_action_guard.dart';
 import '../services/payment_verification_result.dart';
@@ -461,6 +463,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           message: 'Your paid invoices are now in History.',
         );
       });
+      // Refer-a-friend moment (MOB-51), a beat after the confirmation lands.
+      final referrals = maybeReferralController(context);
+      if (referrals != null) {
+        unawaited(referrals.trigger(
+          ReferralTrigger.invoicePaid,
+          delay: const Duration(seconds: 1),
+        ));
+      }
       _payNowClientSecretCache.removeWhere(
         (key, _) => pending.invoiceIds.any((id) => key.startsWith('$id|')),
       );

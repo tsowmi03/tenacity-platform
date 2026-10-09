@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
+import 'package:tenacity/src/controllers/referral_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/ui/components/components.dart';
@@ -47,6 +48,25 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   /// the view stuck in its loading state.
   Stream<List<StudentFeedback>>? _feedback;
 
+  /// Refer-a-friend counting (MOB-51). Held rather than looked up in
+  /// [dispose], where the tree can no longer be read.
+  ReferralController? _referrals;
+  final _reportedToReferrals = <String>{};
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _referrals ??= maybeReferralController(context);
+  }
+
+  @override
+  void dispose() {
+    // A prompt earned here waits until the parent leaves, so it never covers
+    // the note they are reading.
+    _referrals?.feedbackScreenClosed();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -81,6 +101,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
           );
 
           _scheduleMarkRead(feedbackController, data.unreadIds);
+          if (snapshot.hasData) _reportToReferrals(feedback);
 
           return FeedbackHistoryView(
             data: data,
@@ -127,6 +148,18 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       setState(() => _tutorNames = {..._tutorNames, ...names});
     }).catchError((Object error) {
       debugPrint('[FeedbackScreen] tutor name lookup failed: $error');
+    });
+  }
+
+  /// Hands notes on screen to the referral counter, each once per visit.
+  void _reportToReferrals(List<StudentFeedback> feedback) {
+    final referrals = _referrals;
+    if (referrals == null) return;
+    final fresh =
+        feedback.where((f) => _reportedToReferrals.add(f.id)).toList();
+    if (fresh.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      referrals.noteFeedbackShown(fresh);
     });
   }
 

@@ -7,6 +7,7 @@ import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
+import 'package:tenacity/src/controllers/referral_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
@@ -262,22 +263,32 @@ class _ParentDashboardState extends State<ParentDashboard>
           );
         }
 
-        return ParentDashboardView(
-          data: data,
-          onRefresh: _refresh,
-          onOpenClasses: () => widget.onNavigate(AppDestination.classes),
-          onOpenMessages: () => widget.onNavigate(AppDestination.messages),
-          onOpenAnnouncements: () =>
-              widget.onNavigate(AppDestination.announcements),
-          onOpenInvoices: () => widget.onNavigate(AppDestination.invoices),
-          onOpenProfile: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+        final referrals = maybeReferralController(context);
+        // Rebuilt as a share starts and ends, so the card shows its spinner.
+        return ListenableBuilder(
+          listenable: referrals ?? const _NoReferrals(),
+          builder: (context, _) {
+            return ParentDashboardView(
+              data: data,
+              onShareReferral:
+                  referrals == null ? null : () => referrals.share(context),
+              isSharingReferral: referrals?.isSharing ?? false,
+              onRefresh: _refresh,
+              onOpenClasses: () => widget.onNavigate(AppDestination.classes),
+              onOpenMessages: () => widget.onNavigate(AppDestination.messages),
+              onOpenAnnouncements: () =>
+                  widget.onNavigate(AppDestination.announcements),
+              onOpenInvoices: () => widget.onNavigate(AppDestination.invoices),
+              onOpenProfile: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                );
+              },
+              onOpenFeedback: () {
+                final feedback = data.latestFeedback;
+                if (feedback != null) _openFeedback(feedback.studentId);
+              },
             );
-          },
-          onOpenFeedback: () {
-            final feedback = data.latestFeedback;
-            if (feedback != null) _openFeedback(feedback.studentId);
           },
         );
       },
@@ -345,4 +356,16 @@ class _ParentDashboardError extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Stands in for the referral controller where none is provided, so the
+/// dashboard builds the same way either way.
+class _NoReferrals implements Listenable {
+  const _NoReferrals();
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
 }
