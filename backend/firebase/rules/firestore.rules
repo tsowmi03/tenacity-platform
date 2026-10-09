@@ -354,6 +354,25 @@ service cloud.firestore {
       allow create, delete: if false;
     }
 
+    // Referrals. Created only by adminAcceptEnrolment (admin SDK). Admins read
+    // them and may only record their decision and whether the reward has been
+    // applied - who referred whom is never editable from a client.
+    match /referrals/{referralId} {
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && onlyChangedKeys(['status', 'rewardApplied', 'rewardAppliedAt', 'updatedAt', 'updatedBy'])
+        && request.resource.data.status in ['pending', 'successful', 'rejected']
+        && request.resource.data.rewardApplied is bool
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow create, delete: if false;
+    }
+
+    // Referral code -> parent lookup. Written by getReferralLink and read by
+    // the website through the admin SDK; no client may see the mapping.
+    match /referralCodes/{code} {
+      allow read, write: if false;
+    }
+
     // Parent feedback survey responses. The public form writes these through the
     // admin SDK, and admins may only archive a row - never edit what a parent
     // wrote, and never delete a response.

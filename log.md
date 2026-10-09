@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-09 | [Parents get a referral link, and accepted referrals are recorded (TP-33)](#2026-10-09--parents-get-a-referral-link-and-accepted-referrals-are-recorded-tp-33) |
 | 2026-10-08 | [The README describes the repo as it is today (TP-26)](#2026-10-08--the-readme-describes-the-repo-as-it-is-today-tp-26) |
 | 2026-10-08 | [Maths renders as written: money, sets, ratios, accents, worked examples (RES-31)](#2026-10-08--maths-renders-as-written-money-sets-ratios-accents-worked-examples-res-31) |
 | 2026-10-07 | [English resources teach and mark the Tenacity way (RES-37)](#2026-10-07--english-resources-teach-and-mark-the-tenacity-way-res-37) |
@@ -162,6 +163,36 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-09 — Parents get a referral link, and accepted referrals are recorded (TP-33)
+
+**What changed**
+- New `getReferralLink` callable. A parent gets their own link,
+  `tenacitytutoring.com/r/<code>`. The code is issued the first time they ask
+  and is the same on every later call, even if several first calls race.
+  Codes are six characters with 0/O and 1/I left out, so they survive being
+  read aloud. Tutors and admins can't call it.
+- The code is stored on the parent (`users/{uid}.referralCode`) and in a new
+  `referralCodes/{code}` lookup for the website. Parents can't set their own
+  code, and no client can read the lookup.
+- Accepting an enrolment that came through a link (`referrerParentId`, set by
+  the website in WEB-7) now records a pending referral in `referrals/`, in the
+  same transaction as the acceptance. Siblings enrolled through the same link
+  share one referral. A self-referral is ignored. A referrer who is no longer
+  a parent is skipped and the family is still enrolled. If the new family was
+  already a Tenacity family, the referral says so, so the admin can judge.
+- Admins can read referrals and change only the decision (pending, successful,
+  rejected) and whether the reward has been applied. Nothing applies a
+  discount; that stays a manual invoice change.
+
+**Why:** First step of refer-a-friend. The app prompts (MOB-51), the website
+link (WEB-7) and the admin referrals page (AWP-25) all build on these codes
+and records.
+
+**Status:** Live. [#226](https://github.com/tsowmi03/tenacity-platform/pull/226),
+the `getReferralLink` Function and the Firestore rules deployed with the merge.
 
 ---
 

@@ -41,6 +41,7 @@ const { adminCreateStudent } = require("../src/students/createStudent");
 const { adminUpdateStudent } = require("../src/students/updateStudent");
 const { adminDeleteStudent } = require("../src/students/deleteStudent");
 const { adminAcceptEnrolment } = require("../src/enrolments/acceptEnrolment");
+const { getReferralLink } = require("../src/referrals/getReferralLink");
 const {
   adminArchiveEnrolment,
   adminUnarchiveEnrolment,
@@ -151,6 +152,7 @@ module.exports = Object.assign(
     previewParentEmailBlast,
     syncGoogleCalendar,
     reconcileOneOffPayments,
+    getReferralLink,
   }
 );
 module.exports.submitResourceJob = submitResourceJob;

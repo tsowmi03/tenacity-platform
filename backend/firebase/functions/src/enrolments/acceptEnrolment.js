@@ -21,6 +21,12 @@ const {
 const { acceptedFields } = require("./enrolmentFactory");
 const { buildUserDoc } = require("../users/userFactory");
 const { buildStudentDoc } = require("../students/studentFactory");
+const {
+  addEnrolmentToReferral,
+  claimedReferrer,
+  newReferralDoc,
+  referralDocId,
+} = require("../referrals/referralRecords");
 
 /**
  * Idempotent enrolment acceptance.
@@ -37,6 +43,9 @@ const { buildStudentDoc } = require("../students/studentFactory");
  *    acceptedAt/By, createdParentId/StudentId).
  *  - Always send the enrolment-accepted email. The parent welcome email is sent
  *    earlier by the enrolment-created trigger when the website form is submitted.
+ *  - If the enrolment came through a referral link (`referrerParentId`, set by
+ *    the website), record a pending referral in the same transaction, so a
+ *    referral exists exactly when the acceptance does.
  *
  * Caveat: enrolments accepted by the OLD onRequest function never had their
  * `status` field set. Re-running this function against such a record would
@@ -165,10 +174,13 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
   const studentRef = db.collection("students").doc();
   const studentId = studentRef.id;
   const targets = await gatherClassEnrolmentTargets(db, classIds, clock);
+  const referrerParentId = claimedReferrer(data, parentUid);
+  let referralId = null;
 
   const totalOps =
     2 + // parent + enrolment
     1 + // student
+    (referrerParentId ? 1 : 0) +
     targets.length +
     targets.reduce((sum, t) => sum + t.attendanceRefs.length, 0);
   if (totalOps > 450) {
@@ -195,6 +207,19 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
 
     const parentRef = db.collection("users").doc(parentUid);
     const parentSnap = await txn.get(parentRef);
+
+    // Transactions need every read before the first write, so the referral
+    // reads happen here even though the referral is written last.
+    let referrerSnap = null;
+    let referralSnap = null;
+    let referralRef = null;
+    if (referrerParentId) {
+      referrerSnap = await txn.get(db.collection("users").doc(referrerParentId));
+      referralRef = db
+        .collection("referrals")
+        .doc(referralDocId(referrerParentId, parentUid));
+      referralSnap = await txn.get(referralRef);
+    }
 
     if (parentSnap.exists) {
       txn.update(parentRef, {
@@ -245,6 +270,38 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
         clock,
       })
     );
+
+    // A referrer that is no longer a parent (deleted, or a code that pointed
+    // somewhere odd) is skipped rather than failing the acceptance: the family
+    // still gets enrolled, and the admin still sees the referral source.
+    referralId = null;
+    if (referrerSnap?.exists && (referrerSnap.data() || {}).role === "parent") {
+      referralId = referralRef.id;
+      if (referralSnap.exists) {
+        txn.update(
+          referralRef,
+          addEnrolmentToReferral({ enrolmentId, actorUid: actor.uid, clock })
+        );
+      } else {
+        txn.set(
+          referralRef,
+          newReferralDoc({
+            referrerParentId,
+            newParentId: parentUid,
+            enrolmentId,
+            referralCode: freshData.referralCode,
+            newParentExisted: parentSnap.exists,
+            actorUid: actor.uid,
+            clock,
+          })
+        );
+      }
+    } else if (referrerParentId) {
+      logger.warn("[adminAcceptEnrolment] referrer is not a parent; no referral", {
+        enrolmentId,
+        referrerParentId,
+      });
+    }
   });
 
   try {
@@ -279,6 +336,7 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
         studentId,
         classIds,
         authUserCreated,
+        referralId,
       },
     },
     { logger, clock }
@@ -291,6 +349,7 @@ async function acceptEnrolmentImpl({ payload, actor, deps }) {
     studentId,
     authUserCreated,
     classIds,
+    referralId,
     welcomeEmail: { sent: false, reason: "sent-on-registration" },
     acceptedEmail,
   };

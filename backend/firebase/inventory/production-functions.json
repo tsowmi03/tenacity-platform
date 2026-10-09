@@ -105,6 +105,7 @@
       "enrollStudentPermanentForParent",
       "generateResourcePreviewOnComplete",
       "getInvoicePdf",
+      "getReferralLink",
       "invoiceCreatedNotif",
       "invoiceReminderScheduler",
       "joinWaitlist",
