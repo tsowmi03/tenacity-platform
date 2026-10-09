@@ -14,6 +14,7 @@
       "enrollStudentOneOff",
       "enrollStudentPermanent",
       "enrollStudentPermanentForParent",
+      "getReferralLink",
       "joinWaitlist",
       "notifyStudentAbsence",
       "promoteWaitlistEntry",
