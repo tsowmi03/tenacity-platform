@@ -191,7 +191,8 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** Referrals from happy families are Tenacity's best source of new
 students, and the app is where parents see their child doing well.
 
-**Status:** Live. Ships to parents with the next mobile release.
+**Status:** Live. [#229](https://github.com/tsowmi03/tenacity-platform/pull/229),
+ships to parents with the next mobile release.
 
 ---
 
