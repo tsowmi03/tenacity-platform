@@ -69,6 +69,8 @@ dependencies:
   rxdart: ^0.28.0
   connectivity_plus: ^7.1.1
   google_fonts: ^6.3.2
+  # The native share sheet for a parent's referral link (MOB-51).
+  share_plus: ^12.0.2
 
 
 flutter_launcher_icons:

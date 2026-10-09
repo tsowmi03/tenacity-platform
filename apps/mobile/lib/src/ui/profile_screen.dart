@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
+import 'package:tenacity/src/controllers/referral_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
@@ -41,6 +42,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .read<TimetableController>()
           .fetchClassesForStudent(student.id),
     );
+  }
+
+  /// Null where the referral feature isn't provided, which hides the row.
+  VoidCallback? get _shareReferral {
+    final referrals = maybeReferralController(context);
+    if (referrals == null) return null;
+    return () => referrals.share(context);
   }
 
   Future<void> _openEnrolment() async {
@@ -118,6 +126,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
       onEnrolStudent: _openEnrolment,
+      onShareReferral: _shareReferral,
       onSignOut: _signOut,
       onRetry: () {
         _classRequests.clear();

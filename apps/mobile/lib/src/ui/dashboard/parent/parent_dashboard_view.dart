@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard_data.dart';
+import 'package:tenacity/src/ui/referrals/referral_widgets.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 /// The parent dashboard: today's classes, anything needing attention, the most
@@ -19,6 +20,11 @@ class ParentDashboardView extends StatelessWidget {
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenFeedback;
 
+  /// Shares the parent's referral link (MOB-51). The card is shown only when
+  /// this is set.
+  final VoidCallback? onShareReferral;
+  final bool isSharingReferral;
+
   const ParentDashboardView({
     super.key,
     required this.data,
@@ -29,6 +35,8 @@ class ParentDashboardView extends StatelessWidget {
     required this.onOpenInvoices,
     required this.onOpenProfile,
     required this.onOpenFeedback,
+    this.onShareReferral,
+    this.isSharingReferral = false,
   });
 
   @override
@@ -93,6 +101,13 @@ class ParentDashboardView extends StatelessWidget {
                     _FeedbackSection(
                       feedback: data.latestFeedback!,
                       onTap: onOpenFeedback,
+                    ),
+                  ],
+                  if (onShareReferral != null) ...[
+                    const SizedBox(height: AppSpacing.sectionGap),
+                    ReferralCard(
+                      onShare: onShareReferral!,
+                      isSharing: isSharingReferral,
                     ),
                   ],
                   const SizedBox(height: AppSpacing.sectionGap),

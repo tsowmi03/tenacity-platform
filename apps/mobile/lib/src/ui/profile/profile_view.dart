@@ -4,6 +4,7 @@ import 'package:tenacity/src/models/class_model.dart';
 import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/ui/components/components.dart';
+import 'package:tenacity/src/ui/referrals/referral_widgets.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 typedef StudentClassesLoader = Future<List<ClassModel>> Function(
@@ -24,6 +25,10 @@ class ProfileView extends StatelessWidget {
   final VoidCallback onSignOut;
   final VoidCallback onRetry;
 
+  /// Shares the parent's referral link (MOB-51); the row is shown to parents
+  /// only, and only when this is set.
+  final VoidCallback? onShareReferral;
+
   const ProfileView({
     super.key,
     required this.user,
@@ -38,6 +43,7 @@ class ProfileView extends StatelessWidget {
     required this.onRetry,
     this.loadError,
     this.actionMessage,
+    this.onShareReferral,
   });
 
   @override
@@ -106,6 +112,10 @@ class ProfileView extends StatelessWidget {
                         icon: const Icon(Icons.person_add_alt_1_rounded),
                         label: const Text('Enrol another student'),
                       ),
+                      if (onShareReferral != null) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        ReferralProfileRow(onShare: onShareReferral!),
+                      ],
                     ],
                     if (actionMessage != null) ...[
                       const SizedBox(height: AppSpacing.lg),

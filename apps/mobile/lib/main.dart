@@ -15,6 +15,7 @@ import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
+import 'package:tenacity/src/controllers/referral_controller.dart';
 import 'package:tenacity/src/controllers/settings_controller.dart';
 import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
@@ -24,8 +25,11 @@ import 'package:tenacity/src/services/chat_media.dart';
 import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/services/feedback_service.dart';
+import 'package:tenacity/src/services/invoice_service.dart';
+import 'package:tenacity/src/services/referral_service.dart';
 import 'package:tenacity/src/services/notification_service.dart';
 import 'package:tenacity/src/services/terms_service.dart';
+import 'package:tenacity/src/helpers/referral_prompt_policy.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/ui/home_screen.dart';
 import 'package:tenacity/src/ui/login_screen.dart';
@@ -115,6 +119,9 @@ void main() async {
     // the production Stripe account. Payments are disabled rather than
     // misdirected when Remote Config is unavailable.
     'stripe_publishable_key': '',
+    // Master switch for the refer-a-friend pop-ups (MOB-51). The dashboard
+    // card and Profile row stay regardless.
+    'referral_prompts_enabled': true,
   });
 
   try {
@@ -210,6 +217,27 @@ void main() async {
         ),
         ChangeNotifierProvider<SettingsController>(
             create: (_) => SettingsController()),
+        ChangeNotifierProxyProvider2<AuthController, ConnectivityController,
+            ReferralController>(
+          create: (_) => ReferralController(
+            service: ReferralService(),
+            store: ReferralPromptStore(),
+            navigatorKey: navigatorKey,
+            isEnabled: () => FirebaseRemoteConfig.instance
+                .getBool('referral_prompts_enabled'),
+            hasOverdueInvoice: (parentId) async => hasOverdueInvoice(
+              await InvoiceService().streamInvoicesByParent(parentId).first,
+              DateTime.now(),
+            ),
+          ),
+          // Kept, not rebuilt: it holds whether this session has already
+          // prompted.
+          update: (_, auth, connectivity, previous) => previous!
+            ..update(
+              user: auth.currentUser,
+              isOnline: connectivity.isOnline,
+            ),
+        ),
       ],
       child: const Tenacity(),
     ),

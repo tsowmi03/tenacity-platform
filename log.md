@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-09 | [The app asks parents to refer a friend at good moments (MOB-51)](#2026-10-09--the-app-asks-parents-to-refer-a-friend-at-good-moments-mob-51) |
 | 2026-10-09 | [Parents get a referral link, and accepted referrals are recorded (TP-33)](#2026-10-09--parents-get-a-referral-link-and-accepted-referrals-are-recorded-tp-33) |
 | 2026-10-08 | [The README describes the repo as it is today (TP-26)](#2026-10-08--the-readme-describes-the-repo-as-it-is-today-tp-26) |
 | 2026-10-08 | [Maths renders as written: money, sets, ratios, accents, worked examples (RES-31)](#2026-10-08--maths-renders-as-written-money-sets-ratios-accents-worked-examples-res-31) |
@@ -163,6 +164,35 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-09 — The app asks parents to refer a friend at good moments (MOB-51)
+
+**What changed**
+- A "Refer a friend" card is always on the parent dashboard, and there's a
+  "Refer a friend" button on Profile. Both open the phone's share sheet with
+  the parent's link (`getReferralLink`, TP-33) and a line about the offer
+  ($10/hr off for a term, for both families).
+- The app also offers a pop-up at five good moments: the 1st, 3rd, 5th… positive
+  feedback note (Ahead or On track) a parent opens, shown once they leave the
+  feedback screen; a term invoice paid in the app; a one-off class booked by
+  card; a one-off booked with tokens; and enrolling permanently in a class.
+- Limits, modelled on Prospa: at most one pop-up per session (a launch, or a
+  return after 30 minutes away) and never twice in a day. No pop-ups while an
+  invoice is overdue, when offline, or for tutors and admins. A pop-up that
+  can't show is dropped, not saved for later. "Not now" just closes it.
+- Feedback is counted on each device from the day the update is first opened,
+  so a long-standing family's old notes never trigger it, while a new family's
+  first good note does.
+- Remote Config `referral_prompts_enabled` turns the pop-ups off without a
+  release; the card and Profile button stay.
+
+**Why:** Referrals from happy families are Tenacity's best source of new
+students, and the app is where parents see their child doing well.
+
+**Status:** Live. [#229](https://github.com/tsowmi03/tenacity-platform/pull/229),
+ships to parents with the next mobile release.
 
 ---
 
