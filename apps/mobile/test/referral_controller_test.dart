@@ -216,6 +216,23 @@ void main() {
     expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
   });
 
+  testWidgets(
+      'counting starts at sign-in, so the first note written after it counts',
+      (tester) async {
+    final h = _Harness();
+    await h.pump(tester);
+    await tester.pumpAndSettle();
+
+    // Written after sign-in but before the parent first opens feedback.
+    final note = _note('first', h.now.add(const Duration(hours: 2)));
+    h.now = h.now.add(const Duration(days: 1));
+    await h.controller.noteFeedbackShown([note]);
+    h.controller.feedbackScreenClosed();
+    await tester.pumpAndSettle();
+
+    expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
+  });
+
   testWidgets('a failed link fetch tells the parent instead of sharing',
       (tester) async {
     final h = _Harness(failLink: true);

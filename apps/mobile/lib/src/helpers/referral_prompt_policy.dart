@@ -129,6 +129,10 @@ class ReferralFeedbackState {
   final DateTime countFrom;
 
   /// Positive notes already counted, so viewing one again changes nothing.
+  ///
+  /// Never trimmed: a screen reports a student's whole history, so a dropped
+  /// id would come back as new and be counted again. A few children's weekly
+  /// notes add only a hundred or so short ids a year.
   final Set<String> countedIds;
 
   /// How many positive notes have been counted.
@@ -152,10 +156,6 @@ class ReferralFeedbackCount {
 
   const ReferralFeedbackCount({required this.state, required this.promptDue});
 }
-
-/// Cap on remembered ids. About a year of weekly notes for several children;
-/// anything older is long past [ReferralFeedbackState.countFrom] mattering.
-const referralCountedIdsCap = 300;
 
 bool isPositiveFeedback(StudentFeedback feedback) =>
     feedback.progress == StudentProgress.ahead ||
@@ -188,15 +188,10 @@ ReferralFeedbackCount countPositiveFeedback({
     }
   }
 
-  final ids = [...state.countedIds, ...fresh];
-  final kept = ids.length > referralCountedIdsCap
-      ? ids.sublist(ids.length - referralCountedIdsCap)
-      : ids;
-
   return ReferralFeedbackCount(
     state: ReferralFeedbackState(
       countFrom: state.countFrom,
-      countedIds: kept.toSet(),
+      countedIds: {...state.countedIds, ...fresh},
       positiveCount: after,
     ),
     promptDue: promptDue,

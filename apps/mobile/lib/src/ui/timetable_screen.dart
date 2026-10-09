@@ -1162,7 +1162,8 @@ class TimetableScreenState extends State<TimetableScreen>
 
   /// Reports a refer-a-friend moment (MOB-51). After a snack bar it waits for
   /// the bar to go, so the sheet never lands on top of the confirmation.
-  void _triggerReferral(ReferralTrigger trigger, {required bool afterSnackBar}) {
+  void _triggerReferral(ReferralTrigger trigger,
+      {required bool afterSnackBar}) {
     final referrals = maybeReferralController(context);
     if (referrals == null) return;
     unawaited(referrals.trigger(

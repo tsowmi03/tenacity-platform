@@ -168,7 +168,8 @@ void main() {
 
     test('viewing the same note again changes nothing', () {
       final first = countPositiveFeedback(state: _state(), shown: [_note('a')]);
-      final again = countPositiveFeedback(state: first.state, shown: [_note('a')]);
+      final again =
+          countPositiveFeedback(state: first.state, shown: [_note('a')]);
       expect(again.promptDue, isFalse);
       expect(again.state.positiveCount, 1);
     });
@@ -185,7 +186,8 @@ void main() {
       expect(out.state.positiveCount, 0);
     });
 
-    test('several new notes at once prompt once if they pass an odd position', () {
+    test('several new notes at once prompt once if they pass an odd position',
+        () {
       // Count 1 → 3: passes the 3rd.
       final out = countPositiveFeedback(
         state: _state(count: 1, ids: {'x'}),
@@ -203,20 +205,21 @@ void main() {
       expect(out.promptDue, isFalse);
     });
 
-    test('remembers a bounded number of ids', () {
-      final ids = {for (var i = 0; i < referralCountedIdsCap; i++) 'old$i'};
-      final out = countPositiveFeedback(
-        state: _state(count: ids.length, ids: ids),
-        shown: [_note('new')],
-      );
-      expect(out.state.countedIds.length, referralCountedIdsCap);
-      expect(out.state.countedIds, contains('new'));
-      expect(out.state.countedIds, isNot(contains('old0')));
+    test('a long history is never recounted', () {
+      // A screen reports a student's whole history every visit.
+      final history = [for (var i = 0; i < 400; i++) _note('n$i')];
+      final first = countPositiveFeedback(state: _state(), shown: history);
+      expect(first.state.positiveCount, 400);
+
+      final again = countPositiveFeedback(state: first.state, shown: history);
+      expect(again.promptDue, isFalse);
+      expect(again.state.positiveCount, 400);
     });
   });
 
   test('the share message carries the link and the offer', () {
-    final message = referralShareMessage('https://tenacitytutoring.com/r/ABC234');
+    final message =
+        referralShareMessage('https://tenacitytutoring.com/r/ABC234');
     expect(message, contains('https://tenacitytutoring.com/r/ABC234'));
     expect(message, contains(r'$10/hr off for a term'));
   });

@@ -7,8 +7,7 @@ import 'package:tenacity/src/helpers/referral_prompt_policy.dart';
 /// The link never changes once issued, so it is kept for the rest of the app
 /// session after the first fetch.
 class ReferralService {
-  ReferralService({FirebaseFunctions? functions})
-      : _functions = functions;
+  ReferralService({FirebaseFunctions? functions}) : _functions = functions;
 
   final FirebaseFunctions? _functions;
   final Map<String, String> _links = {};
@@ -47,6 +46,10 @@ class ReferralPromptStore {
 
   /// The feedback counter, starting it at [now] the first time it is read for
   /// [uid] so feedback from before this feature never counts.
+  ///
+  /// `ReferralController` reads it as soon as a parent signs in, not when they
+  /// first open a note: started then, the very note being opened (written
+  /// earlier) would fall before the start and never count.
   Future<ReferralFeedbackState> feedbackState(String uid, DateTime now) async {
     final prefs = await _prefs();
     final countFromKey = _key(uid, 'countFrom');

@@ -89,12 +89,21 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
       WidgetsBinding.instance.addObserver(this);
       _observing = true;
     }
-    if (user?.uid != _user?.uid) {
+    final changedUser = user?.uid != _user?.uid;
+    if (changedUser) {
       _shownThisSession = false;
       _feedbackPromptDue = false;
     }
     _user = user;
     _isOnline = isOnline;
+    if (changedUser && _isParent && user != null) {
+      // Starts the feedback counter now if it has never run for this parent,
+      // so a note written after today counts the first time it is opened.
+      unawaited(_store.feedbackState(user.uid, _clock()).then((_) {},
+          onError: (Object error) {
+        debugPrint('[ReferralController] counter start failed: $error');
+      }));
+    }
   }
 
   @override

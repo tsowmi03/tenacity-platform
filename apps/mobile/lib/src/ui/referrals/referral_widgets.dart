@@ -66,7 +66,8 @@ class ReferralCard extends StatelessWidget {
   final VoidCallback onShare;
   final bool isSharing;
 
-  const ReferralCard({super.key, required this.onShare, this.isSharing = false});
+  const ReferralCard(
+      {super.key, required this.onShare, this.isSharing = false});
 
   @override
   Widget build(BuildContext context) {
