@@ -205,6 +205,24 @@ async function seedFirestore() {
       status: "draft",
       createdBy: "admin-1",
     });
+    await setDoc(doc(db, "referrals", "parent-2_parent-1"), {
+      referrerParentId: "parent-2",
+      newParentId: "parent-1",
+      enrolmentIds: ["enrolment-1"],
+      referralCode: "ABC234",
+      newParentExisted: false,
+      status: "pending",
+      rewardApplied: false,
+      rewardAppliedAt: null,
+      createdAt: 1,
+      createdBy: "admin-1",
+      updatedAt: 1,
+      updatedBy: "admin-1",
+    });
+    await setDoc(doc(db, "referralCodes", "ABC234"), {
+      parentId: "parent-2",
+      createdAt: 1,
+    });
     await setDoc(doc(db, "parentSurveyResponses", "survey-1"), {
       surveyVersion: 2,
       context: { studentYear: "years_9_10", subjects: ["maths"] },
@@ -873,6 +891,78 @@ describe("firestore rules", () => {
     await assertFails(getDoc(doc(anonDb(), "parentSurveyResponses", "survey-1")));
     await assertFails(
       updateDoc(doc(tutorDb, "parentSurveyResponses", "survey-1"), { archived: true })
+    );
+  });
+
+  it("lets admins read referrals and record only the decision and reward", async () => {
+    const adminDb = authedDb("admin-1", "admin");
+    const ref = doc(adminDb, "referrals", "parent-2_parent-1");
+
+    await assertSucceeds(getDocs(collection(adminDb, "referrals")));
+    await assertSucceeds(
+      updateDoc(ref, {
+        status: "successful",
+        updatedAt: serverTimestamp(),
+        updatedBy: "admin-1",
+      })
+    );
+    await assertSucceeds(
+      updateDoc(ref, {
+        rewardApplied: true,
+        rewardAppliedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedBy: "admin-1",
+      })
+    );
+
+    // Who referred whom is never editable from a client.
+    await assertFails(
+      updateDoc(ref, { referrerParentId: "admin-1", updatedBy: "admin-1" })
+    );
+    await assertFails(updateDoc(ref, { status: "paid", updatedBy: "admin-1" }));
+    await assertFails(updateDoc(ref, { rewardApplied: "yes", updatedBy: "admin-1" }));
+    await assertFails(updateDoc(ref, { status: "rejected", updatedBy: "someone-else" }));
+
+    // Only adminAcceptEnrolment (admin SDK) creates them, and none are deleted.
+    await assertFails(
+      setDoc(doc(adminDb, "referrals", "parent-3_parent-4"), { status: "pending" })
+    );
+    await assertFails(deleteDoc(ref));
+  });
+
+  it("hides referrals from tutors, parents and anonymous visitors", async () => {
+    const tutorDb = authedDb("tutor-1", "tutor");
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertFails(getDoc(doc(tutorDb, "referrals", "parent-2_parent-1")));
+    await assertFails(getDoc(doc(parentDb, "referrals", "parent-2_parent-1")));
+    await assertFails(getDoc(doc(anonDb(), "referrals", "parent-2_parent-1")));
+    await assertFails(
+      updateDoc(doc(parentDb, "referrals", "parent-2_parent-1"), {
+        status: "successful",
+        updatedBy: "parent-1",
+      })
+    );
+  });
+
+  it("keeps the referral code lookup closed to every client", async () => {
+    for (const db of [
+      authedDb("admin-1", "admin"),
+      authedDb("tutor-1", "tutor"),
+      authedDb("parent-2", "parent"),
+      anonDb(),
+    ]) {
+      await assertFails(getDoc(doc(db, "referralCodes", "ABC234")));
+      await assertFails(
+        setDoc(doc(db, "referralCodes", "ZZZ999"), { parentId: "parent-2" })
+      );
+    }
+  });
+
+  it("does not let a parent set their own referral code", async () => {
+    const parentDb = authedDb("parent-1", "parent");
+    await assertFails(
+      updateDoc(doc(parentDb, "users", "parent-1"), { referralCode: "ABC234" })
     );
   });
 });

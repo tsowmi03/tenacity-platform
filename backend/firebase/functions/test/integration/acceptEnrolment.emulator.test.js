@@ -48,6 +48,7 @@ describe("acceptEnrolmentImpl (firestore + auth emulators)", () => {
       clearCollection(db, "classes"),
       clearCollection(db, "enrolments"),
       clearCollection(db, "adminAuditLogs"),
+      clearCollection(db, "referrals"),
     ]);
     const list = await auth.listUsers();
     await Promise.all(list.users.map((u) => auth.deleteUser(u.uid)));
@@ -60,6 +61,7 @@ describe("acceptEnrolmentImpl (firestore + auth emulators)", () => {
       clearCollection(db, "classes"),
       clearCollection(db, "enrolments"),
       clearCollection(db, "adminAuditLogs"),
+      clearCollection(db, "referrals"),
     ]);
   });
 
@@ -272,5 +274,187 @@ describe("acceptEnrolmentImpl (firestore + auth emulators)", () => {
         }),
       (err) => err.code === "not-found"
     );
+  });
+
+  describe("referrals", () => {
+    async function seedReferrer(uid = "referrer-1", role = "parent") {
+      await db.collection("users").doc(uid).set({
+        role,
+        firstName: "Rae",
+        lastName: "Referrer",
+        email: `${uid}@example.com`,
+        students: [],
+        referralCode: "ABC234",
+      });
+    }
+
+    it("records a pending referral for an enrolment that came through a link", async () => {
+      await seedClass("c1");
+      await seedReferrer();
+      await seedEnrolment("e1", {
+        referrerParentId: "referrer-1",
+        referralCode: "ABC234",
+      });
+
+      const out = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e1" },
+        actor,
+        deps,
+      });
+
+      assert.equal(out.referralId, `referrer-1_${out.parentId}`);
+      const referrals = await db.collection("referrals").get();
+      assert.equal(referrals.size, 1);
+      const referral = referrals.docs[0].data();
+      assert.equal(referral.referrerParentId, "referrer-1");
+      assert.equal(referral.newParentId, out.parentId);
+      assert.deepEqual(referral.enrolmentIds, ["e1"]);
+      assert.equal(referral.referralCode, "ABC234");
+      assert.equal(referral.newParentExisted, false);
+      assert.equal(referral.status, "pending");
+      assert.equal(referral.rewardApplied, false);
+      assert.equal(referral.createdBy, actor.uid);
+
+      const logs = await db.collection("adminAuditLogs").get();
+      const log = logs.docs.find((d) => d.data().targetId === "e1").data();
+      assert.equal(log.payloadSummary.referralId, out.referralId);
+    });
+
+    it("does not create a second referral when accepting again", async () => {
+      await seedClass("c1");
+      await seedReferrer();
+      await seedEnrolment("e1", { referrerParentId: "referrer-1" });
+
+      await acceptEnrolmentImpl({ payload: { enrolmentId: "e1" }, actor, deps });
+      const again = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e1" },
+        actor,
+        deps,
+      });
+
+      assert.equal(again.idempotent, true);
+      const referrals = await db.collection("referrals").get();
+      assert.equal(referrals.size, 1);
+    });
+
+    it("folds a sibling's enrolment into the same referral", async () => {
+      await seedClass("c1");
+      await seedReferrer();
+      await seedEnrolment("e1", { referrerParentId: "referrer-1" });
+      await seedEnrolment("e2", {
+        studentFirstName: "Sam",
+        referrerParentId: "referrer-1",
+      });
+
+      const first = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e1" },
+        actor,
+        deps,
+      });
+      const second = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e2" },
+        actor,
+        deps,
+      });
+
+      assert.equal(second.parentId, first.parentId);
+      assert.equal(second.referralId, first.referralId);
+      const referrals = await db.collection("referrals").get();
+      assert.equal(referrals.size, 1);
+      const referral = referrals.docs[0].data();
+      assert.deepEqual(referral.enrolmentIds.sort(), ["e1", "e2"]);
+      assert.equal(referral.newParentExisted, false, "kept from the first acceptance");
+    });
+
+    it("flags a referral whose new parent was already a Tenacity family", async () => {
+      await seedClass("c1");
+      await seedReferrer();
+      await seedEnrolment("e1");
+      const existing = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e1" },
+        actor,
+        deps,
+      });
+      await seedEnrolment("e2", {
+        studentFirstName: "Sam",
+        referrerParentId: "referrer-1",
+      });
+
+      const out = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e2" },
+        actor,
+        deps,
+      });
+
+      assert.equal(out.parentId, existing.parentId);
+      const referral = (
+        await db.collection("referrals").doc(out.referralId).get()
+      ).data();
+      assert.equal(referral.newParentExisted, true);
+    });
+
+    it("ignores a self-referral", async () => {
+      await seedClass("c1");
+      await seedEnrolment("e1");
+      const existing = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e1" },
+        actor,
+        deps,
+      });
+      await seedEnrolment("e2", {
+        studentFirstName: "Sam",
+        referrerParentId: existing.parentId,
+      });
+
+      const out = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e2" },
+        actor,
+        deps,
+      });
+
+      assert.equal(out.referralId, null);
+      assert.equal((await db.collection("referrals").get()).size, 0);
+    });
+
+    it("still accepts, without a referral, when the referrer is not a parent", async () => {
+      await seedClass("c1");
+      await seedReferrer("tutor-1", "tutor");
+      await seedEnrolment("e1", { referrerParentId: "tutor-1" });
+      await seedEnrolment("e2", {
+        carerEmail: "other@example.com",
+        referrerParentId: "deleted-parent",
+      });
+
+      const tutorReferred = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e1" },
+        actor,
+        deps,
+      });
+      const ghostReferred = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e2" },
+        actor,
+        deps,
+      });
+
+      assert.equal(tutorReferred.referralId, null);
+      assert.equal(ghostReferred.referralId, null);
+      assert.ok(tutorReferred.studentId);
+      assert.ok(ghostReferred.studentId);
+      assert.equal((await db.collection("referrals").get()).size, 0);
+    });
+
+    it("creates no referral for an enrolment without a referrer", async () => {
+      await seedClass("c1");
+      await seedEnrolment("e1");
+
+      const out = await acceptEnrolmentImpl({
+        payload: { enrolmentId: "e1" },
+        actor,
+        deps,
+      });
+
+      assert.equal(out.referralId, null);
+      assert.equal((await db.collection("referrals").get()).size, 0);
+    });
   });
 });
