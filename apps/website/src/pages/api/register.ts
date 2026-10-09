@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@lib/firebaseAdmin";
+import { lookupReferrer, normaliseReferralCode } from "@lib/referralCodes";
 import { isReferralSourceCode } from "@lib/referralSources";
 import { requestIp, verifyTurnstile } from "@lib/turnstile";
 
@@ -23,6 +24,7 @@ type FamilyPayload = {
   emergencyContactRelation?: unknown;
   referralSource?: unknown;
   referralSourceDetail?: unknown;
+  referralCode?: unknown;
   termsAccepted?: unknown;
 };
 
@@ -222,6 +224,24 @@ export default async function handler(
     }
 
     const db = getAdminDb();
+
+    // A referral link's code, checked here rather than trusted from the
+    // client. An unknown code enrols normally; it just carries no referrer.
+    // Only the grouped payload (the live form) sends one. A failed lookup
+    // never blocks the enrolment itself.
+    const referralCode = normaliseReferralCode(body.family?.referralCode);
+    let referrerParentId: string | null = null;
+    if (referralCode) {
+      try {
+        referrerParentId = await lookupReferrer(db, referralCode);
+      } catch (error) {
+        console.error("Referral code lookup failed:", error);
+      }
+    }
+    const referral = referrerParentId
+      ? { referralCode, referrerParentId }
+      : {};
+
     const enrolments = db.collection("enrolments");
     const isGroup = enrolmentDocs.length > 1;
     const registrationGroupId = isGroup ? enrolments.doc().id : null;
@@ -231,6 +251,7 @@ export default async function handler(
       const ref = enrolments.doc();
       batch.set(ref, {
         ...doc,
+        ...referral,
         createdAt: FieldValue.serverTimestamp(),
         ...(isGroup
           ? {
