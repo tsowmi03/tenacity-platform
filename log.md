@@ -191,8 +191,8 @@ omitted, and open follow-ups are tracked at the bottom.
 link (WEB-7) and the admin referrals page (AWP-25) all build on these codes
 and records.
 
-**Status:** Live. The `getReferralLink` Function and the Firestore rules
-deployed with the merge.
+**Status:** Live. [#226](https://github.com/tsowmi03/tenacity-platform/pull/226),
+the `getReferralLink` Function and the Firestore rules deployed with the merge.
 
 ---
 
