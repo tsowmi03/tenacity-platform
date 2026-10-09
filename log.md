@@ -187,7 +187,8 @@ omitted, and open follow-ups are tracked at the bottom.
 (MOB-51) has to carry through to enrolment so accepting it records the
 referral (TP-33).
 
-**Status:** Live. The website deployed with the merge.
+**Status:** Live. [#227](https://github.com/tsowmi03/tenacity-platform/pull/227),
+the website deployed with the merge.
 
 ---
 
