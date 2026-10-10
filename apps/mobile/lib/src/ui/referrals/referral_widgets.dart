@@ -76,8 +76,6 @@ class ReferralCard extends StatelessWidget {
   const ReferralCard(
       {super.key, required this.onShare, this.isSharing = false});
 
-  static const _bodyColor = Color(0xD9FFFFFF); // white @ 85%
-
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -115,7 +113,7 @@ class ReferralCard extends StatelessWidget {
                     style: AppText.body(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.blue100,
+                      color: Colors.white,
                     ).copyWith(letterSpacing: AppSizes.sectionLabelTracking),
                   ),
                   const SizedBox(height: AppSpacing.sm),
@@ -130,7 +128,9 @@ class ReferralCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     referralCardBody,
-                    style: AppText.body(fontSize: 14, color: _bodyColor)
+                    // Solid white: on this blue it is 5.2:1, where any tint
+                    // of it falls under the 4.5:1 minimum for body text.
+                    style: AppText.body(fontSize: 14, color: Colors.white)
                         .copyWith(height: 1.45),
                   ),
                   const SizedBox(height: AppSpacing.lg),
