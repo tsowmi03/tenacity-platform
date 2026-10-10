@@ -140,8 +140,8 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).last,
       );
-      expect(find.text('Refer a friend'), findsOneWidget);
-      expect(find.text(r'You both get $10/hr off for a term.'), findsOneWidget);
+      expect(find.text(r'Give $100, get $100'), findsOneWidget);
+      expect(find.text('Share my link'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('referral-card')));
       expect(taps.referrals, 1);
@@ -283,11 +283,14 @@ void main() {
     testWidgets('quick actions are wired', (tester) async {
       final taps = await pumpDashboard(tester, _data());
 
-      await tester.ensureVisible(
-        find.byKey(const Key('parent-dashboard-book-one-off')),
-      );
-      await tester.tap(find.byKey(const Key('parent-dashboard-book-one-off')));
-      await tester.tap(find.byKey(const Key('parent-dashboard-message-tutor')));
+      for (final key in const [
+        Key('parent-dashboard-book-one-off'),
+        Key('parent-dashboard-message-tutor'),
+      ]) {
+        await tester.ensureVisible(find.byKey(key));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(key));
+      }
       await tester.pump();
 
       expect(taps.classes, 1);

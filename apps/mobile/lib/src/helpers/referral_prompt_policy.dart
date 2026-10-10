@@ -198,7 +198,8 @@ ReferralFeedbackCount countPositiveFeedback({
   );
 }
 
-/// The text shared alongside the link.
+/// The text shared alongside the link. Written for the friend who receives
+/// it, so it leads with what they get.
 String referralShareMessage(String link) =>
-    'We love Tenacity Tutoring for our kids. Enrol through my link and we '
-    'both get \$10/hr off for a term: $link';
+    "We've loved Tenacity Tutoring for our kids. Enrol through my link and "
+    "you'll get \$100 off a term: $link";

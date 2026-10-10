@@ -172,8 +172,13 @@ omitted, and open follow-ups are tracked at the bottom.
 **What changed**
 - A "Refer a friend" card is always on the parent dashboard, and there's a
   "Refer a friend" button on Profile. Both open the phone's share sheet with
-  the parent's link (`getReferralLink`, TP-33) and a line about the offer
-  ($10/hr off for a term, for both families).
+  the parent's link (`getReferralLink`, TP-33) and a line about the offer.
+- The offer is a flat $100 off a term for each family (changed from $10/hr
+  off for a term on 10 Oct 2026; the Pricing and discounts page in Confluence
+  is updated). The dashboard card is solid brand blue so it stands out from
+  the pale cards around it, and leads with "Give $100, get $100". The shared
+  message is written for the friend: "Enrol through my link and you'll get
+  $100 off a term."
 - The app also offers a pop-up at five good moments: the 1st, 3rd, 5th… positive
   feedback note (Ahead or On track) a parent opens, shown once they leave the
   feedback screen; a term invoice paid in the app; a one-off class booked by

@@ -221,6 +221,6 @@ void main() {
     final message =
         referralShareMessage('https://tenacitytutoring.com/r/ABC234');
     expect(message, contains('https://tenacitytutoring.com/r/ABC234'));
-    expect(message, contains(r'$10/hr off for a term'));
+    expect(message, contains(r'$100 off a term'));
   });
 }
