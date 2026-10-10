@@ -948,7 +948,7 @@ const setupRegistrationRuntime = () => {
     const help = getEl<HTMLElement>("referralSourceHelp");
     if (help) {
       help.textContent =
-        "Referred by a Tenacity family. You'll both get $10/hr off for a term.";
+        "You've been referred by a Tenacity family, so you'll get $100 off a term.";
     }
   };
 

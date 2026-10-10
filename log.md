@@ -176,8 +176,8 @@ omitted, and open follow-ups are tracked at the bottom.
   `/register`, never an error page. If the lookup itself fails, a well-formed
   code is kept, because the register API checks it again on submit.
 - With a code, the enrolment form starts "How did you hear about us?" on
-  Existing Tenacity family and says "Referred by a Tenacity family. You'll both
-  get $10/hr off for a term." The parent can still pick another answer.
+  Existing Tenacity family and says "You've been referred by a Tenacity family,
+  so you'll get $100 off a term." The parent can still pick another answer.
 - The register API checks the code against `referralCodes` (TP-33) and stores
   `referralCode` and `referrerParentId` on every enrolment in the submission,
   siblings included. An unknown code enrols normally without a referrer, and a
