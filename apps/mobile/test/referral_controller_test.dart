@@ -8,19 +8,7 @@ import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/services/referral_service.dart';
 
-class _FakeReferralService extends ReferralService {
-  _FakeReferralService({this.fail = false});
-
-  final bool fail;
-  int calls = 0;
-
-  @override
-  Future<String> linkFor(String uid) async {
-    calls++;
-    if (fail) throw Exception('functions unavailable');
-    return 'https://tenacitytutoring.com/r/ABC234';
-  }
-}
+const _link = 'https://tenacitytutoring.com/r/ABC234';
 
 AppUser _user({String uid = 'p1', String role = 'parent'}) => Parent(
       uid: uid,
@@ -53,7 +41,14 @@ class _Harness {
     bool enabled = true,
     bool failLink = false,
     String role = 'parent',
-  }) : service = _FakeReferralService(fail: failLink) {
+  }) {
+    service = ReferralService(
+      fetchLink: () async {
+        fetches++;
+        if (failLink) throw Exception('functions unavailable');
+        return _link;
+      },
+    );
     controller = ReferralController(
       service: service,
       store: ReferralPromptStore(),
@@ -61,14 +56,15 @@ class _Harness {
       isEnabled: () => enabled,
       hasOverdueInvoice: (_) async => overdue,
       clock: () => now,
-      shareSheet: (text, origin) async => shared.add(text),
+      clipboard: (text) async => copied.add(text),
     )..update(user: _user(role: role), isOnline: true);
   }
 
   final navigatorKey = GlobalKey<NavigatorState>();
-  final _FakeReferralService service;
+  late final ReferralService service;
   late final ReferralController controller;
-  final shared = <String>[];
+  final copied = <String>[];
+  int fetches = 0;
   DateTime now = DateTime(2026, 10, 9, 18);
 
   Future<void> pump(WidgetTester tester) async {
@@ -86,7 +82,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('a trigger shows the sheet, and Share shares the parent\'s link',
+  testWidgets('a trigger shows the sheet, and Copy copies the parent\'s link',
       (tester) async {
     final h = _Harness();
     await h.pump(tester);
@@ -95,18 +91,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('referral-sheet-share')));
+    await tester.tap(find.byKey(const Key('referral-sheet-copy')));
     await tester.pumpAndSettle();
     expect(await pending, ReferralGateResult.show);
 
-    expect(h.shared, hasLength(1));
-    expect(h.shared.single, contains('https://tenacitytutoring.com/r/ABC234'));
+    expect(h.copied, hasLength(1));
+    expect(h.copied.single, contains(_link));
+    expect(
+      find.text('Link copied. Paste it into a message to a friend.'),
+      findsOneWidget,
+    );
+    await tester.pump(referralCopiedFeedback);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('referral.p1.lastShownDay'), '2026-10-09');
   });
 
-  testWidgets('Not now closes the sheet without fetching the link',
-      (tester) async {
+  testWidgets('Not now closes the sheet without copying', (tester) async {
     final h = _Harness();
     await h.pump(tester);
 
@@ -117,8 +117,7 @@ void main() {
     await pending;
 
     expect(find.text("Know a family who'd love Tenacity?"), findsNothing);
-    expect(h.service.calls, 0);
-    expect(h.shared, isEmpty);
+    expect(h.copied, isEmpty);
   });
 
   testWidgets('only one prompt a session, and none again the same day',
@@ -233,31 +232,78 @@ void main() {
     expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
   });
 
-  testWidgets('a failed link fetch tells the parent instead of sharing',
-      (tester) async {
-    final h = _Harness(failLink: true);
-    await tester.pumpWidget(
+  Future<void> pumpCopyButton(WidgetTester tester, _Harness h) {
+    return tester.pumpWidget(
       MaterialApp(
         navigatorKey: h.navigatorKey,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
-              onPressed: () => h.controller.share(context),
-              child: const Text('Share'),
+              onPressed: () => h.controller.copyLink(context),
+              child: const Text('Copy'),
             ),
           ),
         ),
       ),
     );
+  }
 
-    await tester.tap(find.text('Share'));
+  testWidgets('the link is fetched at sign-in, so a tap copies without waiting',
+      (tester) async {
+    final h = _Harness();
+    await pumpCopyButton(tester, h);
+    await tester.pumpAndSettle();
+    expect(h.fetches, 1, reason: 'warmed when the parent signed in');
+
+    await tester.tap(find.text('Copy'));
+    // The same frame: no spinner, no network.
+    expect(h.controller.isCopying, isFalse);
+    await tester.pump();
+    expect(h.copied.single, contains(_link));
+    expect(h.controller.justCopied, isTrue);
+    expect(h.fetches, 1);
+
+    await tester.pump(referralCopiedFeedback);
+    expect(h.controller.justCopied, isFalse);
+  });
+
+  testWidgets('the link is kept on the device across app launches',
+      (tester) async {
+    await _Harness().pump(tester);
     await tester.pumpAndSettle();
 
-    expect(h.shared, isEmpty);
+    // A fresh launch: new service, same device storage.
+    final relaunched = _Harness();
+    await pumpCopyButton(tester, relaunched);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Copy'));
+    await tester.pump();
+
+    expect(relaunched.fetches, 0);
+    expect(relaunched.copied.single, contains(_link));
+    await tester.pump(referralCopiedFeedback);
+  });
+
+  testWidgets('tutors and admins never fetch a link', (tester) async {
+    final h = _Harness(role: 'tutor');
+    await h.pump(tester);
+    await tester.pumpAndSettle();
+    expect(h.fetches, 0);
+  });
+
+  testWidgets('a failed link fetch tells the parent instead of copying',
+      (tester) async {
+    final h = _Harness(failLink: true);
+    await pumpCopyButton(tester, h);
+
+    await tester.tap(find.text('Copy'));
+    await tester.pumpAndSettle();
+
+    expect(h.copied, isEmpty);
     expect(
       find.text("Couldn't get your referral link. Please try again."),
       findsOneWidget,
     );
-    expect(h.controller.isSharing, isFalse);
+    expect(h.controller.isCopying, isFalse);
   });
 }

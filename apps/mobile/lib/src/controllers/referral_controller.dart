@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:tenacity/src/helpers/referral_prompt_policy.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
@@ -23,20 +23,18 @@ ReferralController? maybeReferralController(BuildContext context) {
   }
 }
 
-/// Shows a share sheet. Injectable so tests can see what would be shared.
-typedef ReferralShareSheet = Future<void> Function(
-  String text,
-  Rect? origin,
-);
+/// Puts text on the clipboard. Injectable so tests can see what was copied.
+typedef ReferralClipboard = Future<void> Function(String text);
 
-Future<void> _platformShare(String text, Rect? origin) async {
-  await SharePlus.instance.share(
-    ShareParams(text: text, sharePositionOrigin: origin),
-  );
-}
+Future<void> _platformClipboard(String text) =>
+    Clipboard.setData(ClipboardData(text: text));
+
+/// How long the card says "Link copied" before going back to its call to
+/// action.
+const referralCopiedFeedback = Duration(seconds: 2);
 
 /// Runs the refer-a-friend prompts (MOB-51): counts positive feedback, decides
-/// with [evaluateReferralGate] whether a trigger may show the sheet, and shares
+/// with [evaluateReferralGate] whether a trigger may show the sheet, and copies
 /// the parent's link.
 ///
 /// Screens only report what happened ([trigger], [noteFeedbackShown],
@@ -51,14 +49,14 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
     required bool Function() isEnabled,
     required Future<bool> Function(String parentId) hasOverdueInvoice,
     DateTime Function()? clock,
-    ReferralShareSheet? shareSheet,
+    ReferralClipboard? clipboard,
   })  : _service = service,
         _store = store,
         _navigatorKey = navigatorKey,
         _isEnabled = isEnabled,
         _hasOverdueInvoice = hasOverdueInvoice,
         _clock = clock ?? DateTime.now,
-        _shareSheet = shareSheet ?? _platformShare;
+        _clipboard = clipboard ?? _platformClipboard;
 
   final ReferralService _service;
   final ReferralPromptStore _store;
@@ -66,7 +64,7 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
   final bool Function() _isEnabled;
   final Future<bool> Function(String parentId) _hasOverdueInvoice;
   final DateTime Function() _clock;
-  final ReferralShareSheet _shareSheet;
+  final ReferralClipboard _clipboard;
 
   AppUser? _user;
   bool _isOnline = true;
@@ -74,11 +72,17 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
   bool _feedbackPromptDue = false;
   bool _promptInFlight = false;
   DateTime? _pausedAt;
-  bool _isSharing = false;
+  bool _isCopying = false;
+  bool _justCopied = false;
+  Timer? _copiedTimer;
   bool _observing = false;
 
-  /// True while the link is being fetched for a share.
-  bool get isSharing => _isSharing;
+  /// True while the link is still being fetched for a copy. Rare: the link is
+  /// warmed at sign-in and kept on the device.
+  bool get isCopying => _isCopying;
+
+  /// True for a moment after a copy, so the card can say so.
+  bool get justCopied => _justCopied;
 
   bool get _isParent => _user?.role == 'parent';
 
@@ -102,6 +106,12 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
       unawaited(_store.feedbackState(user.uid, _clock()).then((_) {},
           onError: (Object error) {
         debugPrint('[ReferralController] counter start failed: $error');
+      }));
+      // Warms the link so "Copy my link" never waits on the network. A
+      // failure here is retried by the tap itself.
+      unawaited(
+          _service.linkFor(user.uid).then((_) {}, onError: (Object error) {
+        debugPrint('[ReferralController] link warm-up failed: $error');
       }));
     }
   }
@@ -194,17 +204,17 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
       await _store.setLastShownDay(uid, referralDayKey(_clock()));
       if (!context.mounted) return result;
 
-      final share = await showAppBottomSheet<bool>(
+      final copy = await showAppBottomSheet<bool>(
         context: context,
         builder: (sheetContext) => ReferralSheet(
-          onShare: () => Navigator.of(sheetContext).pop(true),
+          onCopy: () => Navigator.of(sheetContext).pop(true),
           onNotNow: () => Navigator.of(sheetContext).pop(false),
         ),
       );
-      if (share == true) {
-        final shareContext = _navigatorKey.currentContext;
-        if (shareContext != null && shareContext.mounted) {
-          await this.share(shareContext);
+      if (copy == true) {
+        final copyContext = _navigatorKey.currentContext;
+        if (copyContext != null && copyContext.mounted) {
+          await copyLink(copyContext);
         }
       }
       return result;
@@ -213,37 +223,53 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Opens the share sheet with the parent's link. Used by the pop-up, the
-  /// dashboard card and the Profile row.
-  Future<void> share(BuildContext context) async {
+  /// Copies the parent's link, with a line about the offer, to the clipboard.
+  /// Used by the pop-up, the dashboard card and the Profile row.
+  Future<void> copyLink(BuildContext context) async {
     final uid = _user?.uid;
-    if (uid == null || _isSharing) return;
+    if (uid == null || _isCopying) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
-    final box = context.findRenderObject() as RenderBox?;
-    final origin = box != null && box.hasSize
-        ? box.localToGlobal(Offset.zero) & box.size
-        : null;
 
-    _isSharing = true;
-    notifyListeners();
+    // Only shown when the warm-up hasn't landed yet; a cached link copies in
+    // the same frame.
+    final cached = _service.cachedLinkFor(uid);
+    if (cached == null) {
+      _isCopying = true;
+      notifyListeners();
+    }
     try {
-      final link = await _service.linkFor(uid);
-      await _shareSheet(referralShareMessage(link), origin);
+      final link = cached ?? await _service.linkFor(uid);
+      await _clipboard(referralShareMessage(link));
+      HapticFeedback.selectionClick();
+      _justCopied = true;
+      _copiedTimer?.cancel();
+      _copiedTimer = Timer(referralCopiedFeedback, () {
+        _justCopied = false;
+        notifyListeners();
+      });
+      messenger
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Link copied. Paste it into a message to a friend.'),
+          ),
+        );
     } catch (error) {
-      debugPrint('[ReferralController] share failed: $error');
+      debugPrint('[ReferralController] copy failed: $error');
       messenger?.showSnackBar(
         const SnackBar(
           content: Text("Couldn't get your referral link. Please try again."),
         ),
       );
     } finally {
-      _isSharing = false;
+      _isCopying = false;
       notifyListeners();
     }
   }
 
   @override
   void dispose() {
+    _copiedTimer?.cancel();
     if (_observing) WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

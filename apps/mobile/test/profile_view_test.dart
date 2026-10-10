@@ -49,7 +49,7 @@ Future<void> _pumpProfile(
   String? error,
   Size size = const Size(402, 874),
   double textScale = 1,
-  VoidCallback? onShareReferral,
+  VoidCallback? onCopyReferral,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -83,7 +83,7 @@ Future<void> _pumpProfile(
           onEnrolStudent: () {},
           onSignOut: () {},
           onRetry: () {},
-          onShareReferral: onShareReferral,
+          onCopyReferral: onCopyReferral,
         ),
       ),
     ),
@@ -92,9 +92,9 @@ Future<void> _pumpProfile(
 }
 
 void main() {
-  testWidgets('parents get a Refer a friend row that shares', (tester) async {
-    var shares = 0;
-    await _pumpProfile(tester, onShareReferral: () => shares++);
+  testWidgets('parents get a Refer a friend row that copies', (tester) async {
+    var copies = 0;
+    await _pumpProfile(tester, onCopyReferral: () => copies++);
 
     final row = find.byKey(const Key('profile-refer-friend'));
     await tester.scrollUntilVisible(
@@ -103,11 +103,11 @@ void main() {
       scrollable: find.byType(Scrollable).last,
     );
     await tester.tap(row);
-    expect(shares, 1);
+    expect(copies, 1);
   });
 
   testWidgets('tutors never see the referral row', (tester) async {
-    await _pumpProfile(tester, tutor: true, onShareReferral: () {});
+    await _pumpProfile(tester, tutor: true, onCopyReferral: () {});
     expect(find.byKey(const Key('profile-refer-friend')), findsNothing);
   });
 

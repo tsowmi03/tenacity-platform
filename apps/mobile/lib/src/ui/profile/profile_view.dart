@@ -25,9 +25,9 @@ class ProfileView extends StatelessWidget {
   final VoidCallback onSignOut;
   final VoidCallback onRetry;
 
-  /// Shares the parent's referral link (MOB-51); the row is shown to parents
+  /// Copies the parent's referral link (MOB-51); the row is shown to parents
   /// only, and only when this is set.
-  final VoidCallback? onShareReferral;
+  final VoidCallback? onCopyReferral;
 
   const ProfileView({
     super.key,
@@ -43,7 +43,7 @@ class ProfileView extends StatelessWidget {
     required this.onRetry,
     this.loadError,
     this.actionMessage,
-    this.onShareReferral,
+    this.onCopyReferral,
   });
 
   @override
@@ -112,9 +112,9 @@ class ProfileView extends StatelessWidget {
                         icon: const Icon(Icons.person_add_alt_1_rounded),
                         label: const Text('Enrol another student'),
                       ),
-                      if (onShareReferral != null) ...[
+                      if (onCopyReferral != null) ...[
                         const SizedBox(height: AppSpacing.sm),
-                        ReferralProfileRow(onShare: onShareReferral!),
+                        ReferralProfileRow(onCopy: onCopyReferral!),
                       ],
                     ],
                     if (actionMessage != null) ...[

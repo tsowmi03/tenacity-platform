@@ -264,15 +264,16 @@ class _ParentDashboardState extends State<ParentDashboard>
         }
 
         final referrals = maybeReferralController(context);
-        // Rebuilt as a share starts and ends, so the card shows its spinner.
+        // Rebuilt as a copy starts and lands, so the card can say so.
         return ListenableBuilder(
           listenable: referrals ?? const _NoReferrals(),
           builder: (context, _) {
             return ParentDashboardView(
               data: data,
-              onShareReferral:
-                  referrals == null ? null : () => referrals.share(context),
-              isSharingReferral: referrals?.isSharing ?? false,
+              onCopyReferral:
+                  referrals == null ? null : () => referrals.copyLink(context),
+              isCopyingReferral: referrals?.isCopying ?? false,
+              justCopiedReferral: referrals?.justCopied ?? false,
               onRefresh: _refresh,
               onOpenClasses: () => widget.onNavigate(AppDestination.classes),
               onOpenMessages: () => widget.onNavigate(AppDestination.messages),
