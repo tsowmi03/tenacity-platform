@@ -7,9 +7,6 @@ import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 const referralHeadline = "Know a family who'd love Tenacity?";
 
-/// The offer, as of 10 Oct 2026: a flat $100 off a term for each family.
-const referralOffer = r'You both get $100 off a term.';
-
 /// The pop-up raised at a good moment.
 class ReferralSheet extends StatelessWidget {
   final VoidCallback onShare;
@@ -51,8 +48,8 @@ class ReferralSheet extends StatelessWidget {
           ],
         ),
         child: Text(
-          r'Send them your link. When they join, they get $100 off a term, '
-          r'and so do you.',
+          r"Send them your link. When they join, you'll get $100 off your "
+          r"next term, and they'll get $100 off too.",
           key: const Key('referral-sheet-message'),
           style: AppText.body(fontSize: 14, color: AppColors.ink)
               .copyWith(height: 1.45),
@@ -62,11 +59,12 @@ class ReferralSheet extends StatelessWidget {
   }
 }
 
-/// Headline on the dashboard card: the offer is a flat $100 off a term for
-/// each family, so it is exact as well as short.
-const referralCardHeadline = r'Give $100, get $100';
-const referralCardBody = "Know a family who'd love Tenacity? Send them your "
-    r"link. When they join, you'll each get $100 off a term.";
+/// The offer, as of 10 Oct 2026: $100 off the referrer's next term for every
+/// family they refer, and $100 off for the new family. The headline leads
+/// with the parent's own saving; the friend's comes second.
+const referralCardHeadline = r'Get $100 off your fees';
+const referralCardBody = "Know a family who'd love Tenacity? When they join, "
+    r"you'll get $100 off your next term, and they'll get $100 off too.";
 
 /// Always on the parent dashboard and not dismissible: the entry point that
 /// means pop-ups can stay rare. Deliberately the one solid-blue block on a
