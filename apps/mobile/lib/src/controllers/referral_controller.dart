@@ -225,7 +225,10 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Copies the parent's link, with a line about the offer, to the clipboard.
   /// Used by the pop-up, the dashboard card and the Profile row.
-  Future<void> copyLink(BuildContext context) async {
+  ///
+  /// [confirm] shows a "Link copied" snackbar. The dashboard card turns it
+  /// off because its own button already says so; a failure is always shown.
+  Future<void> copyLink(BuildContext context, {bool confirm = true}) async {
     final uid = _user?.uid;
     if (uid == null || _isCopying) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -247,6 +250,7 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
         _justCopied = false;
         notifyListeners();
       });
+      if (!confirm) return;
       messenger
         ?..hideCurrentSnackBar()
         ..showSnackBar(

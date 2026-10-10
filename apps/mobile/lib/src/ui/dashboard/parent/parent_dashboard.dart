@@ -270,8 +270,9 @@ class _ParentDashboardState extends State<ParentDashboard>
           builder: (context, _) {
             return ParentDashboardView(
               data: data,
-              onCopyReferral:
-                  referrals == null ? null : () => referrals.copyLink(context),
+              onCopyReferral: referrals == null
+                  ? null
+                  : () => referrals.copyLink(context, confirm: false),
               isCopyingReferral: referrals?.isCopying ?? false,
               justCopiedReferral: referrals?.justCopied ?? false,
               onRefresh: _refresh,

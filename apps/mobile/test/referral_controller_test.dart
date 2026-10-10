@@ -267,6 +267,33 @@ void main() {
     expect(h.controller.justCopied, isFalse);
   });
 
+  testWidgets('the card copies without a snackbar; its button says so',
+      (tester) async {
+    final h = _Harness();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: h.navigatorKey,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => h.controller.copyLink(context, confirm: false),
+              child: const Text('Copy'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Copy'));
+    await tester.pumpAndSettle();
+
+    expect(h.copied.single, contains(_link));
+    expect(h.controller.justCopied, isTrue);
+    expect(find.byType(SnackBar), findsNothing);
+    await tester.pump(referralCopiedFeedback);
+  });
+
   testWidgets('the link is kept on the device across app launches',
       (tester) async {
     await _Harness().pump(tester);

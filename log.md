@@ -173,8 +173,8 @@ omitted, and open follow-ups are tracked at the bottom.
 - A "Refer a friend" card is always on the parent dashboard, and there's a
   "Refer a friend" button on Profile. Tapping either copies the parent's link
   (`getReferralLink`, TP-33), with a line about the offer, straight to the
-  clipboard; the card says "Link copied" and a snackbar says to paste it to a
-  friend. The link is fetched in the background when a parent signs in and
+  clipboard. The card's button says "Link copied"; the pop-up and Profile
+  button show a snackbar saying to paste it to a friend. The link is fetched in the background when a parent signs in and
   kept on the device, so a tap never waits: the first call to the function
   took about five seconds. The share sheet was dropped, along with `share_plus`.
 - The offer is $100 off the parent's next term for every family they refer,
