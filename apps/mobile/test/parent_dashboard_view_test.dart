@@ -140,8 +140,8 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).last,
       );
-      expect(find.text('Refer a friend'), findsOneWidget);
-      expect(find.text(r'You both get $10/hr off for a term.'), findsOneWidget);
+      expect(find.text(r'Get $100 off your fees'), findsOneWidget);
+      expect(find.text('Share my link'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('referral-card')));
       expect(taps.referrals, 1);
@@ -182,6 +182,12 @@ void main() {
       );
       expect(find.text('Jordan Lee · Year 9 Maths'), findsOneWidget);
 
+      // Below the fold since the referral card; the list builds lazily.
+      await tester.scrollUntilVisible(
+        find.text('Message a tutor'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
       expect(find.text('QUICK ACTIONS'), findsOneWidget);
       expect(find.text('Book one-off class'), findsOneWidget);
       expect(find.text('Message a tutor'), findsOneWidget);
@@ -283,11 +289,18 @@ void main() {
     testWidgets('quick actions are wired', (tester) async {
       final taps = await pumpDashboard(tester, _data());
 
-      await tester.ensureVisible(
-        find.byKey(const Key('parent-dashboard-book-one-off')),
-      );
-      await tester.tap(find.byKey(const Key('parent-dashboard-book-one-off')));
-      await tester.tap(find.byKey(const Key('parent-dashboard-message-tutor')));
+      for (final key in const [
+        Key('parent-dashboard-book-one-off'),
+        Key('parent-dashboard-message-tutor'),
+      ]) {
+        await tester.scrollUntilVisible(
+          find.byKey(key),
+          200,
+          scrollable: find.byType(Scrollable).last,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(key));
+      }
       await tester.pump();
 
       expect(taps.classes, 1);
