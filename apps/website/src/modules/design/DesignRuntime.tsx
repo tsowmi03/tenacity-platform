@@ -1,4 +1,5 @@
 import { db } from "@lib/firebaseConfig";
+import { normaliseReferralCode } from "@lib/referralCodes";
 import {
   isReferralSourceCode,
   REFERRAL_SOURCE_OPTIONS,
@@ -74,6 +75,8 @@ type FamilyData = {
   emergencyContactRelation: string;
   referralSource: ReferralSourceCode | "";
   referralSourceDetail: string;
+  // Code from a referral link (`/r/<code>`); the register API resolves it.
+  referralCode: string;
   termsAccepted: boolean;
 };
 
@@ -521,6 +524,7 @@ const setupRegistrationRuntime = () => {
     emergencyContactRelation: "",
     referralSource: "",
     referralSourceDetail: "",
+    referralCode: "",
     termsAccepted: false,
   };
 
@@ -923,6 +927,29 @@ const setupRegistrationRuntime = () => {
 
     select?.closest(".reg-field")?.classList.remove("err");
     buildSummary();
+  };
+
+  // Arriving from a referral link: keep the code for the register API, start
+  // "How did you hear about us?" on Existing Tenacity family, and say what the
+  // offer is. The parent can still pick another answer; the code is sent
+  // either way, since the link is what made the referral.
+  const applyReferralLink = () => {
+    const code = normaliseReferralCode(
+      new URLSearchParams(window.location.search).get("ref")
+    );
+    if (!code) return;
+    family.referralCode = code;
+
+    const select = getEl<HTMLSelectElement>("referralSource");
+    if (select) {
+      select.value = "existing_family";
+      updateReferralSource();
+    }
+    const help = getEl<HTMLElement>("referralSourceHelp");
+    if (help) {
+      help.textContent =
+        "You've been referred by a Tenacity family, so you'll get $100 off a term.";
+    }
   };
 
   const resetTurnstile = () => {
@@ -1330,6 +1357,7 @@ const setupRegistrationRuntime = () => {
   };
 
   setupReferralSource();
+  applyReferralLink();
   prefill();
   render();
 

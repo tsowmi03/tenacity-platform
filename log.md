@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-09 | [Referral links open enrolment with the referrer attached (WEB-7)](#2026-10-09--referral-links-open-enrolment-with-the-referrer-attached-web-7) |
 | 2026-10-09 | [The app asks parents to refer a friend at good moments (MOB-51)](#2026-10-09--the-app-asks-parents-to-refer-a-friend-at-good-moments-mob-51) |
 | 2026-10-09 | [Parents get a referral link, and accepted referrals are recorded (TP-33)](#2026-10-09--parents-get-a-referral-link-and-accepted-referrals-are-recorded-tp-33) |
 | 2026-10-08 | [The README describes the repo as it is today (TP-26)](#2026-10-08--the-readme-describes-the-repo-as-it-is-today-tp-26) |
@@ -164,6 +165,30 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-09 — Referral links open enrolment with the referrer attached (WEB-7)
+
+**What changed**
+- New `/r/<code>` page on the website. It looks the code up server-side and
+  sends the family to `/register?ref=<code>`. A code nobody owns goes to plain
+  `/register`, never an error page. If the lookup itself fails, a well-formed
+  code is kept, because the register API checks it again on submit.
+- With a code, the enrolment form starts "How did you hear about us?" on
+  Existing Tenacity family and says "You've been referred by a Tenacity family,
+  so you'll get $100 off a term." The parent can still pick another answer.
+- The register API checks the code against `referralCodes` (TP-33) and stores
+  `referralCode` and `referrerParentId` on every enrolment in the submission,
+  siblings included. An unknown code enrols normally without a referrer, and a
+  failed lookup never blocks the enrolment.
+
+**Why:** Second step of refer-a-friend. The link a parent shares from the app
+(MOB-51) has to carry through to enrolment so accepting it records the
+referral (TP-33).
+
+**Status:** Live. [#227](https://github.com/tsowmi03/tenacity-platform/pull/227),
+the website deployed with the merge.
 
 ---
 
