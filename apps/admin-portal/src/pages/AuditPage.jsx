@@ -128,6 +128,17 @@ function auditSummary(row) {
     return `Permanently purged enrolment for ${targetSubject(row)}.${reason}`;
   }
 
+  if (row.action === "referral.update") {
+    const parts = [];
+    if (row.before?.status !== row.after?.status) {
+      parts.push(`status ${row.before?.status ?? "?"} → ${row.after?.status ?? "?"}`);
+    }
+    if (row.before?.rewardApplied !== row.after?.rewardApplied) {
+      parts.push(row.after?.rewardApplied ? "reward applied" : "reward un-marked");
+    }
+    return `Updated referral ${targetSubject(row)}${parts.length ? `: ${parts.join(", ")}` : ""}.`;
+  }
+
   if (Array.isArray(payload.fields)) {
     return `Updated ${payload.fields.join(", ") || "fields"} on ${targetSubject(row)}.`;
   }

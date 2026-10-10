@@ -18,6 +18,7 @@ import {
   referralSourceLabel,
   referralSourceOption,
 } from "../backend/referralSources";
+import { getUser } from "../backend/usersApi";
 import Badge from "../components/Badge";
 import Button from "../components/Button";
 import PageHeader from "../components/PageHeader";
@@ -48,6 +49,7 @@ export default function EnrolmentDetailsPage() {
   const [siblingError, setSiblingError] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState(() => editFormFromEnrolment());
+  const [referrerName, setReferrerName] = useState("");
 
   const loadEnrolment = useCallback(
     async ({ cancelled = () => false } = {}) => {
@@ -111,6 +113,27 @@ export default function EnrolmentDetailsPage() {
     },
     [enrolmentId, isAdmin, user]
   );
+
+  // Set by the website when the family enrolled through a parent's referral
+  // link (WEB-7). Only the name is fetched; the referral itself is on the
+  // Referrals page once this enrolment is accepted.
+  const referrerParentId = String(enrolmentData?.referrerParentId || "").trim();
+  useEffect(() => {
+    let cancelled = false;
+    setReferrerName("");
+    if (!referrerParentId) return undefined;
+    getUser(referrerParentId)
+      .then((parent) => {
+        if (!cancelled) setReferrerName(parent?.displayName || "Unknown parent");
+      })
+      .catch((e) => {
+        console.error(e);
+        if (!cancelled) setReferrerName("Unknown parent");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [referrerParentId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -573,6 +596,18 @@ export default function EnrolmentDetailsPage() {
                 referralSourceLabel(enrolmentData.referralSource)
               )}
               {renderField("Referral detail", enrolmentData.referralSourceDetail)}
+              {referrerParentId ? (
+                <div className="field-readonly">
+                  <span className="label">Referred by</span>
+                  <div className="readonly-box">
+                    <Link to={`/people/parents/${referrerParentId}`}>
+                      {referrerName || "Loading..."}
+                    </Link>
+                    {" · "}
+                    <Link to="/referrals">Referrals</Link>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

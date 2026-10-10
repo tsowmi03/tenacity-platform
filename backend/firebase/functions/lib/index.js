@@ -42,6 +42,7 @@ const { adminUpdateStudent } = require("../src/students/updateStudent");
 const { adminDeleteStudent } = require("../src/students/deleteStudent");
 const { adminAcceptEnrolment } = require("../src/enrolments/acceptEnrolment");
 const { getReferralLink } = require("../src/referrals/getReferralLink");
+const { adminUpdateReferral } = require("../src/referrals/updateReferral");
 const {
   adminArchiveEnrolment,
   adminUnarchiveEnrolment,
@@ -153,6 +154,7 @@ module.exports = Object.assign(
     syncGoogleCalendar,
     reconcileOneOffPayments,
     getReferralLink,
+    adminUpdateReferral,
   }
 );
 module.exports.submitResourceJob = submitResourceJob;

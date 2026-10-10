@@ -19,6 +19,7 @@ import TermsPage from "./pages/TermsPage";
 import AuditPage from "./pages/AuditPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import Year11InterestPage from "./pages/Year11InterestPage";
+import ReferralsPage from "./pages/ReferralsPage";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
 import AnnouncementDetailPage from "./pages/AnnouncementDetailPage";
 import ParentFeedbackPage from "./pages/ParentFeedbackPage";
@@ -74,6 +75,17 @@ export default function App() {
                   <Year11InterestPage />
                 </AppShell>
               </StaffRoute>
+            }
+          />
+
+          <Route
+            path="/referrals"
+            element={
+              <RoleRoute allowedRoles={["admin"]}>
+                <AppShell>
+                  <ReferralsPage />
+                </AppShell>
+              </RoleRoute>
             }
           />
 
