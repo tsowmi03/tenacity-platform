@@ -3,18 +3,18 @@ import 'package:tenacity/src/ui/components/app_bottom_sheet.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 /// The refer-a-friend surfaces (MOB-51). Presentation only: what to do on
-/// Share comes from `ReferralController`.
+/// Copy comes from `ReferralController`.
 
 const referralHeadline = "Know a family who'd love Tenacity?";
 
 /// The pop-up raised at a good moment.
 class ReferralSheet extends StatelessWidget {
-  final VoidCallback onShare;
+  final VoidCallback onCopy;
   final VoidCallback onNotNow;
 
   const ReferralSheet({
     super.key,
-    required this.onShare,
+    required this.onCopy,
     required this.onNotNow,
   });
 
@@ -39,10 +39,10 @@ class ReferralSheet extends StatelessWidget {
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: FilledButton.icon(
-                key: const Key('referral-sheet-share'),
-                onPressed: onShare,
-                icon: const Icon(Icons.ios_share_rounded),
-                label: const Text('Share my link'),
+                key: const Key('referral-sheet-copy'),
+                onPressed: onCopy,
+                icon: const Icon(Icons.copy_rounded),
+                label: const Text('Copy my link'),
               ),
             ),
           ],
@@ -70,11 +70,18 @@ const referralCardBody = "Know a family who'd love Tenacity? When they join, "
 /// means pop-ups can stay rare. Deliberately the one solid-blue block on a
 /// page of pale cards, so it reads as an offer rather than another update.
 class ReferralCard extends StatelessWidget {
-  final VoidCallback onShare;
-  final bool isSharing;
+  final VoidCallback onCopy;
+  final bool isCopying;
 
-  const ReferralCard(
-      {super.key, required this.onShare, this.isSharing = false});
+  /// Swaps the call to action for "Link copied" for a moment after a tap.
+  final bool justCopied;
+
+  const ReferralCard({
+    super.key,
+    required this.onCopy,
+    this.isCopying = false,
+    this.justCopied = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +91,7 @@ class ReferralCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: const Key('referral-card'),
-        onTap: isSharing ? null : onShare,
+        onTap: isCopying ? null : onCopy,
         child: Stack(
           children: [
             // Two soft rings in the corner: enough to lift the card off the
@@ -134,7 +141,7 @@ class ReferralCard extends StatelessWidget {
                         .copyWith(height: 1.45),
                   ),
                   const SizedBox(height: AppSpacing.lg),
-                  _ShareButton(isSharing: isSharing),
+                  _CopyButton(isCopying: isCopying, justCopied: justCopied),
                 ],
               ),
             ),
@@ -146,11 +153,12 @@ class ReferralCard extends StatelessWidget {
 }
 
 /// The white call to action. Not a button of its own: the whole card is the
-/// tap target, so a near-miss still shares.
-class _ShareButton extends StatelessWidget {
-  final bool isSharing;
+/// tap target, so a near-miss still copies.
+class _CopyButton extends StatelessWidget {
+  final bool isCopying;
+  final bool justCopied;
 
-  const _ShareButton({required this.isSharing});
+  const _CopyButton({required this.isCopying, required this.justCopied});
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +174,7 @@ class _ShareButton extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          isSharing
+          isCopying
               ? const SizedBox.square(
                   dimension: 16,
                   child: CircularProgressIndicator(
@@ -174,14 +182,14 @@ class _ShareButton extends StatelessWidget {
                     color: AppColors.blue,
                   ),
                 )
-              : const Icon(
-                  Icons.ios_share_rounded,
+              : Icon(
+                  justCopied ? Icons.check_rounded : Icons.copy_rounded,
                   size: 18,
                   color: AppColors.blue,
                 ),
           const SizedBox(width: AppSpacing.sm),
           Text(
-            'Share my link',
+            justCopied ? 'Link copied' : 'Copy my link',
             style: AppText.body(
               fontSize: 14,
               fontWeight: FontWeight.w700,
@@ -215,15 +223,15 @@ class _Ring extends StatelessWidget {
 
 /// The "Refer a friend" row on the parent's Profile.
 class ReferralProfileRow extends StatelessWidget {
-  final VoidCallback onShare;
+  final VoidCallback onCopy;
 
-  const ReferralProfileRow({super.key, required this.onShare});
+  const ReferralProfileRow({super.key, required this.onCopy});
 
   @override
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
       key: const Key('profile-refer-friend'),
-      onPressed: onShare,
+      onPressed: onCopy,
       icon: const Icon(Icons.card_giftcard_rounded),
       label: const Text(r'Refer a friend, get $100 off'),
     );

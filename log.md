@@ -171,8 +171,12 @@ omitted, and open follow-ups are tracked at the bottom.
 
 **What changed**
 - A "Refer a friend" card is always on the parent dashboard, and there's a
-  "Refer a friend" button on Profile. Both open the phone's share sheet with
-  the parent's link (`getReferralLink`, TP-33) and a line about the offer.
+  "Refer a friend" button on Profile. Tapping either copies the parent's link
+  (`getReferralLink`, TP-33), with a line about the offer, straight to the
+  clipboard. The card's button says "Link copied"; the pop-up and Profile
+  button show a snackbar saying to paste it to a friend. The link is fetched in the background when a parent signs in and
+  kept on the device, so a tap never waits: the first call to the function
+  took about five seconds. The share sheet was dropped, along with `share_plus`.
 - The offer is $100 off the parent's next term for every family they refer,
   and $100 off for the new family. It stacks with the other discounts
   (changed from $10/hr off for a term on 10 Oct 2026; the Pricing and

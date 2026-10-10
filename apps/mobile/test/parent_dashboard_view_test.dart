@@ -109,7 +109,7 @@ Future<Taps> pumpDashboard(
           onOpenInvoices: () => taps.invoices++,
           onOpenProfile: () => taps.profile++,
           onOpenFeedback: () => taps.feedback++,
-          onShareReferral: withReferral ? () => taps.referrals++ : null,
+          onCopyReferral: withReferral ? () => taps.referrals++ : null,
         ),
       ),
     ),
@@ -132,7 +132,7 @@ class Taps {
 
 void main() {
   group('refer a friend', () {
-    testWidgets('the card is always there and shares on tap', (tester) async {
+    testWidgets('the card is always there and copies on tap', (tester) async {
       final taps = await pumpDashboard(tester, _data());
 
       await tester.scrollUntilVisible(
@@ -141,7 +141,7 @@ void main() {
         scrollable: find.byType(Scrollable).last,
       );
       expect(find.text(r'Get $100 off your fees'), findsOneWidget);
-      expect(find.text('Share my link'), findsOneWidget);
+      expect(find.text('Copy my link'), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('referral-card')));
       expect(taps.referrals, 1);

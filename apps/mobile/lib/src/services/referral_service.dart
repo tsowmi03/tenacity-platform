@@ -2,25 +2,58 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tenacity/src/helpers/referral_prompt_policy.dart';
 
-/// Fetches a parent's referral link from `getReferralLink` (TP-33).
+/// A parent's referral link from `getReferralLink` (TP-33).
 ///
-/// The link never changes once issued, so it is kept for the rest of the app
-/// session after the first fetch.
+/// The link never changes once issued, so it is fetched once and kept on the
+/// device. `ReferralController` warms it when a parent signs in, so a tap on
+/// "Copy my link" never waits on the network: the first call can take several
+/// seconds while the function starts cold and issues the code.
 class ReferralService {
-  ReferralService({FirebaseFunctions? functions}) : _functions = functions;
+  ReferralService({
+    FirebaseFunctions? functions,
+    Future<SharedPreferences> Function()? prefs,
+    Future<String> Function()? fetchLink,
+  })  : _functions = functions,
+        _prefs = prefs ?? SharedPreferences.getInstance,
+        _fetchLink = fetchLink;
 
   final FirebaseFunctions? _functions;
+  final Future<SharedPreferences> Function() _prefs;
+  final Future<String> Function()? _fetchLink;
   final Map<String, String> _links = {};
+  final Map<String, Future<String>> _inFlight = {};
 
-  Future<String> linkFor(String uid) async {
+  String _key(String uid) => 'referral.$uid.link';
+
+  /// The link if it is already in memory, without waiting for anything.
+  String? cachedLinkFor(String uid) => _links[uid];
+
+  /// The link from memory, then the device, then the network. Concurrent
+  /// callers share one request.
+  Future<String> linkFor(String uid) {
     final cached = _links[uid];
-    if (cached != null) return cached;
+    if (cached != null) return Future.value(cached);
+    return _inFlight[uid] ??= _load(uid).whenComplete(() {
+      _inFlight.remove(uid);
+    });
+  }
+
+  Future<String> _load(String uid) async {
+    final prefs = await _prefs();
+    final stored = prefs.getString(_key(uid));
+    if (stored != null && stored.isNotEmpty) {
+      return _links[uid] = stored;
+    }
+    final link = await (_fetchLink ?? _callFunction)();
+    await prefs.setString(_key(uid), link);
+    return _links[uid] = link;
+  }
+
+  Future<String> _callFunction() async {
     final functions = _functions ?? FirebaseFunctions.instance;
     final result = await functions.httpsCallable('getReferralLink').call();
     final data = Map<String, dynamic>.from(result.data as Map);
-    final link = data['link'] as String;
-    _links[uid] = link;
-    return link;
+    return data['link'] as String;
   }
 }
 

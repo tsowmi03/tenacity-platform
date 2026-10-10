@@ -20,10 +20,11 @@ class ParentDashboardView extends StatelessWidget {
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenFeedback;
 
-  /// Shares the parent's referral link (MOB-51). The card is shown only when
+  /// Copies the parent's referral link (MOB-51). The card is shown only when
   /// this is set.
-  final VoidCallback? onShareReferral;
-  final bool isSharingReferral;
+  final VoidCallback? onCopyReferral;
+  final bool isCopyingReferral;
+  final bool justCopiedReferral;
 
   const ParentDashboardView({
     super.key,
@@ -35,8 +36,9 @@ class ParentDashboardView extends StatelessWidget {
     required this.onOpenInvoices,
     required this.onOpenProfile,
     required this.onOpenFeedback,
-    this.onShareReferral,
-    this.isSharingReferral = false,
+    this.onCopyReferral,
+    this.isCopyingReferral = false,
+    this.justCopiedReferral = false,
   });
 
   @override
@@ -103,11 +105,12 @@ class ParentDashboardView extends StatelessWidget {
                       onTap: onOpenFeedback,
                     ),
                   ],
-                  if (onShareReferral != null) ...[
+                  if (onCopyReferral != null) ...[
                     const SizedBox(height: AppSpacing.sectionGap),
                     ReferralCard(
-                      onShare: onShareReferral!,
-                      isSharing: isSharingReferral,
+                      onCopy: onCopyReferral!,
+                      isCopying: isCopyingReferral,
+                      justCopied: justCopiedReferral,
                     ),
                   ],
                   const SizedBox(height: AppSpacing.sectionGap),

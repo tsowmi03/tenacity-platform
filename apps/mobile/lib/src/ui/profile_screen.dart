@@ -45,10 +45,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   /// Null where the referral feature isn't provided, which hides the row.
-  VoidCallback? get _shareReferral {
+  VoidCallback? get _copyReferral {
     final referrals = maybeReferralController(context);
     if (referrals == null) return null;
-    return () => referrals.share(context);
+    return () => referrals.copyLink(context);
   }
 
   Future<void> _openEnrolment() async {
@@ -126,7 +126,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
       onEnrolStudent: _openEnrolment,
-      onShareReferral: _shareReferral,
+      onCopyReferral: _copyReferral,
       onSignOut: _signOut,
       onRetry: () {
         _classRequests.clear();
