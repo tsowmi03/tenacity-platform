@@ -99,6 +99,16 @@ class ReferralPromptStore {
     );
   }
 
+  /// Clears what limits the pop-ups: the day one was last shown and the
+  /// feedback count. Staging testing only (see Settings). Keeps the counter's
+  /// start, so notes written since then count again, and the cached link.
+  Future<void> resetPromptLimits(String uid) async {
+    final prefs = await _prefs();
+    await prefs.remove(_key(uid, 'lastShownDay'));
+    await prefs.remove(_key(uid, 'countedIds'));
+    await prefs.remove(_key(uid, 'positiveCount'));
+  }
+
   Future<void> saveFeedbackState(
     String uid,
     ReferralFeedbackState state,

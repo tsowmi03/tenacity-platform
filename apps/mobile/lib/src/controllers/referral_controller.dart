@@ -145,6 +145,17 @@ class ReferralController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Lets every pop-up moment be tried again straight away: clears today's
+  /// limit, this session's, and the feedback count. Wired to a Settings row
+  /// that only staging builds show, so production parents never see it.
+  Future<void> resetPromptLimitsForTesting() async {
+    final uid = _user?.uid;
+    if (uid == null) return;
+    await _store.resetPromptLimits(uid);
+    _shownThisSession = false;
+    _feedbackPromptDue = false;
+  }
+
   /// The parent has left the feedback screen.
   void feedbackScreenClosed() {
     if (!_feedbackPromptDue) return;

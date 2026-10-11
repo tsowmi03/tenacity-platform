@@ -10,6 +10,7 @@ class _Actions {
   int passwords = 0;
   int terms = 0;
   int deletes = 0;
+  int referralResets = 0;
   bool? spotOpened;
   bool? lessonReminder;
 }
@@ -21,6 +22,7 @@ Future<_Actions> _pumpSettings(
   String? notificationError,
   Size size = const Size(402, 874),
   double textScale = 1,
+  bool withReferralReset = false,
 }) async {
   final actions = _Actions();
   tester.view.physicalSize = size;
@@ -49,6 +51,8 @@ Future<_Actions> _pumpSettings(
           onChangePassword: () => actions.passwords++,
           onOpenTerms: () => actions.terms++,
           onDeleteAccount: () => actions.deletes++,
+          onResetReferralPrompts:
+              withReferralReset ? () => actions.referralResets++ : null,
         ),
       ),
     ),
@@ -58,6 +62,25 @@ Future<_Actions> _pumpSettings(
 }
 
 void main() {
+  testWidgets('the referral reset row shows only when wired (staging)',
+      (tester) async {
+    await _pumpSettings(tester);
+    expect(
+      find.byKey(const Key('settings-reset-referral-prompts')),
+      findsNothing,
+    );
+
+    final actions = await _pumpSettings(tester, withReferralReset: true);
+    final row = find.byKey(const Key('settings-reset-referral-prompts'));
+    await tester.scrollUntilVisible(
+      row,
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(row);
+    expect(actions.referralResets, 1);
+  });
+
   testWidgets('parent sees and can change notification preferences',
       (tester) async {
     final actions = await _pumpSettings(tester);

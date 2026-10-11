@@ -197,6 +197,9 @@ omitted, and open follow-ups are tracked at the bottom.
   first good note does.
 - Remote Config `referral_prompts_enabled` turns the pop-ups off without a
   release; the card and Profile button stay.
+- Staging builds have a "Reset referral pop-ups" row in Settings (parents
+  only) that clears the daily and session limits and the feedback count, so
+  every moment can be tested in one sitting. Production builds never show it.
 
 **Why:** Referrals from happy families are Tenacity's best source of new
 students, and the app is where parents see their child doing well.
