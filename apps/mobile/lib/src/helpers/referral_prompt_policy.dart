@@ -202,4 +202,4 @@ ReferralFeedbackCount countPositiveFeedback({
 /// it, so it leads with what they get.
 String referralShareMessage(String link) =>
     "We've loved Tenacity Tutoring for our kids. Enrol through my link and "
-    "you'll get \$100 off a term: $link";
+    "your first lesson is free: $link";

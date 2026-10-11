@@ -49,7 +49,7 @@ class ReferralSheet extends StatelessWidget {
         ),
         child: Text(
           r"Send them your link. When they join, you'll get $100 off your "
-          r"next term, and they'll get $100 off too.",
+          r"next term, and their first lesson is free.",
           key: const Key('referral-sheet-message'),
           style: AppText.body(fontSize: 14, color: AppColors.ink)
               .copyWith(height: 1.45),
@@ -59,12 +59,12 @@ class ReferralSheet extends StatelessWidget {
   }
 }
 
-/// The offer, as of 10 Oct 2026: $100 off the referrer's next term for every
-/// family they refer, and $100 off for the new family. The headline leads
+/// The offer, as of 12 Oct 2026: $100 off the referrer's next term for every
+/// family they refer; the new family's first lesson is free. The headline leads
 /// with the parent's own saving; the friend's comes second.
 const referralCardHeadline = r'Get $100 off your fees';
 const referralCardBody = "Know a family who'd love Tenacity? When they join, "
-    r"you'll get $100 off your next term, and they'll get $100 off too.";
+    r"you'll get $100 off your next term, and their first lesson is free.";
 
 /// Always on the parent dashboard and not dismissible: the entry point that
 /// means pop-ups can stay rare. Deliberately the one solid-blue block on a
