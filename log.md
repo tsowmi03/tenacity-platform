@@ -185,8 +185,8 @@ omitted, and open follow-ups are tracked at the bottom.
   cleared if it is un-marked.
 - Enrolment details now show "Referred by" with a link to the referring parent
   when the family came through a referral link.
-- Nothing changes an invoice: the $100 referral discount is still applied by
-  hand.
+- Nothing changes an invoice: the referring family's $100 is still applied by
+  hand. The new family's reward is their free first lesson.
 
 **Why:** Last admin step of refer-a-friend. Referrals recorded on acceptance
 (TP-33) need somewhere to be decided and their rewards tracked.

@@ -242,7 +242,7 @@ export default function ReferralsPage() {
     <>
       <PageHeader
         title="Referrals"
-        subtitle="Families who enrolled through another parent's referral link. Mark each one, then tick off the reward once you've taken $100 off a term on both families' invoices."
+        subtitle="Families who enrolled through another parent's referral link. Mark each one, then tick off the reward once you've taken $100 off the referring family's next term. The new family's reward is their free first lesson."
         crumbs={[{ label: "Overview", href: "/" }, { label: "Referrals" }]}
       />
 
