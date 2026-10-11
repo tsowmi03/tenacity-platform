@@ -177,13 +177,14 @@ omitted, and open follow-ups are tracked at the bottom.
   button show a snackbar saying to paste it to a friend. The link is fetched in the background when a parent signs in and
   kept on the device, so a tap never waits: the first call to the function
   took about five seconds. The share sheet was dropped, along with `share_plus`.
-- The offer is $100 off the parent's next term for every family they refer,
-  and $100 off for the new family. It stacks with the other discounts
-  (changed from $10/hr off for a term on 10 Oct 2026; the Pricing and
-  discounts page in Confluence is updated). The dashboard card is solid brand
+- The offer is $100 off the parent's next term for every family they refer;
+  the new family's first lesson is free (the usual free trial). The $100
+  stacks with the other discounts. It changed from $10/hr off for a term for
+  both families, to $100 each on 10 Oct 2026, then to this on 12 Oct; the
+  Pricing and discounts page in Confluence is updated. The dashboard card is solid brand
   blue so it stands out from the pale cards around it, and leads with the
   parent's own saving: "Get $100 off your fees". The shared message is written
-  for the friend: "Enrol through my link and you'll get $100 off a term."
+  for the friend: "Enrol through my link and your first lesson is free."
 - The app also offers a pop-up at five good moments: the 1st, 3rd, 5th… positive
   feedback note (Ahead or On track) a parent opens, shown once they leave the
   feedback screen; a term invoice paid in the app; a one-off class booked by
