@@ -21,6 +21,10 @@ class SettingsView extends StatelessWidget {
   final VoidCallback onOpenTerms;
   final VoidCallback onDeleteAccount;
 
+  /// Staging only: clears the referral pop-up limits so each moment can be
+  /// tested again. The row is shown only when this is set.
+  final VoidCallback? onResetReferralPrompts;
+
   const SettingsView({
     super.key,
     required this.isParent,
@@ -40,6 +44,7 @@ class SettingsView extends StatelessWidget {
     required this.onDeleteAccount,
     this.notificationError,
     this.actionError,
+    this.onResetReferralPrompts,
   });
 
   @override
@@ -136,6 +141,23 @@ class SettingsView extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (onResetReferralPrompts != null) ...[
+                    const SizedBox(height: AppSpacing.xl),
+                    const SectionLabel(title: 'STAGING TESTING'),
+                    const SizedBox(height: AppSpacing.labelGap),
+                    _SettingsCard(
+                      children: [
+                        _ActionTile(
+                          key: const Key('settings-reset-referral-prompts'),
+                          icon: Icons.restart_alt_rounded,
+                          title: 'Reset referral pop-ups',
+                          subtitle: "Clears today's limit and the feedback "
+                              'count so each moment can be tested again',
+                          onTap: onResetReferralPrompts!,
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.xl),
                   const SectionLabel(title: 'DANGER ZONE'),
                   const SizedBox(height: AppSpacing.labelGap),

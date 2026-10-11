@@ -189,6 +189,47 @@ void main() {
     );
   });
 
+  testWidgets('the staging reset lets a pop-up show again the same day',
+      (tester) async {
+    final h = _Harness();
+    await h.pump(tester);
+
+    final first = h.controller.trigger(ReferralTrigger.invoicePaid);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('referral-sheet-not-now')));
+    await tester.pumpAndSettle();
+    await first;
+    expect(
+      await h.controller.trigger(ReferralTrigger.oneOffTokens),
+      ReferralGateResult.alreadyShownThisSession,
+    );
+
+    await h.controller.resetPromptLimitsForTesting();
+
+    final again = h.controller.trigger(ReferralTrigger.oneOffTokens);
+    await tester.pumpAndSettle();
+    expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
+    await tester.tap(find.byKey(const Key('referral-sheet-not-now')));
+    await tester.pumpAndSettle();
+    expect(await again, ReferralGateResult.show);
+  });
+
+  testWidgets('the staging reset lets the same notes count again',
+      (tester) async {
+    final h = _Harness();
+    await h.pump(tester);
+    await tester.pumpAndSettle();
+    final note = _note('n1', h.now.add(const Duration(minutes: 1)));
+
+    await h.controller.noteFeedbackShown([note]);
+    await h.controller.resetPromptLimitsForTesting();
+    await h.controller.noteFeedbackShown([note]);
+    h.controller.feedbackScreenClosed();
+    await tester.pumpAndSettle();
+
+    expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
+  });
+
   testWidgets('a positive note prompts once the parent leaves the screen',
       (tester) async {
     final h = _Harness();

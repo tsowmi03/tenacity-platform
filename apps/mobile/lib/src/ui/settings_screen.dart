@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/config/app_environment.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/profile_controller.dart';
+import 'package:tenacity/src/controllers/referral_controller.dart';
 import 'package:tenacity/src/controllers/settings_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
 import 'package:tenacity/src/ui/change_password_screen.dart';
@@ -115,6 +117,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// Staging builds only, and only for parents: the referral pop-ups are
+  /// limited to one a day, which makes testing every moment slow. Null (no
+  /// row) in production.
+  VoidCallback? _resetReferralPrompts(bool isParent) {
+    if (!AppEnvironment.isStaging || !isParent) return null;
+    final referrals = maybeReferralController(context);
+    if (referrals == null) return null;
+    return () async {
+      final messenger = ScaffoldMessenger.of(context);
+      await referrals.resetPromptLimitsForTesting();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Referral pop-ups reset. Each moment can show again.'),
+        ),
+      );
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthController>().currentUser;
@@ -139,6 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           notificationError:
               settings.loadedUserId == user?.uid ? settings.errorMessage : null,
           actionError: _actionError,
+          onResetReferralPrompts: _resetReferralPrompts(isParent),
           onBack: () => Navigator.maybePop(context),
           onRetryNotifications: () {
             if (user != null) settings.loadSettings(user.uid);
