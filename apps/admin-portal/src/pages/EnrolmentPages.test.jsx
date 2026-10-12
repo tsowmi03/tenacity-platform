@@ -25,6 +25,11 @@ vi.mock("../AuthProvider", () => ({
 
 vi.mock("../backend/enrolmentsApi", () => api);
 
+const usersApi = vi.hoisted(() => ({
+  getUser: vi.fn(async (uid) => ({ id: uid, displayName: "Rae Referrer" })),
+}));
+vi.mock("../backend/usersApi", () => usersApi);
+
 import { ToastProvider } from "../components/ToastProvider";
 import EnrolmentDetailsPage from "./EnrolmentDetailsPage";
 import EnrolmentPortalPage from "./EnrolmentPortalPage";
@@ -190,6 +195,43 @@ describe("EnrolmentDetailsPage", () => {
     expect(screen.queryByRole("button", { name: /Purge permanently/i })).not.toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Accept enrolment/i })).toBeInTheDocument();
+  });
+
+  it("names the parent whose referral link the family used", async () => {
+    api.getEnrolment.mockResolvedValue(enrolmentFixture({
+      referralSource: "existing_family",
+      referralCode: "ABC234",
+      referrerParentId: "parent_referrer",
+    }));
+
+    render(
+      <MemoryRouter initialEntries={["/enrolments/enrolment_backend_id"]}>
+        <Routes>
+          <Route path="/enrolments/:enrolmentId" element={<EnrolmentDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const link = await screen.findByRole("link", { name: "Rae Referrer" });
+    expect(link).toHaveAttribute("href", "/people/parents/parent_referrer");
+    expect(usersApi.getUser).toHaveBeenCalledWith("parent_referrer");
+    expect(screen.getByText("Referred by")).toBeInTheDocument();
+  });
+
+  it("does not look up a referrer for an enrolment without one", async () => {
+    api.getEnrolment.mockResolvedValue(enrolmentFixture());
+
+    render(
+      <MemoryRouter initialEntries={["/enrolments/enrolment_backend_id"]}>
+        <Routes>
+          <Route path="/enrolments/:enrolmentId" element={<EnrolmentDetailsPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.queryByText("Loading enrolment details...")).not.toBeInTheDocument());
+    expect(screen.queryByText("Referred by")).not.toBeInTheDocument();
+    expect(usersApi.getUser).not.toHaveBeenCalled();
   });
 
   it("shows referral source and detail in the intake record", async () => {

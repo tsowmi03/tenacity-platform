@@ -25,6 +25,7 @@ const NAV = [
     items: [
       { to: "/enrolments", label: "Enrolments", icon: "enrol" },
       { to: "/year-11-interest", label: "Year 11 interest", icon: "waitlist" },
+      { to: "/referrals", label: "Referrals", icon: "check-circle", adminOnly: true },
       { to: "/people", label: "People", icon: "people" },
       { to: "/classes", label: "Classes", icon: "classes" },
     ],

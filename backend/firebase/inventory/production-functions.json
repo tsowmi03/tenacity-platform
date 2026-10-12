@@ -83,6 +83,7 @@
       "adminUpdateClass",
       "adminUpdateEnrolment",
       "adminUpdateInvoice",
+      "adminUpdateReferral",
       "adminUpdateStudent",
       "adminUpdateTerm",
       "adminUpdateUser",

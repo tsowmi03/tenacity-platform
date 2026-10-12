@@ -22,6 +22,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | --- | --- |
 | 2026-10-12 | [A parent's permanent enrolment no longer fails after it succeeds (MOB-57)](#2026-10-12--a-parents-permanent-enrolment-no-longer-fails-after-it-succeeds-mob-57) |
 | 2026-10-09 | [Referral links open enrolment with the referrer attached (WEB-7)](#2026-10-09--referral-links-open-enrolment-with-the-referrer-attached-web-7) |
+| 2026-10-09 | [Admins see who referred whom and tick off rewards (AWP-25)](#2026-10-09--admins-see-who-referred-whom-and-tick-off-rewards-awp-25) |
 | 2026-10-09 | [The app asks parents to refer a friend at good moments (MOB-51)](#2026-10-09--the-app-asks-parents-to-refer-a-friend-at-good-moments-mob-51) |
 | 2026-10-09 | [Parents get a referral link, and accepted referrals are recorded (TP-33)](#2026-10-09--parents-get-a-referral-link-and-accepted-referrals-are-recorded-tp-33) |
 | 2026-10-08 | [The README describes the repo as it is today (TP-26)](#2026-10-08--the-readme-describes-the-repo-as-it-is-today-tp-26) |
@@ -213,6 +214,36 @@ referral (TP-33).
 
 **Status:** Live. [#227](https://github.com/tsowmi03/tenacity-platform/pull/227),
 the website deployed with the merge.
+
+---
+
+## 2026-10-09 — Admins see who referred whom and tick off rewards (AWP-25)
+
+**What changed**
+- New Referrals page in the admin portal (Operations → Referrals, admins only),
+  with tabs for Pending, Successful and Rejected. Each row shows who referred,
+  the new family (flagged "Existing family" if they were already with us),
+  links to each child's enrolment, and the date.
+- Pending referrals can be marked successful or rejected. Successful ones show
+  "Reward owed" until an admin clicks "Reward applied", and a banner counts the
+  rewards still to apply. A referral can go back to pending, but not once its
+  reward is applied.
+- Changes go through a new `adminUpdateReferral` callable, so each one is in the
+  audit log with its before and after ("Rae Referrer → Nina New: status
+  pending → successful"). The date the reward was applied is stamped, and
+  cleared if it is un-marked. A reward can only be applied to a successful
+  referral: the function refuses any change that would leave it on a pending
+  or rejected one, even when two admins act from stale pages.
+- Enrolment details now show "Referred by" with a link to the referring parent
+  when the family came through a referral link.
+- Nothing changes an invoice: the referring family's $100 is still applied by
+  hand. The new family's reward is their free first lesson.
+
+**Why:** Last admin step of refer-a-friend. Referrals recorded on acceptance
+(TP-33) need somewhere to be decided and their rewards tracked.
+
+**Status:** Live. [#228](https://github.com/tsowmi03/tenacity-platform/pull/228),
+the admin portal and the `adminUpdateReferral` Function deployed with the merge.
 
 ---
 
