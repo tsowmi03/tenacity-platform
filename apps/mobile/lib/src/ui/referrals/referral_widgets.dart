@@ -34,79 +34,93 @@ class ReferralSheet extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: SafeArea(
           top: false,
-          child: Stack(
+          // Bounded like AppBottomSheet, and scrolls inside that bound, so
+          // large text or a short screen never pushes the buttons off it.
+          child: LayoutBuilder(
+            builder: (context, constraints) => ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: constraints.maxHeight.isFinite
+                    ? constraints.maxHeight * 0.85
+                    : double.infinity,
+              ),
+              child: SingleChildScrollView(child: _sheetBody()),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetBody() {
+    return Stack(
+      children: [
+        const _OfferDecoration(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.screenH,
+            AppSpacing.sm,
+            AppSpacing.screenH,
+            AppSpacing.lg,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _OfferDecoration(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.screenH,
-                  AppSpacing.sm,
-                  AppSpacing.screenH,
-                  AppSpacing.lg,
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.onInkMuted,
+                    borderRadius: BorderRadius.circular(AppRadii.pill),
+                  ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 38,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: AppColors.onInkMuted,
-                          borderRadius: BorderRadius.circular(AppRadii.pill),
-                        ),
-                      ),
+              ),
+              const SizedBox(height: AppSpacing.xxl),
+              const _OfferText(headlineSize: 30),
+              const SizedBox(height: AppSpacing.xxl),
+              SizedBox(
+                width: double.infinity,
+                child: Material(
+                  color: Colors.white,
+                  shape: const StadiumBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    key: const Key('referral-sheet-copy'),
+                    onTap: onCopy,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                      child: _CopyLabel(),
                     ),
-                    const SizedBox(height: AppSpacing.xxl),
-                    const _OfferText(headlineSize: 30),
-                    const SizedBox(height: AppSpacing.xxl),
-                    SizedBox(
-                      width: double.infinity,
-                      child: Material(
-                        color: Colors.white,
-                        shape: const StadiumBorder(),
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          key: const Key('referral-sheet-copy'),
-                          onTap: onCopy,
-                          child: const Padding(
-                            padding:
-                                EdgeInsets.symmetric(vertical: AppSpacing.lg),
-                            child: _CopyLabel(),
-                          ),
-                        ),
-                      ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  key: const Key('referral-sheet-not-now'),
+                  onPressed: onNotNow,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.md,
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                    SizedBox(
-                      width: double.infinity,
-                      child: TextButton(
-                        key: const Key('referral-sheet-not-now'),
-                        onPressed: onNotNow,
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: AppSpacing.md,
-                          ),
-                        ),
-                        child: Text(
-                          'Not now',
-                          style: AppText.body(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
+                  ),
+                  child: Text(
+                    'Not now',
+                    style: AppText.body(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
                     ),
-                  ],
+                  ),
                 ),
               ),
             ],
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -305,12 +319,15 @@ class _CopyLabel extends StatelessWidget {
       children: [
         const Icon(Icons.copy_rounded, size: 20, color: AppColors.blue),
         const SizedBox(width: AppSpacing.sm),
-        Text(
-          'Copy my link',
-          style: AppText.body(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppColors.blue,
+        Flexible(
+          child: Text(
+            'Copy my link',
+            textAlign: TextAlign.center,
+            style: AppText.body(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppColors.blue,
+            ),
           ),
         ),
       ],
