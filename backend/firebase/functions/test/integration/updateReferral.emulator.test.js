@@ -95,6 +95,7 @@ describe("updateReferralImpl (firestore emulator)", () => {
   });
 
   it("stamps rewardAppliedAt when the reward goes on and clears it when taken back", async () => {
+    await db.collection("referrals").doc("p1_p2").update({ status: "successful" });
     await updateReferralImpl({
       payload: { referralId: "p1_p2", rewardApplied: true },
       actor,
@@ -127,6 +128,43 @@ describe("updateReferralImpl (firestore emulator)", () => {
     referral = (await db.collection("referrals").doc("p1_p2").get()).data();
     assert.equal(referral.rewardApplied, false);
     assert.equal(referral.rewardAppliedAt, null);
+  });
+
+  it("never leaves an applied reward on a referral that isn't successful", async () => {
+    // Two admins on stale pages: one applies the reward, the other moves the
+    // referral back to pending. Whichever lands second is refused.
+    await db.collection("referrals").doc("p1_p2").update({ status: "successful" });
+    await updateReferralImpl({
+      payload: { referralId: "p1_p2", rewardApplied: true },
+      actor,
+      deps,
+    });
+    await assert.rejects(
+      updateReferralImpl({
+        payload: { referralId: "p1_p2", status: "pending" },
+        actor,
+        deps,
+      }),
+      (err) => err.code === "failed-precondition"
+    );
+
+    // And the other way round: a reward can't go on a pending referral.
+    await db
+      .collection("referrals")
+      .doc("p1_p2")
+      .update({ status: "pending", rewardApplied: false, rewardAppliedAt: null });
+    await assert.rejects(
+      updateReferralImpl({
+        payload: { referralId: "p1_p2", rewardApplied: true },
+        actor,
+        deps,
+      }),
+      (err) => err.code === "failed-precondition"
+    );
+
+    const referral = (await db.collection("referrals").doc("p1_p2").get()).data();
+    assert.equal(referral.status, "pending");
+    assert.equal(referral.rewardApplied, false);
   });
 
   it("returns not-found for a referral that doesn't exist, without auditing", async () => {

@@ -75,6 +75,15 @@ async function updateReferralImpl({ payload, actor, deps }) {
       status: status ?? before.status,
       rewardApplied: rewardApplied ?? before.rewardApplied,
     };
+    // Checked here, against the stored record, not in the page: two admins on
+    // stale pages could otherwise leave an applied reward on a referral moved
+    // back to pending or rejected, where the page no longer shows it.
+    if (after.rewardApplied && after.status !== "successful") {
+      throw new HttpsError(
+        "failed-precondition",
+        "A reward can only be applied to a successful referral. Un-mark the reward first."
+      );
+    }
 
     const update = { ...updatedMeta(actor.uid, clock) };
     if (status !== undefined) update.status = status;

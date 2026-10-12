@@ -207,7 +207,9 @@ the website deployed with the merge.
 - Changes go through a new `adminUpdateReferral` callable, so each one is in the
   audit log with its before and after ("Rae Referrer → Nina New: status
   pending → successful"). The date the reward was applied is stamped, and
-  cleared if it is un-marked.
+  cleared if it is un-marked. A reward can only be applied to a successful
+  referral: the function refuses any change that would leave it on a pending
+  or rejected one, even when two admins act from stale pages.
 - Enrolment details now show "Referred by" with a link to the referring parent
   when the family came through a referral link.
 - Nothing changes an invoice: the referring family's $100 is still applied by
