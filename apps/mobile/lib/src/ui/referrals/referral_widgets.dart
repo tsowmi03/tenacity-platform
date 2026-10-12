@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:tenacity/src/ui/components/app_bottom_sheet.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 /// The refer-a-friend surfaces (MOB-51). Presentation only: what to do on
@@ -7,7 +6,8 @@ import 'package:tenacity/src/ui/theme/design_tokens.dart';
 
 const referralHeadline = "Know a family who'd love Tenacity?";
 
-/// The pop-up raised at a good moment.
+/// The pop-up raised at a good moment. The dashboard card in sheet form: the
+/// same blue, rings, headline and white button, so the two read as one offer.
 class ReferralSheet extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onNotNow;
@@ -25,34 +25,86 @@ class ReferralSheet extends StatelessWidget {
       namesRoute: true,
       scopesRoute: true,
       explicitChildNodes: true,
-      child: AppBottomSheet(
-        title: referralHeadline,
-        footer: Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                key: const Key('referral-sheet-not-now'),
-                onPressed: onNotNow,
-                child: const Text('Not now'),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: FilledButton.icon(
-                key: const Key('referral-sheet-copy'),
-                onPressed: onCopy,
-                icon: const Icon(Icons.copy_rounded),
-                label: const Text('Copy my link'),
-              ),
-            ),
-          ],
+      child: Material(
+        key: const Key('referral-sheet'),
+        color: AppColors.blue,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppRadii.sheet),
         ),
-        child: Text(
-          r"Send them your link. When they join, you'll get $100 off your "
-          r"next term, and their first lesson is free.",
-          key: const Key('referral-sheet-message'),
-          style: AppText.body(fontSize: 14, color: AppColors.ink)
-              .copyWith(height: 1.45),
+        clipBehavior: Clip.antiAlias,
+        child: SafeArea(
+          top: false,
+          child: Stack(
+            children: [
+              const _OfferDecoration(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screenH,
+                  AppSpacing.sm,
+                  AppSpacing.screenH,
+                  AppSpacing.lg,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 38,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.onInkMuted,
+                          borderRadius: BorderRadius.circular(AppRadii.pill),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xxl),
+                    const _OfferText(headlineSize: 30),
+                    const SizedBox(height: AppSpacing.xxl),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Material(
+                        color: Colors.white,
+                        shape: const StadiumBorder(),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          key: const Key('referral-sheet-copy'),
+                          onTap: onCopy,
+                          child: const Padding(
+                            padding:
+                                EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                            child: _CopyLabel(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        key: const Key('referral-sheet-not-now'),
+                        onPressed: onNotNow,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppSpacing.md,
+                          ),
+                        ),
+                        child: Text(
+                          'Not now',
+                          style: AppText.body(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -94,52 +146,13 @@ class ReferralCard extends StatelessWidget {
         onTap: isCopying ? null : onCopy,
         child: Stack(
           children: [
-            // Two soft rings in the corner: enough to lift the card off the
-            // page without competing with the headline.
-            const Positioned(
-              top: -36,
-              right: -28,
-              child: _Ring(size: 132, color: AppColors.onInkSurface),
-            ),
-            const Positioned(
-              top: 18,
-              right: 22,
-              child: Icon(
-                Icons.card_giftcard_rounded,
-                size: 40,
-                color: AppColors.onInkMuted,
-              ),
-            ),
+            const _OfferDecoration(),
             Padding(
               padding: const EdgeInsets.all(AppSpacing.xl),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'REFER A FRIEND',
-                    style: AppText.body(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ).copyWith(letterSpacing: AppSizes.sectionLabelTracking),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Padding(
-                    // Clear of the gift icon in the corner.
-                    padding: const EdgeInsets.only(right: 56),
-                    child: Text(
-                      referralCardHeadline,
-                      style: AppText.display(fontSize: 26, color: Colors.white),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    referralCardBody,
-                    // Solid white: on this blue it is 5.2:1, where any tint
-                    // of it falls under the 4.5:1 minimum for body text.
-                    style: AppText.body(fontSize: 14, color: Colors.white)
-                        .copyWith(height: 1.45),
-                  ),
+                  const _OfferText(headlineSize: 26),
                   const SizedBox(height: AppSpacing.lg),
                   _CopyButton(isCopying: isCopying, justCopied: justCopied),
                 ],
@@ -148,6 +161,85 @@ class ReferralCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The rings and gift icon in the top corner of the card and the sheet:
+/// enough to lift them off the page without competing with the headline.
+class _OfferDecoration extends StatelessWidget {
+  const _OfferDecoration();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Positioned(
+      top: 0,
+      right: 0,
+      child: SizedBox(
+        width: 120,
+        height: 100,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              top: -36,
+              right: -28,
+              child: _Ring(size: 132, color: AppColors.onInkSurface),
+            ),
+            Positioned(
+              top: 18,
+              right: 22,
+              child: Icon(
+                Icons.card_giftcard_rounded,
+                size: 40,
+                color: AppColors.onInkMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "REFER A FRIEND", the headline and the offer, in white on blue.
+class _OfferText extends StatelessWidget {
+  final double headlineSize;
+
+  const _OfferText({required this.headlineSize});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'REFER A FRIEND',
+          style: AppText.body(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ).copyWith(letterSpacing: AppSizes.sectionLabelTracking),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Padding(
+          // Clear of the gift icon in the corner.
+          padding: const EdgeInsets.only(right: 56),
+          child: Text(
+            referralCardHeadline,
+            style: AppText.display(fontSize: headlineSize, color: Colors.white),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          referralCardBody,
+          key: const Key('referral-offer-body'),
+          // Solid white: on this blue it is 5.2:1, where any tint of it falls
+          // under the 4.5:1 minimum for body text.
+          style: AppText.body(fontSize: 14, color: Colors.white)
+              .copyWith(height: 1.45),
+        ),
+      ],
     );
   }
 }
@@ -198,6 +290,30 @@ class _CopyButton extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The sheet's full-width button label: larger than the card's pill.
+class _CopyLabel extends StatelessWidget {
+  const _CopyLabel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.copy_rounded, size: 20, color: AppColors.blue),
+        const SizedBox(width: AppSpacing.sm),
+        Text(
+          'Copy my link',
+          style: AppText.body(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.blue,
+          ),
+        ),
+      ],
     );
   }
 }

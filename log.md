@@ -189,6 +189,8 @@ omitted, and open follow-ups are tracked at the bottom.
   feedback note (Ahead or On track) a parent opens, shown once they leave the
   feedback screen; a term invoice paid in the app; a one-off class booked by
   card; a one-off booked with tokens; and enrolling permanently in a class.
+  The pop-up is the dashboard card in sheet form (the same blue, headline,
+  offer and white "Copy my link" button), so the two read as one offer.
 - Limits, modelled on Prospa: at most one pop-up per session (a launch, or a
   return after 30 minutes away) and never twice in a day. No pop-ups while an
   invoice is overdue, when offline, or for tutors and admins. A pop-up that
