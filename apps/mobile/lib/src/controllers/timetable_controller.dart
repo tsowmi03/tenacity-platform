@@ -647,8 +647,8 @@ class TimetableController extends ChangeNotifier {
         },
         after: {'status': entry.status.value, 'position': entry.position},
       );
-      waitlistEntriesByClass[classId] =
-          await _service.fetchWaitlistEntriesForClass(classId: classId);
+      // Only the parent's own entries: the rules let parents read nothing
+      // else, so a class-wide refresh here is denied and reads as a failure.
       parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
         parentId: parentId,
       );
@@ -676,8 +676,8 @@ class TimetableController extends ChangeNotifier {
       if (result.enrolled) {
         await loadAllClasses(silent: true);
       }
-      waitlistEntriesByClass[classId] =
-          await _service.fetchWaitlistEntriesForClass(classId: classId);
+      // Not the class-wide waitlist, which parents can't read: that denied
+      // read made a successful enrolment report as failed and skip its invoice.
       parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
         parentId: parentId,
       );

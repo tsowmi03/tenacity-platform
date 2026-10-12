@@ -89,7 +89,7 @@ void main() {
 
     final pending = h.controller.trigger(ReferralTrigger.invoicePaid);
     await tester.pumpAndSettle();
-    expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
+    expect(find.byKey(const Key('referral-sheet')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('referral-sheet-copy')));
     await tester.pumpAndSettle();
@@ -116,7 +116,7 @@ void main() {
     await tester.pumpAndSettle();
     await pending;
 
-    expect(find.text("Know a family who'd love Tenacity?"), findsNothing);
+    expect(find.byKey(const Key('referral-sheet')), findsNothing);
     expect(h.copied, isEmpty);
   });
 
@@ -151,7 +151,7 @@ void main() {
     h.controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
     final next = h.controller.trigger(ReferralTrigger.oneOffTokens);
     await tester.pumpAndSettle();
-    expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
+    expect(find.byKey(const Key('referral-sheet')), findsOneWidget);
     await tester.tap(find.byKey(const Key('referral-sheet-not-now')));
     await tester.pumpAndSettle();
     expect(await next, ReferralGateResult.show);
@@ -166,7 +166,7 @@ void main() {
       ReferralGateResult.overdueInvoice,
     );
     await tester.pumpAndSettle();
-    expect(find.text("Know a family who'd love Tenacity?"), findsNothing);
+    expect(find.byKey(const Key('referral-sheet')), findsNothing);
   });
 
   testWidgets('tutors and admins are never prompted', (tester) async {
@@ -208,7 +208,7 @@ void main() {
 
     final again = h.controller.trigger(ReferralTrigger.oneOffTokens);
     await tester.pumpAndSettle();
-    expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
+    expect(find.byKey(const Key('referral-sheet')), findsOneWidget);
     await tester.tap(find.byKey(const Key('referral-sheet-not-now')));
     await tester.pumpAndSettle();
     expect(await again, ReferralGateResult.show);
@@ -227,7 +227,7 @@ void main() {
     h.controller.feedbackScreenClosed();
     await tester.pumpAndSettle();
 
-    expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
+    expect(find.byKey(const Key('referral-sheet')), findsOneWidget);
   });
 
   testWidgets('a positive note prompts once the parent leaves the screen',
@@ -239,21 +239,21 @@ void main() {
     await h.controller.noteFeedbackShown([_note('old', DateTime(2026, 9, 1))]);
     h.controller.feedbackScreenClosed();
     await tester.pumpAndSettle();
-    expect(find.text("Know a family who'd love Tenacity?"), findsNothing);
+    expect(find.byKey(const Key('referral-sheet')), findsNothing);
 
     await h.controller.noteFeedbackShown(
       [_note('new', h.now.add(const Duration(minutes: 1)))],
     );
     await tester.pumpAndSettle();
     expect(
-      find.text("Know a family who'd love Tenacity?"),
+      find.byKey(const Key('referral-sheet')),
       findsNothing,
       reason: 'never over the note being read',
     );
 
     h.controller.feedbackScreenClosed();
     await tester.pumpAndSettle();
-    expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
+    expect(find.byKey(const Key('referral-sheet')), findsOneWidget);
   });
 
   testWidgets(
@@ -270,7 +270,7 @@ void main() {
     h.controller.feedbackScreenClosed();
     await tester.pumpAndSettle();
 
-    expect(find.text("Know a family who'd love Tenacity?"), findsOneWidget);
+    expect(find.byKey(const Key('referral-sheet')), findsOneWidget);
   });
 
   Future<void> pumpCopyButton(WidgetTester tester, _Harness h) {
