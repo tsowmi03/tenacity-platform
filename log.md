@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-12 | [A parent's permanent enrolment no longer fails after it succeeds (MOB-57)](#2026-10-12--a-parents-permanent-enrolment-no-longer-fails-after-it-succeeds-mob-57) |
 | 2026-10-09 | [Referral links open enrolment with the referrer attached (WEB-7)](#2026-10-09--referral-links-open-enrolment-with-the-referrer-attached-web-7) |
 | 2026-10-09 | [The app asks parents to refer a friend at good moments (MOB-51)](#2026-10-09--the-app-asks-parents-to-refer-a-friend-at-good-moments-mob-51) |
 | 2026-10-09 | [Parents get a referral link, and accepted referrals are recorded (TP-33)](#2026-10-09--parents-get-a-referral-link-and-accepted-referrals-are-recorded-tp-33) |
@@ -168,6 +169,29 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-10-12 — A parent's permanent enrolment no longer fails after it succeeds (MOB-57)
+
+**What changed**
+- When a parent enrolled a student permanently, the server enrolled them, but
+  the app then reloaded the whole class's waitlist. Parents may only read
+  their own waitlist entries, so that reload was refused and the app reported
+  the enrolment as failed: it showed an error and **never created the term
+  invoice**. Joining a waitlist had the same refresh. Both now reload only the
+  parent's own entries; admin screens keep the class-wide view.
+- Card payments work on staging. The payment sheet always asked for Apple
+  Pay, which needs a merchant id registered for the production app only, so
+  on staging it failed before opening. Apple Pay is now offered in production
+  only, and Google Pay uses Stripe's test mode outside production.
+
+**Why:** Found while testing refer-a-friend (MOB-51) on staging. The
+enrolment bug had been live since May 2026: parents who enrolled permanently
+were enrolled without being invoiced.
+
+**Status:** Live. [#235](https://github.com/tsowmi03/tenacity-platform/pull/235),
+ships to parents with the next mobile release.
+
+---
+
 ## 2026-10-09 — Referral links open enrolment with the referrer attached (WEB-7)
 
 **What changed**
@@ -214,6 +238,10 @@ the website deployed with the merge.
   feedback note (Ahead or On track) a parent opens, shown once they leave the
   feedback screen; a term invoice paid in the app; a one-off class booked by
   card; a one-off booked with tokens; and enrolling permanently in a class.
+  The pop-up is the dashboard card in sheet form (the same blue, headline,
+  offer and white "Copy my link" button), so the two read as one offer. It
+  scrolls rather than overflowing at large text sizes. After a booking or
+  enrolment it opens one second after the confirmation, not four.
 - Limits, modelled on Prospa: at most one pop-up per session (a launch, or a
   return after 30 minutes away) and never twice in a day. No pop-ups while an
   invoice is overdue, when offline, or for tutors and admins. A pop-up that
@@ -6446,6 +6474,12 @@ three original repositories.
 ---
 
 ## Operational notes
+
+- **2026-10-12 — Staging Remote Config has a Stripe test key.**
+  `stripe_publishable_key` in `tenacity-tutoring-staging` Remote Config was
+  empty, so staging builds disabled payments. Set to the Stripe test-mode
+  publishable key (`pk_test_51Svts…`, the same account as staging's
+  `STRIPE_KEY`). Production Remote Config untouched.
 
 - **2026-07-29 — Firestore rules deployed to production.**
   `backend/firebase/rules/firestore.rules` released to

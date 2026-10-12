@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' hide Card;
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:tenacity/src/config/app_environment.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/controllers/invoice_controller.dart';
@@ -794,13 +795,14 @@ class TimetableScreenState extends State<TimetableScreen>
           paymentSheetParameters: SetupPaymentSheetParameters(
             paymentIntentClientSecret: clientSecret,
             merchantDisplayName: 'Tenacity Tutoring',
-            applePay: const PaymentSheetApplePay(
-              merchantCountryCode: 'AU',
-            ),
-            googlePay: const PaymentSheetGooglePay(
+            // Apple Pay needs the merchant id, registered for production only.
+            applePay: AppEnvironment.appleMerchantIdentifier == null
+                ? null
+                : const PaymentSheetApplePay(merchantCountryCode: 'AU'),
+            googlePay: PaymentSheetGooglePay(
               merchantCountryCode: 'AU',
               currencyCode: 'AUD',
-              testEnv: false,
+              testEnv: !AppEnvironment.isProduction,
             ),
           ),
         );
@@ -1160,15 +1162,15 @@ class TimetableScreenState extends State<TimetableScreen>
     }
   }
 
-  /// Reports a refer-a-friend moment (MOB-51). After a snack bar it waits for
-  /// the bar to go, so the sheet never lands on top of the confirmation.
+  /// Reports a refer-a-friend moment (MOB-51). After a snack bar it waits a
+  /// beat, long enough to see the confirmation, as after paying an invoice.
   void _triggerReferral(ReferralTrigger trigger,
       {required bool afterSnackBar}) {
     final referrals = maybeReferralController(context);
     if (referrals == null) return;
     unawaited(referrals.trigger(
       trigger,
-      delay: afterSnackBar ? const Duration(seconds: 4) : Duration.zero,
+      delay: afterSnackBar ? const Duration(seconds: 1) : Duration.zero,
     ));
   }
 

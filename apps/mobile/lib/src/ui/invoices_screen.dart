@@ -16,6 +16,7 @@ import '../widgets/offline_cached_data_notice.dart';
 import 'components/components.dart';
 import 'invoices/parent_invoices_data.dart';
 import 'theme/design_tokens.dart';
+import 'package:tenacity/src/config/app_environment.dart';
 import 'package:tenacity/src/utils/error_presenter.dart';
 
 abstract interface class ParentInvoicePaymentSheet {
@@ -32,13 +33,14 @@ class StripeParentInvoicePaymentSheet implements ParentInvoicePaymentSheet {
       paymentSheetParameters: SetupPaymentSheetParameters(
         paymentIntentClientSecret: clientSecret,
         merchantDisplayName: 'Tenacity Tutoring',
-        applePay: const PaymentSheetApplePay(
-          merchantCountryCode: 'AU',
-        ),
-        googlePay: const PaymentSheetGooglePay(
+        // Apple Pay needs the merchant id, registered for production only.
+        applePay: AppEnvironment.appleMerchantIdentifier == null
+            ? null
+            : const PaymentSheetApplePay(merchantCountryCode: 'AU'),
+        googlePay: PaymentSheetGooglePay(
           merchantCountryCode: 'AU',
           currencyCode: 'AUD',
-          testEnv: false,
+          testEnv: !AppEnvironment.isProduction,
         ),
       ),
     );
