@@ -178,6 +178,9 @@ omitted, and open follow-ups are tracked at the bottom.
 - Bumped the mobile app from `3.1.0+519` to `3.2.0+520` in
   `apps/mobile/pubspec.yaml`. It is a minor bump because refer-a-friend is a
   new feature, not a fix.
+- Raised Android `minSdk` from 23 to 24 (Android 7.0). Play refused the first
+  3.2.0 bundle because its automatic protection needs 24 or higher. Only
+  Android 6.0 phones lose updates.
 - Ships everything merged for mobile since 3.1.0 (519):
   - Refer a friend (MOB-51): a dashboard card and a Profile button copy the
     parent's link; $100 off their next term for each family they refer.
