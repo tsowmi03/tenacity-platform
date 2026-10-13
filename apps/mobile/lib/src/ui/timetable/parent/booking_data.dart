@@ -125,6 +125,11 @@ int swapSpotsRemaining({
 /// A family swapping two children needs two seats. Checking only that the
 /// class was not already full let one free spot admit both, which is how
 /// MOB-38 put five students in a room built for four.
+///
+/// A one-week swap into a week that has been cancelled seats nobody, however
+/// many chairs are free: the class is not running (MOB-58). A permanent swap
+/// is about the class rather than one week of it, so a cancelled week does
+/// not rule the class out.
 bool canSwapAllChildrenInto({
   required String action,
   required ClassModel classInfo,
@@ -132,6 +137,10 @@ bool canSwapAllChildrenInto({
   Attendance? weekAttendance,
 }) {
   if (childrenToSeat <= 0) return false;
+  if (action == BookingActions.swapThisWeek &&
+      (weekAttendance?.cancelled ?? false)) {
+    return false;
+  }
   return swapSpotsRemaining(
         action: action,
         classInfo: classInfo,

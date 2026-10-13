@@ -11,6 +11,7 @@ const permanent_enrollment_action_1 = require("./permanent_enrollment_action");
 const shared_1 = require("./shared");
 const enrolOneOffStudents_1 = require("../../src/attendance/enrolOneOffStudents");
 const sameDayBookingCutoff_1 = require("../../src/attendance/sameDayBookingCutoff");
+const cancelledSession_1 = require("../../src/attendance/cancelledSession");
 const send_1 = require("../../src/notifications/send");
 function requiredString(data, key) {
     const value = data[key];
@@ -127,6 +128,8 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (r
                 throw new https_1.HttpsError("not-found", "Attendance record not found.");
             case "student_not_found":
                 throw new https_1.HttpsError("not-found", "Student not found.");
+            case "session_cancelled":
+                throw new https_1.HttpsError("failed-precondition", cancelledSession_1.CANCELLED_SESSION_MESSAGE);
             default:
                 throw new https_1.HttpsError("permission-denied", "You cannot enrol this student for this class.");
         }
@@ -361,6 +364,15 @@ exports.rescheduleStudentToDifferentClass = (0, https_1.onCall)(async (request) 
         const didRemoveStudent = oldAttendance.includes(studentId);
         const didAddStudent = !newAttendance.includes(studentId);
         if (didAddStudent) {
+            // A cancelled week is not running, so there is nothing to move
+            // into (MOB-58). Read in the transaction, and thrown before either
+            // write, so a swap from a screen opened before the cancellation
+            // leaves the student where they were. Admins too: unlike the 9am
+            // cutoff, there is no family on the phone this would be saying yes
+            // to — the class is not on.
+            if ((0, cancelledSession_1.sessionIsCancelled)(newAttendanceData)) {
+                throw new https_1.HttpsError("failed-precondition", cancelledSession_1.CANCELLED_SESSION_MESSAGE);
+            }
             // Moving into a class running today is a booking like any other,
             // and closes at the same 9am (MOB-48). The destination's date is
             // what matters: leaving a session today is still allowed, since

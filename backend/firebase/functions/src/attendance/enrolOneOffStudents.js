@@ -2,6 +2,7 @@
 
 const { FieldValue } = require("firebase-admin/firestore");
 
+const { sessionIsCancelled } = require("./cancelledSession");
 const { planOneOffEnrolment } = require("./oneOffEnrolmentPlan");
 const { HOLD_COLLECTION, capacityAfterHolds } = require("./oneOffSeatHolds");
 
@@ -18,6 +19,12 @@ const { HOLD_COLLECTION, capacityAfterHolds } = require("./oneOffSeatHolds");
  *
  * Never throws for a full session. Callers differ on what that means — the app
  * shows an error, the webhook refunds — so the decision belongs to them.
+ *
+ * A cancelled session is refused as `session_cancelled`, and enrols nobody.
+ * Checked inside the transaction, so a screen opened before the admin
+ * cancelled cannot book into it (MOB-58). For the webhook that means a
+ * payment taken moments before the cancellation lands with an admin rather
+ * than buying a class that is not running.
  */
 async function enrolOneOffStudentsImpl({
   db,
@@ -57,6 +64,10 @@ async function enrolOneOffStudentsImpl({
 
     const classData = classSnap.data() || {};
     const attendanceData = attendanceSnap.data() || {};
+
+    if (sessionIsCancelled(attendanceData)) {
+      return { ok: false, reason: "session_cancelled" };
+    }
 
     // Permission is the caller's to define. The webhook and the sweep act as
     // the system on a payment that has already been taken, so they pass

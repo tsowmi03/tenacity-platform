@@ -826,6 +826,35 @@ void _swapCapacityTests() {
         isFalse,
       );
     });
+
+    test('a one-week swap cannot go into a cancelled week, however empty', () {
+      // MOB-58: the picker offered a cancelled Wednesday because it had seats.
+      final classInfo = _class(capacity: 6, enrolledStudents: ['p1']);
+
+      expect(
+        canSwapAllChildrenInto(
+          action: BookingActions.swapThisWeek,
+          classInfo: classInfo,
+          childrenToSeat: 1,
+          weekAttendance: _attendance(['p1']).copyWith(cancelled: true),
+        ),
+        isFalse,
+      );
+    });
+
+    test('a permanent swap is not ruled out by one cancelled week', () {
+      final classInfo = _class(capacity: 6, enrolledStudents: ['p1']);
+
+      expect(
+        canSwapAllChildrenInto(
+          action: BookingActions.swapPermanent,
+          classInfo: classInfo,
+          childrenToSeat: 1,
+          weekAttendance: _attendance(['p1']).copyWith(cancelled: true),
+        ),
+        isTrue,
+      );
+    });
   });
 }
 
