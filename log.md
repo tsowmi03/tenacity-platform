@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-13 | [Mobile 3.2.0 (build 520)](#2026-10-13--mobile-320-build-520) |
 | 2026-10-13 | [Nobody can be booked or swapped into a cancelled class (MOB-58)](#2026-10-13--nobody-can-be-booked-or-swapped-into-a-cancelled-class-mob-58) |
 | 2026-10-12 | [A parent's permanent enrolment no longer fails after it succeeds (MOB-57)](#2026-10-12--a-parents-permanent-enrolment-no-longer-fails-after-it-succeeds-mob-57) |
 | 2026-10-09 | [Referral links open enrolment with the referrer attached (WEB-7)](#2026-10-09--referral-links-open-enrolment-with-the-referrer-attached-web-7) |
@@ -168,6 +169,24 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-13 — Mobile 3.2.0 (build 520)
+
+**What changed**
+- Bumped the mobile app from `3.1.0+519` to `3.2.0+520` in
+  `apps/mobile/pubspec.yaml`. It is a minor bump because refer-a-friend is a
+  new feature, not a fix.
+- Ships everything merged for mobile since 3.1.0 (519):
+  - Refer a friend (MOB-51): a dashboard card and a Profile button copy the
+    parent's link; $100 off their next term for each family they refer.
+  - Permanent enrolment no longer reports a failure after it succeeded, and
+    the term invoice is created (MOB-57).
+  - Cancelled classes are no longer offered when swapping for a week (MOB-58).
+  - Admin roster changes show immediately (MOB-53).
+
+**Status:** Live. Submitted to the App Store and Google Play as 3.2.0 (520).
 
 ---
 
