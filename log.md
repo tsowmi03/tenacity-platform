@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-13 | [Nobody can be booked or swapped into a cancelled class (MOB-58)](#2026-10-13--nobody-can-be-booked-or-swapped-into-a-cancelled-class-mob-58) |
 | 2026-10-12 | [A parent's permanent enrolment no longer fails after it succeeds (MOB-57)](#2026-10-12--a-parents-permanent-enrolment-no-longer-fails-after-it-succeeds-mob-57) |
 | 2026-10-09 | [Referral links open enrolment with the referrer attached (WEB-7)](#2026-10-09--referral-links-open-enrolment-with-the-referrer-attached-web-7) |
 | 2026-10-09 | [Admins see who referred whom and tick off rewards (AWP-25)](#2026-10-09--admins-see-who-referred-whom-and-tick-off-rewards-awp-25) |
@@ -167,6 +168,33 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-13 — Nobody can be booked or swapped into a cancelled class (MOB-58)
+
+**What changed**
+- The server now refuses any new arrival in a week an admin has cancelled:
+  one-week swaps, one-off bookings with tokens, and card payments (refused
+  before the card is charged). Admins are refused too. The check runs inside
+  the booking transaction, so a parent whose screen was opened before the
+  cancellation is refused and keeps the class they had.
+- A payment that goes through just as the week is cancelled is not given a
+  seat or refunded automatically. It is marked as needing an admin, with the
+  reason `session_cancelled`, so an admin can offer a refund or another class.
+- The app's one-week swap picker no longer offers a cancelled week. Before
+  this, it checked only class type, time and free seats.
+- Permanent swaps are unchanged. Cancelling a week leaves the permanent
+  roster on it, so that "Restore this week" brings back the full roll. A
+  student who swaps in permanently joins the cancelled week the same way.
+  Invoices don't depend on who is on a week's roll.
+
+**Why:** A student was swapped into a cancelled Wednesday 7pm class. The app
+only blocked a cancelled class when its card was tapped, and no server path
+looked at the cancelled flag.
+
+**Status:** Live. Functions deployed; the app change ships to parents with
+the next mobile release.
 
 ---
 

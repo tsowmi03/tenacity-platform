@@ -266,6 +266,28 @@ describe("one-off fulfilment (emulator)", () => {
       assert.equal(result.reason, "forbidden");
       assert.deepEqual(await attendanceNow(), ["other-1"]);
     });
+
+    it("refuses a cancelled session, however many seats are free", async () => {
+      // MOB-58: a student was booked into a cancelled class with room in it.
+      await db
+        .collection("classes")
+        .doc(CLASS_ID)
+        .collection("attendance")
+        .doc(ATTENDANCE_ID)
+        .update({ cancelled: true });
+
+      const result = await enrolOneOffStudentsImpl({
+        db,
+        classId: CLASS_ID,
+        attendanceDocId: ATTENDANCE_ID,
+        studentIds: ["student-1"],
+        actor: { uid: "system" },
+      });
+
+      assert.equal(result.ok, false);
+      assert.equal(result.reason, "session_cancelled");
+      assert.deepEqual(await attendanceNow(), ["other-1"]);
+    });
   });
 
   describe("fulfilOneOffBookingImpl", () => {
@@ -501,6 +523,32 @@ describe("one-off fulfilment (emulator)", () => {
       assert.equal(result.state, FULFILMENT_STATE.NEEDS_ADMIN);
       assert.equal(result.reason, "forbidden");
       assert.ok(!(await attendanceNow()).includes("student-elsewhere"));
+      assert.equal((await db.collection("invoices").get()).size, 0);
+    });
+
+    it("hands a payment for a session cancelled mid-checkout to an admin", async () => {
+      // The parent paid; the admin cancelled the week before the webhook ran.
+      // Neither a seat in a class that is not on nor a silent refund: an admin
+      // decides whether the family wants the money back or another class.
+      await db
+        .collection("classes")
+        .doc(CLASS_ID)
+        .collection("attendance")
+        .doc(ATTENDANCE_ID)
+        .update({ cancelled: true });
+
+      const stripe = fakeStripe();
+      const result = await fulfilOneOffBookingImpl({
+        db,
+        stripe,
+        paymentIntent: paymentIntent({ studentIds: ["student-1"] }),
+        logger: silentLogger,
+      });
+
+      assert.equal(result.state, FULFILMENT_STATE.NEEDS_ADMIN);
+      assert.equal(result.reason, "session_cancelled");
+      assert.deepEqual(await attendanceNow(), ["other-1"]);
+      assert.equal(stripe.recordedRefunds.length, 0);
       assert.equal((await db.collection("invoices").get()).size, 0);
     });
 

@@ -42,6 +42,10 @@ const {
     SAME_DAY_CUTOFF_MESSAGE,
     sameDayBookingClosed,
 } = require("../src/attendance/sameDayBookingCutoff");
+const {
+    CANCELLED_SESSION_MESSAGE,
+    sessionIsCancelled,
+} = require("../src/attendance/cancelledSession");
 const { fulfilOneOffBookingImpl } = require("../src/payments/fulfilOneOffBooking");
 const stripeSecretKey = (0, params_1.defineSecret)("STRIPE_KEY");
 const stripeWebhookSecret = (0, params_1.defineSecret)("STRIPE_WEBHOOK_SECRET");
@@ -227,6 +231,20 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey], 
             studentIds: requested.studentIds,
             parentId: parentIdString,
         });
+        const attendanceSnap = await db
+            .collection('classes')
+            .doc(requested.classId)
+            .collection('attendance')
+            .doc(requested.attendanceDocId)
+            .get();
+        const attendanceData = attendanceSnap.data() || {};
+        // A cancelled session is not for sale, to anybody (MOB-58). Refused
+        // before the PaymentIntent exists, as the cutoff below is, so nobody
+        // is charged and then refunded. Fulfilment checks again, for a
+        // cancellation that lands while the parent is at the card sheet.
+        if (sessionIsCancelled(attendanceData)) {
+            throw new https_1.HttpsError('failed-precondition', CANCELLED_SESSION_MESSAGE);
+        }
         // Bookings for a class running today close at 9am Sydney (MOB-48).
         //
         // Here rather than at fulfilment because this runs before the
@@ -237,16 +255,9 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey], 
         // still buy the class it paid for.
         //
         // Admins are exempt, matching `enrollStudentOneOff`.
-        if (actor.role !== 'admin') {
-            const attendanceSnap = await db
-                .collection('classes')
-                .doc(requested.classId)
-                .collection('attendance')
-                .doc(requested.attendanceDocId)
-                .get();
-            if (sameDayBookingClosed({ sessionStartsAt: (attendanceSnap.data() || {}).date })) {
-                throw new https_1.HttpsError('failed-precondition', SAME_DAY_CUTOFF_MESSAGE);
-            }
+        if (actor.role !== 'admin' &&
+            sameDayBookingClosed({ sessionStartsAt: attendanceData.date })) {
+            throw new https_1.HttpsError('failed-precondition', SAME_DAY_CUTOFF_MESSAGE);
         }
         const unitPriceCents = await readOneOffPriceCents(db);
         try {
