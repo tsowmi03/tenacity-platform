@@ -1306,3 +1306,30 @@ section { position: relative; }
   .pf-actions .btn { min-width: 0; padding: 1rem 1.25rem; }
   .pf-success { margin: 30px auto; }
 }
+
+/* ============================================================
+   PRIVACY POLICY
+   ============================================================ */
+.privacy-policy { line-height: 1.65; }
+.privacy-policy h2 { font-size: 1.3rem; margin: 2.2rem 0 .7rem; }
+.privacy-policy h2:first-child { margin-top: 0; }
+.privacy-policy p { margin-bottom: 1rem; }
+.privacy-policy ul { margin: 0 0 1rem 1.2rem; padding: 0; list-style: disc; }
+.privacy-policy li { margin-bottom: .55rem; }
+.privacy-policy a:not(.btn) { color: var(--navy); text-decoration: underline; text-underline-offset: 3px; }
+.privacy-table { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; margin-bottom: 1rem; font-size: .92rem; }
+.privacy-table [role="row"] { display: grid; grid-template-columns: 1fr 2fr .8fr; gap: 1rem; padding: 12px 16px; border-top: 1px solid var(--line-soft); }
+.privacy-table [role="row"]:first-child { border-top: 0; background: var(--cream); font-weight: 700; color: var(--ink); }
+.privacy-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding: 16px 18px; border-radius: var(--r-sm); background: var(--cream); margin: 0 0 1rem; }
+.privacy-choice p { margin: 0; flex: 1 1 220px; }
+p.privacy-choice { display: block; color: var(--muted); }
+.footer-legal { display: inline-flex; gap: 1.2rem; flex-wrap: wrap; }
+@media (max-width: 620px) {
+  .privacy-policy.reg-card { padding: 26px 20px; }
+  .privacy-table [role="row"] { grid-template-columns: 1fr; gap: .2rem; }
+  .privacy-table [role="row"]:first-child { display: none; }
+  .privacy-table [role="cell"]:first-child { font-weight: 700; color: var(--ink); }
+  .privacy-table [role="cell"]:last-child { color: var(--muted); font-size: .85rem; }
+}
+.form-privacy { margin-top: 14px; font-size: .85rem; color: var(--muted); }
+.form-privacy a { color: var(--navy); text-decoration: underline; text-underline-offset: 3px; }

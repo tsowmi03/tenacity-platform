@@ -1,3 +1,4 @@
+import { track } from "@lib/analytics";
 import Head from "@modules/common/components/head";
 import Link from "next/link";
 import Script from "next/script";
@@ -341,6 +342,7 @@ export default function ParentFeedbackPage() {
   const surveyRef = useRef<HTMLElement>(null);
   const mounted = useRef(false);
   const lastStepChange = useRef(0);
+  const stepEnteredAt = useRef(Date.now());
   const turnstileRef = useRef<HTMLDivElement | null>(null);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileError, setTurnstileError] = useState("");
@@ -427,6 +429,32 @@ export default function ParentFeedbackPage() {
     return [...values, value];
   };
 
+  // Analytics (WEB-8): progress through the survey only. Answers and ratings
+  // are already stored with the response and are never sent.
+  useEffect(() => {
+    if (submitted) return;
+    stepEnteredAt.current = Date.now();
+    track("parent_feedback_step_viewed", {
+      step: step + 1,
+      step_name: STEPS[step].shortLabel.toLowerCase(),
+    });
+  }, [step, submitted]);
+
+  const trackStepCompleted = (completedStep: number) =>
+    track("parent_feedback_step_completed", {
+      step: completedStep + 1,
+      step_name: STEPS[completedStep].shortLabel.toLowerCase(),
+      time_on_step_ms: Date.now() - stepEnteredAt.current,
+    });
+
+  const trackStepBlocked = (blockedStep: number, found: string[]) =>
+    track("parent_feedback_step_blocked", {
+      step: blockedStep + 1,
+      step_name: STEPS[blockedStep].shortLabel.toLowerCase(),
+      // Fixed validation text, never the parent's answers.
+      errors: found,
+    });
+
   const validateStep = (stepToValidate: number) => {
     const found: string[] = [];
 
@@ -507,9 +535,14 @@ export default function ParentFeedbackPage() {
   const moveTo = (nextStep: number) => {
     if (nextStep < 0 || nextStep > LAST_STEP || settling()) return;
 
-    if (nextStep > step && validateStep(step).length > 0) {
-      setErrorStep(step);
-      return;
+    if (nextStep > step) {
+      const found = validateStep(step);
+      if (found.length > 0) {
+        setErrorStep(step);
+        trackStepBlocked(step, found);
+        return;
+      }
+      trackStepCompleted(step);
     }
 
     setErrorStep(null);
@@ -524,11 +557,15 @@ export default function ParentFeedbackPage() {
     if (submitting || settling()) return;
 
     setSubmitError(null);
-    if (validateStep(LAST_STEP).length > 0) {
+    const found = validateStep(LAST_STEP);
+    if (found.length > 0) {
       setErrorStep(LAST_STEP);
+      trackStepBlocked(LAST_STEP, found);
       return;
     }
     setErrorStep(null);
+    trackStepCompleted(LAST_STEP);
+    track("parent_feedback_submitted", {});
 
     setSubmitting(true);
     try {
@@ -541,9 +578,13 @@ export default function ParentFeedbackPage() {
       if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
 
       setSubmitted(true);
+      track("parent_feedback_succeeded", {});
       scrollTo(0);
     } catch (error) {
       console.error("Parent feedback submission failed:", error);
+      track("parent_feedback_failed", {
+        error: error instanceof Error ? error.message.slice(0, 200) : "unknown",
+      });
       setSubmitError(
         "Please try again in a moment. If it keeps failing, contact Tenacity directly and we will take your feedback another way."
       );
@@ -640,7 +681,7 @@ export default function ParentFeedbackPage() {
                   </ol>
                 </div>
 
-                <form onSubmit={submit} noValidate>
+                <form onSubmit={submit} className="ph-no-capture" noValidate>
                   <div className="pf-honeypot" hidden aria-hidden="true">
                     <label htmlFor="pf-website">Website</label>
                     <input

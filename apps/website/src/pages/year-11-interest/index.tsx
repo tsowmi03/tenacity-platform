@@ -1,6 +1,7 @@
+import { track } from "@lib/analytics";
 import Head from "@modules/common/components/head";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   CURRENT_YEAR_OPTIONS,
   ENGLISH_COURSE_OPTIONS,
@@ -55,6 +56,15 @@ export default function Year11Interest() {
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const started = useRef(false);
+
+  const markStarted = () => {
+    if (started.current) return;
+    started.current = true;
+    track("year11_interest_started", {});
+  };
+
+  const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
 
   const updateParent = (patch: Partial<typeof parent>) => {
     setParent((current) => ({ ...current, ...patch }));
@@ -144,7 +154,22 @@ export default function Year11Interest() {
 
     const found = validate();
     setErrors(found);
-    if (found.length > 0) return;
+    if (found.length > 0) {
+      // Validation messages are fixed text, never what the family typed.
+      track("year11_interest_blocked", { errors: found });
+      return;
+    }
+
+    track("year11_interest_submitted", {
+      student_count: students.length,
+      current_years: unique(students.map((student) => student.currentYear)),
+      student_statuses: unique(students.map((student) => student.studentStatus)),
+      maths_courses: unique(students.flatMap((student) => student.mathsCourses)),
+      english_courses: unique(
+        students.flatMap((student) => student.englishCourses)
+      ),
+      preferred_days: unique(students.flatMap((student) => student.preferredDays)),
+    });
 
     setSubmitting(true);
     try {
@@ -159,8 +184,12 @@ export default function Year11Interest() {
       }
 
       setSubmitted(true);
+      track("year11_interest_succeeded", { student_count: students.length });
     } catch (error) {
       console.error("Year 11 interest submission failed:", error);
+      track("year11_interest_failed", {
+        error: error instanceof Error ? error.message.slice(0, 200) : "unknown",
+      });
       setErrors([
         "Something went wrong sending your registration. Please try again, or contact us directly.",
       ]);
@@ -313,7 +342,12 @@ export default function Year11Interest() {
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} noValidate>
+                <form
+                  onSubmit={handleSubmit}
+                  onFocus={markStarted}
+                  className="ph-no-capture"
+                  noValidate
+                >
                   <h2 style={{ fontSize: "1.35rem", marginBottom: ".4rem" }}>
                     Parent or guardian
                   </h2>
@@ -612,11 +646,14 @@ export default function Year11Interest() {
                           type="button"
                           className="cc-btn danger"
                           style={{ marginTop: "1rem" }}
-                          onClick={() =>
+                          onClick={() => {
                             setStudents((current) =>
                               current.filter((_, i) => i !== index)
-                            )
-                          }
+                            );
+                            track("year11_student_removed", {
+                              student_count: students.length - 1,
+                            });
+                          }}
                         >
                           Remove student {index + 1}
                         </button>
@@ -629,9 +666,12 @@ export default function Year11Interest() {
                       type="button"
                       className="add-child"
                       style={{ marginTop: "1.6rem" }}
-                      onClick={() =>
-                        setStudents((current) => [...current, emptyStudent()])
-                      }
+                      onClick={() => {
+                        setStudents((current) => [...current, emptyStudent()]);
+                        track("year11_student_added", {
+                          student_count: students.length + 1,
+                        });
+                      }}
                     >
                       <svg
                         viewBox="0 0 24 24"
@@ -652,6 +692,9 @@ export default function Year11Interest() {
                     Registering interest does not confirm a place. Classes are
                     confirmed once we have enough committed enrolments to form a
                     group, and we will contact you before anything is finalised.
+                    See our{" "}
+                    <Link href="/privacy">privacy policy</Link> for how we
+                    handle your details.
                   </p>
 
                   {errors.length > 0 && (

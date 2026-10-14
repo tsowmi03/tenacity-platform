@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { track } from "@lib/analytics";
+import { useEffect, useState } from "react";
 import type { GetServerSideProps } from "next";
 import Head from "@modules/common/components/head";
 import Link from "next/link";
@@ -24,6 +25,12 @@ type Status = "idle" | "working" | "unsubscribed" | "resubscribed" | "error";
 export default function Unsubscribe({ token, valid }: Props) {
   const [status, setStatus] = useState<Status>("idle");
 
+  // The token itself is scrubbed from the page URL before it reaches
+  // analytics; only whether it checked out is reported.
+  useEffect(() => {
+    track("email_unsubscribe_viewed", { token_valid: valid });
+  }, [valid]);
+
   const submit = async (resubscribe: boolean) => {
     setStatus("working");
     try {
@@ -34,8 +41,12 @@ export default function Unsubscribe({ token, valid }: Props) {
       });
       if (!response.ok) throw new Error("Request failed");
       setStatus(resubscribe ? "resubscribed" : "unsubscribed");
+      track(resubscribe ? "email_resubscribed" : "email_unsubscribed", {});
     } catch {
       setStatus("error");
+      track("email_unsubscribe_failed", {
+        action: resubscribe ? "resubscribe" : "unsubscribe",
+      });
     }
   };
 

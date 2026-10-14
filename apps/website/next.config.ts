@@ -8,6 +8,25 @@ const nextConfig: NextConfig = {
     domains: ["images.unsplash.com", "randomuser.me"],
     // unoptimized: true,
   },
+  // PostHog US Cloud through our own domain, so ad blockers don't drop
+  // analytics (WEB-8). See docs/analytics.md.
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      {
+        source: "/ingest/static/:path*",
+        destination: "https://us-assets.i.posthog.com/static/:path*",
+      },
+      {
+        source: "/ingest/array/:path*",
+        destination: "https://us-assets.i.posthog.com/array/:path*",
+      },
+      {
+        source: "/ingest/:path*",
+        destination: "https://us.i.posthog.com/:path*",
+      },
+    ];
+  },
   async redirects() {
     return [
       {

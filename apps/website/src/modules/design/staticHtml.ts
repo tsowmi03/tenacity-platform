@@ -48,7 +48,7 @@ const transformDesignHtml = (html: string) => {
     .replace(/(src|href)="assets\//g, '$1="/claude-design/')
     .replace(
       /<a href="#">Terms &amp; Conditions<\/a>/g,
-      '<a href="/T&Cs.pdf">Terms &amp; Conditions</a>'
+      '<span class="footer-legal"><a href="/T&Cs.pdf">Terms &amp; Conditions</a><a href="/privacy">Privacy Policy</a></span>'
     )
     .trim();
 };

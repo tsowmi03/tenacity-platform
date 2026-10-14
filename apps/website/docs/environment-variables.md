@@ -21,6 +21,15 @@ FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 EMAIL_BLAST_UNSUBSCRIBE_SECRET=your_shared_unsubscribe_secret_here
 ```
 
+Optional, for website analytics ([analytics guide](./analytics.md)):
+
+```bash
+# Vercel Production only. Leave unset everywhere else and nothing is sent.
+NEXT_PUBLIC_POSTHOG_KEY=phc_your_eu_project_key
+# Local only: log events to the console instead of sending them.
+NEXT_PUBLIC_POSTHOG_DRY_RUN=1
+```
+
 `RECIEVER_EMAIL` preserves the spelling used by the current source. Do not
 rename it as part of local configuration.
 
@@ -33,7 +42,7 @@ inboxes.
 
 ## Client and server boundaries
 
-The seven `NEXT_PUBLIC_*` names are exposed to browser code. All other names
+The `NEXT_PUBLIC_*` names are exposed to browser code. All other names
 are server-only and must not use that prefix. Firebase client configuration is
 not a substitute for Firestore rules, Turnstile validation, or server-side
 authorization.
