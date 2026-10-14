@@ -64,8 +64,7 @@ class AppEnvironment {
   /// `--dart-define=POSTHOG_PROJECT_TOKEN=...` points them at another project.
   static const String? posthogProjectToken = _posthogTokenOverride != ''
       ? _posthogTokenOverride
-      : (String.fromEnvironment('TENACITY_ENV', defaultValue: 'prod') ==
-              'prod'
+      : (String.fromEnvironment('TENACITY_ENV', defaultValue: 'prod') == 'prod'
           ? _productionPosthogToken
           : null);
 

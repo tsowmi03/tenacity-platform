@@ -85,7 +85,8 @@ void main() {
 
       final identifies = calls.where((c) => c.method == 'identify').toList();
       expect(identifies, hasLength(1));
-      final args = Map<String, Object?>.from(identifies.single.arguments as Map);
+      final args =
+          Map<String, Object?>.from(identifies.single.arguments as Map);
       expect(args['userId'], 'parent-1');
       expect(args['userProperties'], {
         'email': 'pat@example.com',
