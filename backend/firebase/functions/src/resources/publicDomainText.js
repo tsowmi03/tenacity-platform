@@ -173,6 +173,9 @@ async function callCuratorWithFallback({
   callAi = callAiForResource,
   signal,
   safetyIdentifier,
+  posthogProperties,
+  posthogTraceId,
+  posthogDistinctId,
   allowFallback = true,
 }) {
   const invoke = async (targetModel) => {
@@ -189,6 +192,9 @@ async function callCuratorWithFallback({
       responseSchema,
       signal,
       safetyIdentifier,
+      posthogProperties,
+      posthogTraceId,
+      posthogDistinctId,
     });
     return {
       ...result,
@@ -262,6 +268,9 @@ async function selectPublicDomainText({
   callAi = callAiForResource,
   signal,
   safetyIdentifier,
+  posthogProperties,
+  posthogTraceId,
+  posthogDistinctId,
   excludedTitles = [],
   allowFallback = true,
 }) {
@@ -299,6 +308,9 @@ async function selectPublicDomainText({
     callAi,
     signal,
     safetyIdentifier,
+    posthogProperties,
+    posthogTraceId,
+    posthogDistinctId,
     allowFallback,
   });
   return { ...result.parsed, _planner: planner };
@@ -406,6 +418,9 @@ async function planStimulusSelections({
   callAi = callAiForResource,
   signal,
   safetyIdentifier,
+  posthogProperties,
+  posthogTraceId,
+  posthogDistinctId,
 }) {
   if (!apiKey && !anthropicApiKey && !openaiApiKey) {
     throw new TypeError("planStimulusSelections requires a provider api key");
@@ -438,6 +453,9 @@ async function planStimulusSelections({
     callAi,
     signal,
     safetyIdentifier,
+    posthogProperties,
+    posthogTraceId,
+    posthogDistinctId,
   });
 
   const parsed = result.parsed;

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-14 | [Resource generation reports every AI call to PostHog (RES-42)](#2026-10-14--resource-generation-reports-every-ai-call-to-posthog-res-42) |
 | 2026-10-14 | [The app reports how it's used, with terms that say so (MOB-59)](#2026-10-14--the-app-reports-how-its-used-with-terms-that-say-so-mob-59) |
 | 2026-10-13 | [The website reports where families drop out, with a privacy page (WEB-8)](#2026-10-13--the-website-reports-where-families-drop-out-with-a-privacy-page-web-8) |
 | 2026-10-13 | [Mobile 3.2.0 (build 520)](#2026-10-13--mobile-320-build-520) |
@@ -171,6 +172,37 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-14 — Resource generation reports every AI call to PostHog (RES-42)
+
+**What changed**
+- Every Anthropic and OpenAI call the resource generator makes is reported to
+  PostHog LLM analytics as a `$ai_generation` event. Each event carries the
+  full prompt and output (approved), tokens, latency and model, and the cost
+  where PostHog knows the model's pricing. Events
+  are grouped by tutor, by generation attempt, and by job or chat session.
+- The project token is a non-secret Functions param, `POSTHOG_PROJECT_TOKEN`,
+  set per project. Production carries it in `.env.tenacity-tutoring-b8eb2`.
+  Staging leaves it empty, so test generations never reach production
+  analytics.
+- Analytics can't break a generation. With no token, the plain Anthropic and
+  OpenAI clients are used and receive none of the PostHog fields (the
+  wizard's version sent them anyway, which the APIs reject). Creating or
+  flushing the PostHog client never throws, and each call's events are flushed
+  before it returns.
+- Passage and stimulus sourcing calls are tagged for PostHog without being
+  added to the job's usage totals a second time. Their usage already arrives
+  through the planner, and the wizard's version would have double-counted it.
+- Replaces the PostHog wizard's setup, which read the key from the untracked
+  `.env` that every project loads.
+
+**Why:** To see what resource generation costs, how long it takes and where
+it fails, call by call.
+
+**Status:** Live. [#245](https://github.com/tsowmi03/tenacity-platform/pull/245),
+production Functions deployed 2026-10-14.
 
 ---
 

@@ -1,6 +1,12 @@
 "use strict";
 
 const Anthropic = require("@anthropic-ai/sdk").default;
+const { Anthropic: PostHogAnthropic } = require("@posthog/ai");
+const {
+  createPostHogClient,
+  posthogRequestFields,
+  shutdownPostHogClient,
+} = require("./posthogClient");
 const {
   LATEX_COMMANDS,
   EMPTY_COMMANDS,
@@ -172,6 +178,14 @@ async function streamResponseText(stream) {
   };
 }
 
+function createDefaultAnthropicClient(apiKey) {
+  const posthog = createPostHogClient();
+  const client = posthog
+    ? new PostHogAnthropic({ apiKey, maxRetries: 1, posthog })
+    : new Anthropic({ apiKey, maxRetries: 1 });
+  return { client, posthog };
+}
+
 function normaliseAnthropicUsage(usage = {}) {
   usage = usage || {};
   return {
@@ -206,7 +220,10 @@ async function callAnthropicForResource({
   // never has to guess at how the model wrapped it. Null leaves the call
   // unconstrained — see responseSchema.js for which jobs currently opt in.
   responseSchema = null,
-  createClient = (key) => new Anthropic({ apiKey: key, maxRetries: 1 }),
+  posthogProperties,
+  posthogTraceId,
+  posthogDistinctId,
+  createClient = createDefaultAnthropicClient,
 }) {
   if (!apiKey) throw new TypeError("callAnthropicForResource requires apiKey");
   if (!model) throw new TypeError("callAnthropicForResource requires model");
@@ -215,65 +232,76 @@ async function callAnthropicForResource({
     throw new TypeError("callAnthropicForResource requires userMessage or messages");
   }
 
-  const client = createClient(apiKey);
-  const request = {
-    model,
-    max_tokens: maxTokens,
-    system: buildAnthropicSystemParam({ systemPrompt }),
-    messages: messages?.length
-      ? messages.map(({ role, content }) => ({ role, content }))
-      : [{ role: "user", content: userMessage }],
-  };
-  // `effort` and `format` both live under output_config, so build it once and
-  // attach only if something asked for it — an empty output_config is noise.
-  const outputConfig = {};
-  if (thinkingDisabled) {
-    request.thinking = { type: "disabled" };
-  } else if (effort) {
-    // Adaptive thinking lets the model decide how much to reason per request,
-    // which is what lifts arithmetic accuracy in worked solutions and JSON
-    // validity on long documents. Thinking tokens are drawn from max_tokens,
-    // which is why the ceilings in index.js sit well above the output size we
-    // actually expect. `effort` trades depth against latency — see
-    // RESOURCE_GENERATION_EFFORT for why generation sits at "high", not "xhigh".
-    request.thinking = { type: "adaptive" };
-    outputConfig.effort = effort;
-  }
-  if (responseSchema) {
-    outputConfig.format = { type: "json_schema", schema: responseSchema };
-  }
-  if (Object.keys(outputConfig).length) request.output_config = outputConfig;
-  // Passing `signal` lets the caller abort an in-flight generation (e.g. when a
-  // tutor stops a job). When aborted the SDK rejects with APIUserAbortError.
-  const options = signal ? { signal } : undefined;
-  const response = shouldStreamResponse(maxTokens)
-    ? await streamResponseText(await client.messages.create({ ...request, stream: true }, options))
-    : await client.messages.create(request, options);
-
-  const usage = normaliseAnthropicUsage(response.usage);
-  let raw = "";
-  let parsed;
+  const createdClient = createClient(apiKey);
+  const client = createdClient.client || createdClient;
+  const posthog = createdClient.posthog;
   try {
-    // Check refusal before reading content: a refused response can carry no text
-    // block at all, so responseText() would otherwise mask the real reason.
-    assertNotRefused(response);
-    raw = responseText(response);
-    assertCompleteResponse(response, raw, maxTokens);
-    parsed = parseAiJsonResponse(raw, { mathBearing });
-  } catch (err) {
-    err.modelFailure = true;
-    err.usage = usage;
-    err.responseId = response.id || null;
-    throw err;
+    const request = {
+      model,
+      max_tokens: maxTokens,
+      system: buildAnthropicSystemParam({ systemPrompt }),
+      messages: messages?.length
+        ? messages.map(({ role, content }) => ({ role, content }))
+        : [{ role: "user", content: userMessage }],
+      ...posthogRequestFields(posthog, {
+        posthogProperties,
+        posthogTraceId,
+        posthogDistinctId,
+      }),
+    };
+    // `effort` and `format` both live under output_config, so build it once and
+    // attach only if something asked for it — an empty output_config is noise.
+    const outputConfig = {};
+    if (thinkingDisabled) {
+      request.thinking = { type: "disabled" };
+    } else if (effort) {
+      // Adaptive thinking lets the model decide how much to reason per request,
+      // which is what lifts arithmetic accuracy in worked solutions and JSON
+      // validity on long documents. Thinking tokens are drawn from max_tokens,
+      // which is why the ceilings in index.js sit well above the output size we
+      // actually expect. `effort` trades depth against latency — see
+      // RESOURCE_GENERATION_EFFORT for why generation sits at "high", not "xhigh".
+      request.thinking = { type: "adaptive" };
+      outputConfig.effort = effort;
+    }
+    if (responseSchema) {
+      outputConfig.format = { type: "json_schema", schema: responseSchema };
+    }
+    if (Object.keys(outputConfig).length) request.output_config = outputConfig;
+    // Passing `signal` lets the caller abort an in-flight generation (e.g. when a
+    // tutor stops a job). When aborted the SDK rejects with APIUserAbortError.
+    const options = signal ? { signal } : undefined;
+    const response = shouldStreamResponse(maxTokens)
+      ? await streamResponseText(await client.messages.create({ ...request, stream: true }, options))
+      : await client.messages.create(request, options);
+
+    const usage = normaliseAnthropicUsage(response.usage);
+    let raw = "";
+    let parsed;
+    try {
+      // Check refusal before reading content: a refused response can carry no text
+      // block at all, so responseText() would otherwise mask the real reason.
+      assertNotRefused(response);
+      raw = responseText(response);
+      assertCompleteResponse(response, raw, maxTokens);
+      parsed = parseAiJsonResponse(raw, { mathBearing });
+    } catch (err) {
+      err.modelFailure = true;
+      err.usage = usage;
+      err.responseId = response.id || null;
+      throw err;
+    }
+    return {
+      parsed,
+      raw,
+      provider: "anthropic",
+      model: response.model || model,
+      responseId: response.id || null,
+      usage,
+    };
+  } finally {
+    await shutdownPostHogClient(posthog);
   }
-  return {
-    parsed,
-    raw,
-    provider: "anthropic",
-    model: response.model || model,
-    responseId: response.id || null,
-    usage,
-  };
 }
 
 module.exports = {
@@ -281,6 +309,7 @@ module.exports = {
   assertNotRefused,
   buildAnthropicSystemParam,
   callAnthropicForResource,
+  createDefaultAnthropicClient,
   extractJsonBlock,
   normaliseAnthropicUsage,
   parseAiJsonResponse,

@@ -1,7 +1,21 @@
 "use strict";
 
 const OpenAI = require("openai").default;
+const { OpenAI: PostHogOpenAI } = require("@posthog/ai");
+const {
+  createPostHogClient,
+  posthogRequestFields,
+  shutdownPostHogClient,
+} = require("./posthogClient");
 const { parseAiJsonResponse } = require("./apiClient");
+
+function createDefaultOpenAiClient(apiKey) {
+  const posthog = createPostHogClient();
+  const client = posthog
+    ? new PostHogOpenAI({ apiKey, maxRetries: 1, posthog })
+    : new OpenAI({ apiKey, maxRetries: 1 });
+  return { client, posthog };
+}
 
 function normaliseOpenAiUsage(usage = {}) {
   usage = usage || {};
@@ -132,7 +146,10 @@ async function callOpenAiForResource({
   effort = null,
   responseSchema = null,
   safetyIdentifier = null,
-  createClient = (key) => new OpenAI({ apiKey: key, maxRetries: 1 }),
+  posthogProperties,
+  posthogTraceId,
+  posthogDistinctId,
+  createClient = createDefaultOpenAiClient,
 }) {
   if (!apiKey) throw new TypeError("callOpenAiForResource requires apiKey");
   if (!model) throw new TypeError("callOpenAiForResource requires model");
@@ -141,60 +158,72 @@ async function callOpenAiForResource({
     throw new TypeError("callOpenAiForResource requires userMessage or messages");
   }
 
-  const client = createClient(apiKey);
-  const request = {
-    model,
-    instructions: systemPrompt,
-    input: messages?.length
-      ? messages.map(({ role, content }) => ({ role, content }))
-      : userMessage,
-    max_output_tokens: maxTokens,
-    store: false,
-    stream: maxTokens > 21000,
-  };
-  if (effort) request.reasoning = { effort };
-  if (responseSchema) request.text = { format: responseFormat(responseSchema) };
-  if (safetyIdentifier) request.safety_identifier = safetyIdentifier;
-
-  const options = signal ? { signal } : undefined;
-  let response;
+  const createdClient = createClient(apiKey);
+  const client = createdClient.client || createdClient;
+  const posthog = createdClient.posthog;
   try {
-    const result = await client.responses.create(request, options);
-    response = request.stream ? await aggregateOpenAiStream(result) : result;
-  } catch (err) {
-    err.modelFailure = true;
-    throw err;
-  }
+    const request = {
+      model,
+      instructions: systemPrompt,
+      input: messages?.length
+        ? messages.map(({ role, content }) => ({ role, content }))
+        : userMessage,
+      max_output_tokens: maxTokens,
+      store: false,
+      stream: maxTokens > 21000,
+      ...posthogRequestFields(posthog, {
+        posthogProperties,
+        posthogTraceId,
+        posthogDistinctId,
+      }),
+    };
+    if (effort) request.reasoning = { effort };
+    if (responseSchema) request.text = { format: responseFormat(responseSchema) };
+    if (safetyIdentifier) request.safety_identifier = safetyIdentifier;
 
-  const usage = normaliseOpenAiUsage(response.usage);
-  let raw = "";
-  let parsed;
-  try {
-    const refusal = refusalText(response);
-    raw = refusal ? "" : responseTextOrEmpty(response);
-    assertOpenAiResponseComplete(response, raw, maxTokens);
-    if (!raw) responseText(response);
-    parsed = parseAiJsonResponse(raw, { mathBearing });
-  } catch (err) {
-    err.modelFailure = true;
-    err.usage = usage;
-    err.responseId = response.id || null;
-    throw err;
+    const options = signal ? { signal } : undefined;
+    let response;
+    try {
+      const result = await client.responses.create(request, options);
+      response = request.stream ? await aggregateOpenAiStream(result) : result;
+    } catch (err) {
+      err.modelFailure = true;
+      throw err;
+    }
+
+    const usage = normaliseOpenAiUsage(response.usage);
+    let raw = "";
+    let parsed;
+    try {
+      const refusal = refusalText(response);
+      raw = refusal ? "" : responseTextOrEmpty(response);
+      assertOpenAiResponseComplete(response, raw, maxTokens);
+      if (!raw) responseText(response);
+      parsed = parseAiJsonResponse(raw, { mathBearing });
+    } catch (err) {
+      err.modelFailure = true;
+      err.usage = usage;
+      err.responseId = response.id || null;
+      throw err;
+    }
+    return {
+      parsed,
+      raw,
+      provider: "openai",
+      model: response.model || model,
+      responseId: response.id || null,
+      usage,
+    };
+  } finally {
+    await shutdownPostHogClient(posthog);
   }
-  return {
-    parsed,
-    raw,
-    provider: "openai",
-    model: response.model || model,
-    responseId: response.id || null,
-    usage,
-  };
 }
 
 module.exports = {
   aggregateOpenAiStream,
   assertOpenAiResponseComplete,
   callOpenAiForResource,
+  createDefaultOpenAiClient,
   normaliseOpenAiUsage,
   refusalText,
   responseFormat,

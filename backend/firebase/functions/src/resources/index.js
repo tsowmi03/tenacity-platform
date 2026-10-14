@@ -608,6 +608,11 @@ function safetyIdentifierForUid(uid) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function aiSessionId(scope, value) {
+  const safeValue = String(value || "").replace(/[^A-Za-z0-9\-_~.@()!' :|]/g, "_");
+  return `${scope}:${safeValue || randomUUID()}`;
+}
+
 function addUsage(target, provider, usage) {
   if (!provider || !usage) return;
   const current = target[provider] || {};
@@ -623,7 +628,26 @@ function addUsage(target, provider, usage) {
   };
 }
 
+// Who and what a job's AI calls belong to in PostHog LLM analytics (RES-42):
+// the tutor, the generation attempt (one trace) and the job (one session).
+function posthogFieldsForJob(job) {
+  return {
+    posthogProperties: { $ai_session_id: aiSessionId("resource-job", job.jobId) },
+    posthogTraceId: job.attemptId || randomUUID(),
+    posthogDistinctId: job.createdBy,
+  };
+}
+
+// For calls whose usage is already counted elsewhere (passage and stimulus
+// sourcing report theirs through the planner): adds only the PostHog fields,
+// so the job's usage totals don't count those calls twice.
+function createAnalyticsAiCaller({ job, callAi }) {
+  const fields = posthogFieldsForJob(job);
+  return (request) => callAi({ ...request, ...fields });
+}
+
 function createTrackedAiCaller({ job, deps, callAi, usageByProvider }) {
+  const { posthogProperties, posthogTraceId, posthogDistinctId } = posthogFieldsForJob(job);
   return async (request) => {
     try {
       const result = await callAi({
@@ -631,6 +655,9 @@ function createTrackedAiCaller({ job, deps, callAi, usageByProvider }) {
         anthropicApiKey: deps.anthropicApiKey,
         openaiApiKey: deps.openaiApiKey,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+        posthogProperties,
+        posthogTraceId,
+        posthogDistinctId,
       });
       addUsage(usageByProvider, result?.provider, result?.usage);
       return result;
@@ -934,6 +961,10 @@ async function chatAboutResourceImpl({ payload, actor, deps }) {
   // the tutor picked for generation. RESOURCE_LLM_MODEL deliberately doesn't
   // apply: it exists to roll back generation models.
   const model = chatModel();
+  // The callable has no persistent chat identifier, so one invocation is one
+  // AI session and its file-summary and reply generations share one trace.
+  const posthogProperties = { $ai_session_id: aiSessionId("resource-chat", randomUUID()) };
+  const posthogTraceId = randomUUID();
   // Normalising inside the try means an unusable response (an empty reply)
   // reads as a failed model call, the same as a provider error.
   const callModel = async (request, normalise) => {
@@ -946,6 +977,9 @@ async function chatAboutResourceImpl({ payload, actor, deps }) {
         anthropicApiKey: deps.anthropicApiKey,
         openaiApiKey: deps.openaiApiKey,
         safetyIdentifier: safetyIdentifierForUid(actor.uid),
+        posthogProperties,
+        posthogTraceId,
+        posthogDistinctId: actor.uid,
       });
       return normalise(result.parsed);
     } catch (err) {
@@ -1541,6 +1575,7 @@ async function maybeSourcePassage({
   openaiApiKey,
   signal,
   sourceText,
+  callAi,
   selectAlternative = selectAlternativePublicDomainText,
 }) {
   const brief = {
@@ -1563,6 +1598,7 @@ async function maybeSourcePassage({
       selection: presetSelection || undefined,
       signal,
       safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+      callAi,
     });
     let planner = sourced?.selection?._planner || job.sourcePlanner || null;
     if (sourced?.ok && sourced.passage) return { used: true, sourced, planner };
@@ -1575,6 +1611,7 @@ async function maybeSourcePassage({
         excludedTitles: [sourced.selection.title],
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+        callAi,
       });
       sourced = await sourceText({
         anthropicApiKey,
@@ -1583,6 +1620,7 @@ async function maybeSourcePassage({
         selection: alternative,
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+        callAi,
       });
       planner = {
         ...(alternative._planner || planner || {}),
@@ -1681,6 +1719,7 @@ async function maybeSourceStimulusSet({
   sourceText,
   uploadedContent = null,
   planStimulus = planStimulusSelections,
+  callAi,
   selectAlternative = selectAlternativePublicDomainText,
   sourceVisual = sourceVisualStimulus,
 }) {
@@ -1707,6 +1746,7 @@ async function maybeSourceStimulusSet({
         uploadedContent,
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+        callAi,
       });
     } catch (err) {
       if (isCancellationError(err)) throw err;
@@ -1738,6 +1778,7 @@ async function maybeSourceStimulusSet({
         brief: briefForSelection(job, selection),
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+        callAi,
       });
       if (sourced?.ok && sourced.passage) {
         texts.push(sourced);
@@ -1751,6 +1792,7 @@ async function maybeSourceStimulusSet({
         excludedTitles: attemptedTitles,
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+        callAi,
       });
       attemptedTitles.push(alternative.title);
       sourced = await sourceText({
@@ -1760,6 +1802,7 @@ async function maybeSourceStimulusSet({
         brief: briefForSelection(job, alternative),
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
+        callAi,
       });
       planner = {
         ...(alternative._planner || planner || {}),
@@ -2243,6 +2286,7 @@ async function runGenerationPipeline(job, deps) {
   const generationModel = modelForResourceJob(job);
   const usageByProvider = {};
   const trackedCallAi = createTrackedAiCaller({ job, deps, callAi, usageByProvider });
+  const sourcingCallAi = createAnalyticsAiCaller({ job, callAi });
 
   throwIfCancelled(deps);
   const uploadedContent = await downloadUploadedContent({ job, storage, extractText });
@@ -2264,6 +2308,7 @@ async function runGenerationPipeline(job, deps) {
       openaiApiKey: deps.openaiApiKey,
       signal: deps.signal,
       sourceText,
+      callAi: sourcingCallAi,
       selectAlternative: deps.selectAlternative,
     });
     if (passageSourcing.used) {
@@ -2289,6 +2334,7 @@ async function runGenerationPipeline(job, deps) {
       sourceText,
       uploadedContent,
       planStimulus,
+      callAi: sourcingCallAi,
       selectAlternative: deps.selectAlternative,
     });
     if (stimulusSourcing.used) {
