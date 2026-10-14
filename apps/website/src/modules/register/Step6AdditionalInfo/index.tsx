@@ -272,7 +272,7 @@ function Index(props: Props) {
                   I accept the{" "}
                   <Link
                     className="text-primary cursor-pointer"
-                    href="/T&Cs.pdf"
+                    href="/terms"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
