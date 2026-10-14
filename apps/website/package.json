@@ -26,6 +26,8 @@
     "framer-motion": "^11.12.0",
     "lottie-react": "^2.4.0",
     "next": "15.0.7",
+    "posthog-js": "^1.438.9",
+    "posthog-node": "^5.55.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.53.2",

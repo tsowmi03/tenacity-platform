@@ -1,3 +1,10 @@
+import {
+  analyticsDistinctId,
+  currentPage,
+  sectionName,
+  track,
+  trackBeacon,
+} from "@lib/analytics";
 import { db } from "@lib/firebaseConfig";
 import { normaliseReferralCode } from "@lib/referralCodes";
 import {
@@ -98,6 +105,15 @@ const cloneStudent = (student: StudentData): StudentData => ({
 });
 
 const TOTAL_REG_STEPS = 7;
+const REG_STEP_NAMES = [
+  "year",
+  "subject",
+  "class_time",
+  "student",
+  "children",
+  "carer",
+  "final",
+] as const;
 const MAX_CHILDREN = 5;
 
 const trimStringsDeep = <T,>(value: T): T => {
@@ -201,31 +217,45 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
   const menu = getEl<HTMLElement>("mobileMenu");
   const openBtn = getEl<HTMLButtonElement>("hamburger");
   const closeBtn = getEl<HTMLButtonElement>("mmClose");
+  const pageName = currentPage();
   const openMenu = () => {
     menu?.classList.add("open");
     document.body.style.overflow = "hidden";
+    track("mobile_menu_opened", { page: pageName });
   };
-  const closeMenu = () => {
+  const closeMenu = (method: "close_button" | "link") => {
     menu?.classList.remove("open");
     document.body.style.overflow = "";
+    track("mobile_menu_closed", { page: pageName, method });
   };
   addListener(openBtn, "click", openMenu as EventListener);
-  addListener(closeBtn, "click", closeMenu as EventListener);
+  addListener(closeBtn, "click", () => closeMenu("close_button"));
   menu
     ?.querySelectorAll<HTMLAnchorElement>("a")
-    .forEach((link) => addListener(link, "click", closeMenu as EventListener));
+    .forEach((link) => addListener(link, "click", () => closeMenu("link")));
 
   const heroGo = getEl<HTMLAnchorElement>("hero-go");
   addListener(heroGo, "click", (event) => {
     const year = getEl<HTMLSelectElement>("hero-year")?.value;
+    const subject = getEl<HTMLSelectElement>("hero-subject")?.value;
     // Year 11 isn't in the standard registration until classes start in
     // 2027, so those families go to the interest form instead.
     if (year === "Year 11") {
       event.preventDefault();
+      trackBeacon("hero_finder_submitted", {
+        year,
+        subject: subject || null,
+        destination: "year11",
+      });
+      trackBeacon("registration_redirected_to_year11", { source: "hero" });
       window.location.href = "/year-11-interest";
       return;
     }
-    const subject = getEl<HTMLSelectElement>("hero-subject")?.value;
+    trackBeacon("hero_finder_submitted", {
+      year: year || null,
+      subject: subject || null,
+      destination: "register",
+    });
     const prefill: Record<string, string> = {};
     if (year) prefill.year = year;
     if (subject) prefill.subject = subject;
@@ -247,21 +277,31 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
     const answer = item.querySelector<HTMLElement>(".faq-a");
     if (answer) answer.style.maxHeight = `${answer.scrollHeight}px`;
   };
-  faqItems.forEach((item) => {
+  faqItems.forEach((item, position) => {
     const question = item.querySelector<HTMLButtonElement>(".faq-q");
     addListener(question, "click", () => {
       const isOpen = item.classList.contains("open");
       faqItems.forEach(closeFaqItem);
-      if (!isOpen) openFaqItem(item);
+      if (!isOpen) {
+        openFaqItem(item);
+        track("faq_opened", {
+          question: (question?.textContent ?? "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 120),
+          position: position + 1,
+          page: pageName,
+        });
+      }
     });
   });
   if (faqItems.length) openFaqItem(faqItems[0]);
 
-  const track = getEl<HTMLElement>("revTrack");
+  const reviewTrack = getEl<HTMLElement>("revTrack");
   const navWrap = getEl<HTMLElement>("revNav");
   let resizeTimer: number | null = null;
-  if (track && navWrap) {
-    const cards = Array.from(track.children) as HTMLElement[];
+  if (reviewTrack && navWrap) {
+    const cards = Array.from(reviewTrack.children) as HTMLElement[];
     const prevArrow = getEl<HTMLButtonElement>("revPrev");
     const nextArrow = getEl<HTMLButtonElement>("revNext");
     let index = 0;
@@ -278,7 +318,7 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
       index = Math.max(0, Math.min(nextIndex, pages - 1));
       const card = cards[0];
       const step = card ? card.getBoundingClientRect().width + 24 : 0;
-      track.style.transform = `translateX(${-index * step}px)`;
+      reviewTrack.style.transform = `translateX(${-index * step}px)`;
       Array.from(navWrap.children).forEach((dot, dotIndex) => {
         dot.classList.toggle("active", dotIndex === index);
       });
@@ -293,6 +333,11 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
         dot.setAttribute("aria-label", `Go to review ${i + 1}`);
         dot.addEventListener("click", () => {
           go(i);
+          track("reviews_navigated", {
+            method: "dot",
+            direction: "jump",
+            index: index + 1,
+          });
         });
         navWrap.appendChild(dot);
       }
@@ -305,8 +350,18 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
 
     buildDots();
     go(0);
-    addListener(prevArrow, "click", () => go(index <= 0 ? pages - 1 : index - 1));
-    addListener(nextArrow, "click", () => go(index + 1 >= pages ? 0 : index + 1));
+    const navigated = (
+      method: "arrow" | "swipe",
+      direction: "next" | "previous"
+    ) => track("reviews_navigated", { method, direction, index: index + 1 });
+    addListener(prevArrow, "click", () => {
+      go(index <= 0 ? pages - 1 : index - 1);
+      navigated("arrow", "previous");
+    });
+    addListener(nextArrow, "click", () => {
+      go(index + 1 >= pages ? 0 : index + 1);
+      navigated("arrow", "next");
+    });
     addListener(window, "resize", () => {
       if (resizeTimer) window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(rebuild, 200);
@@ -316,7 +371,7 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
     let startY = 0;
     let swiping = false;
     addListener(
-      track,
+      reviewTrack,
       "touchstart",
       ((event: TouchEvent) => {
         startX = event.touches[0]?.clientX ?? 0;
@@ -326,7 +381,7 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
       { passive: true }
     );
     addListener(
-      track,
+      reviewTrack,
       "touchend",
       ((event: TouchEvent) => {
         if (!swiping) return;
@@ -336,8 +391,13 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
         const dx = touch.clientX - startX;
         const dy = touch.clientY - startY;
         if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
-          if (dx < 0) go(index + 1 >= pages ? 0 : index + 1);
-          else go(index <= 0 ? pages - 1 : index - 1);
+          if (dx < 0) {
+            go(index + 1 >= pages ? 0 : index + 1);
+            navigated("swipe", "next");
+          } else {
+            go(index <= 0 ? pages - 1 : index - 1);
+            navigated("swipe", "previous");
+          }
         }
       }) as EventListener,
       { passive: true }
@@ -364,12 +424,12 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
       clearFormError();
 
       const required = ["f-name", "f-phone", "f-email"];
-      let ok = true;
+      const missing: string[] = [];
       required.forEach((id) => {
         const input = getEl<HTMLInputElement>(id);
         if (!input?.value.trim()) {
           if (input) input.style.borderColor = "#e0573a";
-          ok = false;
+          missing.push(id);
         } else {
           input.style.borderColor = "";
         }
@@ -381,9 +441,12 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
         !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.value)
       ) {
         email.style.borderColor = "#e0573a";
-        ok = false;
+        missing.push("f-email_invalid");
       }
-      if (!ok) return;
+      if (missing.length) {
+        track("enquiry_form_blocked", { missing_fields: missing });
+        return;
+      }
 
       const button = form.querySelector<HTMLButtonElement>(
         'button[type="submit"]'
@@ -398,6 +461,11 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
       const subject = getEl<HTMLSelectElement>("f-subject")?.value;
       const message = getEl<HTMLTextAreaElement>("f-msg")?.value.trim() ?? "";
       const details = [year, subject].filter(Boolean).join(" ");
+      track("enquiry_form_submitted", {
+        year: year || null,
+        subject: subject || null,
+        has_message: Boolean(message),
+      });
 
       try {
         await sendEmailForm({
@@ -411,8 +479,12 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
         });
         form.style.display = "none";
         getEl<HTMLElement>("formSuccess")?.classList.add("show");
+        track("enquiry_form_succeeded", {});
       } catch (error) {
         console.error("Failed to send enquiry:", error);
+        track("enquiry_form_failed", {
+          error: error instanceof Error ? error.message.slice(0, 200) : "unknown",
+        });
         showFormError("Failed to send your message. Please try again later.");
         if (button) {
           button.disabled = false;
@@ -422,6 +494,14 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
     };
 
     addListener(form, "submit", submit as EventListener);
+    // What a family types here never reaches analytics.
+    form.classList.add("ph-no-capture");
+    let enquiryStarted = false;
+    addListener(form, "focusin", () => {
+      if (enquiryStarted) return;
+      enquiryStarted = true;
+      track("enquiry_form_started", { page: pageName });
+    });
     form.querySelectorAll<HTMLInputElement>("input").forEach((input) => {
       addListener(input, "input", () => {
         input.style.borderColor = "";
@@ -447,6 +527,28 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
     cleanups.push(() => observer.disconnect());
   } else {
     revealEls.forEach((el) => el.classList.add("in"));
+  }
+
+  // Once per page view: which parts of the page families actually reach.
+  const sections = Array.from(document.querySelectorAll<HTMLElement>("section"));
+  if ("IntersectionObserver" in window && sections.length) {
+    const seen = new Set<string>();
+    const sectionObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          sectionObserver.unobserve(entry.target);
+          const section = sectionName(entry.target);
+          if (seen.has(section)) return;
+          seen.add(section);
+          track("section_viewed", { section, page: pageName });
+        });
+      },
+      // Viewed once it reaches the upper 60% of the screen, however tall.
+      { threshold: 0, rootMargin: "0px 0px -40% 0px" }
+    );
+    sections.forEach((section) => sectionObserver.observe(section));
+    cleanups.push(() => sectionObserver.disconnect());
   }
 
   const slides = Array.from(
@@ -539,6 +641,53 @@ const setupRegistrationRuntime = () => {
   let turnstileWidgetId: TurnstileWidgetId | null = null;
   let turnstileRetry: number | null = null;
 
+  // Analytics (WEB-8). Steps are reported 1-7 with names; child_index is the
+  // 1-based child being added or edited.
+  const pageOpenedAt = Date.now();
+  let stepEnteredAt = pageOpenedAt;
+  let viewedStep: number | null = null;
+  let started = false;
+  let submitted = false;
+  let abandonReported = false;
+  let entry: "direct" | "hero_prefill" | "query_prefill" | "referral_link" =
+    "direct";
+  let prefilledYear: string | null = null;
+  let prefilledSubjects: string[] = [];
+  const noSlotsReported = new Set<string>();
+
+  const stepName = (value: number) => REG_STEP_NAMES[value - 1];
+  const stepProps = () => ({
+    step,
+    step_name: stepName(step),
+    child_index: (editingIndex ?? students.length) + 1,
+    child_count: students.length,
+    is_editing: editingIndex !== null,
+  });
+  const markStarted = () => {
+    if (started) return;
+    started = true;
+    track("registration_started", {
+      entry,
+      prefilled_year: prefilledYear,
+      prefilled_subjects: prefilledSubjects,
+    });
+  };
+  const reportAbandoned = () => {
+    if (!started || submitted || isSubmitting || abandonReported) return;
+    abandonReported = true;
+    trackBeacon("registration_abandoned", {
+      last_step: step,
+      last_step_name: stepName(step),
+      child_count: students.length,
+      time_on_page_ms: Date.now() - pageOpenedAt,
+    });
+  };
+
+  // Elements that show family names never reach autocapture.
+  ["childList", "childChip", "childExtras", "summaryList", "doneMsg", "regDone"]
+    .map((id) => getEl<HTMLElement>(id))
+    .forEach((element) => element?.classList.add("ph-no-capture"));
+
   const markErr = (id: string, on: boolean) => {
     const input = getEl<HTMLElement>(id);
     const field = input?.closest(".reg-field") ?? input?.closest(".reg-check");
@@ -559,7 +708,6 @@ const setupRegistrationRuntime = () => {
       ],
       { duration: 260 }
     );
-    return false;
   };
 
   const stageOf = (year: string) => {
@@ -617,6 +765,14 @@ const setupRegistrationRuntime = () => {
 
     const slots = matchingSlots();
     if (!slots.length) {
+      const key = `${draft.studentYear}|${draft.studentSubjects.join(",")}`;
+      if (!noSlotsReported.has(key)) {
+        noSlotsReported.add(key);
+        track("registration_no_slots_available", {
+          year: draft.studentYear,
+          subjects: [...draft.studentSubjects],
+        });
+      }
       const empty = document.createElement("div");
       empty.className = "slot";
       empty.innerHTML = `<span class="slot-day">Full</span><span class="slot-meta"><span class="slot-time">No available times</span><br><span class="slot-sub">${stageOf(
@@ -658,13 +814,23 @@ const setupRegistrationRuntime = () => {
         `<span class="slot-tag ${availabilityClass}">${availabilityLabel}</span>` +
         '<span class="slot-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg></span>';
       button.addEventListener("click", () => {
-        if (isSelected(slot)) {
+        const wasSelected = isSelected(slot);
+        if (wasSelected) {
           draft.classes = draft.classes.filter(
             (selected) => selected.id !== slot.id
           );
         } else if (draft.classes.length < requiredClassCount()) {
           draft.classes.push(slot);
         }
+        track("registration_class_slot_toggled", {
+          day: slot.day ?? null,
+          start_time: slot.startTime ?? null,
+          selected: !wasSelected,
+          spots_remaining: remaining,
+          availability:
+            availabilityClass === "neutral" ? "unknown" : availabilityClass,
+          required_count: requiredClassCount(),
+        });
         buildSlots();
       });
       slotList.appendChild(button);
@@ -800,6 +966,7 @@ const setupRegistrationRuntime = () => {
         remove.textContent = "Remove";
         remove.addEventListener("click", () => {
           students.splice(index, 1);
+          track("registration_child_removed", { child_count: students.length });
           if (!students.length) startChild(null);
           else buildChildList();
         });
@@ -939,6 +1106,8 @@ const setupRegistrationRuntime = () => {
     );
     if (!code) return;
     family.referralCode = code;
+    entry = "referral_link";
+    track("referral_link_landed", { prefilled_source: "existing_family" });
 
     const select = getEl<HTMLSelectElement>("referralSource");
     if (select) {
@@ -967,6 +1136,7 @@ const setupRegistrationRuntime = () => {
     if (!container || turnstileWidgetId) return;
 
     if (!siteKey) {
+      track("registration_turnstile_result", { outcome: "not_configured" });
       markTurnstileErr(true);
       const error = getEl<HTMLElement>("turnstileError");
       if (error) error.textContent = "Verification is not configured.";
@@ -988,13 +1158,16 @@ const setupRegistrationRuntime = () => {
       callback: (token) => {
         turnstileToken = token;
         markTurnstileErr(false);
+        track("registration_turnstile_result", { outcome: "success" });
       },
       "expired-callback": () => {
         turnstileToken = "";
+        track("registration_turnstile_result", { outcome: "expired" });
       },
       "error-callback": () => {
         turnstileToken = "";
         markTurnstileErr(true);
+        track("registration_turnstile_result", { outcome: "error" });
       },
     });
   };
@@ -1029,15 +1202,25 @@ const setupRegistrationRuntime = () => {
     });
   };
 
-  const validate = () => {
-    if (step === 1) return Boolean(draft.studentYear) || warn();
-    if (step === 2) return draft.studentSubjects.length > 0 || warn();
+  // The field ids still missing or invalid on this step; empty means it can
+  // move on. Field ids go to analytics, so they must never carry values.
+  const missingOf = (checks: Array<[string, boolean]>) =>
+    checks.filter(([, ok]) => !ok).map(([id]) => id);
+
+  const validate = (): string[] => {
+    if (step === 1) return missingOf([["year", Boolean(draft.studentYear)]]);
+    if (step === 2) {
+      return missingOf([["subject", draft.studentSubjects.length > 0]]);
+    }
     if (step === 3) {
       const uniqueClassCount = selectedClassIds().size;
-      return (
-        draft.classes.length === draft.studentSubjects.length &&
-        uniqueClassCount === draft.studentSubjects.length
-      ) || warn();
+      return missingOf([
+        [
+          "class_times",
+          draft.classes.length === draft.studentSubjects.length &&
+            uniqueClassCount === draft.studentSubjects.length,
+        ],
+      ]);
     }
     if (step === 4) {
       draft.studentFirstName =
@@ -1046,9 +1229,12 @@ const setupRegistrationRuntime = () => {
         getEl<HTMLInputElement>("studentLastName")?.value.trim() ?? "";
       markErr("studentFirstName", !draft.studentFirstName);
       markErr("studentLastName", !draft.studentLastName);
-      return Boolean(draft.studentFirstName && draft.studentLastName) || warn();
+      return missingOf([
+        ["studentFirstName", Boolean(draft.studentFirstName)],
+        ["studentLastName", Boolean(draft.studentLastName)],
+      ]);
     }
-    if (step === 5) return students.length > 0 || warn();
+    if (step === 5) return missingOf([["children", students.length > 0]]);
     if (step === 6) {
       family.carerFirstName =
         getEl<HTMLInputElement>("carerFirstName")?.value.trim() ?? "";
@@ -1063,11 +1249,12 @@ const setupRegistrationRuntime = () => {
       markErr("carerLastName", !family.carerLastName);
       markErr("carerEmail", !emailOk);
       markErr("carerPhone", !family.carerPhone);
-      return (
-        Boolean(
-          family.carerFirstName && family.carerLastName && family.carerPhone
-        ) && emailOk
-      ) || warn();
+      return missingOf([
+        ["carerFirstName", Boolean(family.carerFirstName)],
+        ["carerLastName", Boolean(family.carerLastName)],
+        ["carerEmail", emailOk],
+        ["carerPhone", Boolean(family.carerPhone)],
+      ]);
     }
     if (step === 7) {
       const emName = getEl<HTMLInputElement>("emName")?.value.trim() ?? "";
@@ -1100,18 +1287,16 @@ const setupRegistrationRuntime = () => {
       const turnstileOk = Boolean(turnstileToken);
       markTurnstileErr(!turnstileOk);
 
-      return (
-        Boolean(
-          emName &&
-            family.emergencyContactPhone &&
-            family.emergencyContactRelation
-        ) &&
-        Boolean(family.referralSource) &&
-        family.termsAccepted &&
-        turnstileOk
-      ) || warn();
+      return missingOf([
+        ["emName", Boolean(emName)],
+        ["emPhone", Boolean(family.emergencyContactPhone)],
+        ["emRelation", Boolean(family.emergencyContactRelation)],
+        ["referralSource", Boolean(family.referralSource)],
+        ["termsAccepted", family.termsAccepted],
+        ["turnstile", turnstileOk],
+      ]);
     }
-    return true;
+    return [];
   };
 
   const render = () => {
@@ -1140,6 +1325,11 @@ const setupRegistrationRuntime = () => {
       renderTurnstile();
     }
     updateChildChip();
+    if (viewedStep !== step) {
+      viewedStep = step;
+      stepEnteredAt = Date.now();
+      track("registration_step_viewed", stepProps());
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -1149,6 +1339,22 @@ const setupRegistrationRuntime = () => {
     nextBtn.disabled = true;
     nextBtn.textContent = "Submitting...";
 
+    track("registration_submitted", {
+      child_count: students.length,
+      years: Array.from(new Set(students.map((student) => student.studentYear))),
+      subjects: Array.from(
+        new Set(students.flatMap((student) => student.studentSubjects))
+      ),
+      class_count: students.reduce(
+        (count, student) => count + student.classes.length,
+        0
+      ),
+      referral_source: family.referralSource || null,
+      has_referral_code: Boolean(family.referralCode),
+      total_time_ms: Date.now() - pageOpenedAt,
+    });
+
+    let statusCode: number | null = null;
     try {
       const response = await fetch("/api/register", {
         method: "POST",
@@ -1159,11 +1365,29 @@ const setupRegistrationRuntime = () => {
           family: trimStringsDeep(family),
           students: students.map((student) => trimStringsDeep(student)),
           turnstileToken,
+          analyticsId: analyticsDistinctId(),
         }),
       });
       if (!response.ok) {
+        statusCode = response.status;
         throw new Error("Registration API request failed.");
       }
+      submitted = true;
+      const result = (await response.json().catch(() => ({}))) as {
+        enrolmentIds?: unknown;
+        registrationGroupId?: unknown;
+      };
+      track("registration_succeeded", {
+        enrolment_ids: Array.isArray(result.enrolmentIds)
+          ? result.enrolmentIds.filter(
+              (id): id is string => typeof id === "string"
+            )
+          : [],
+        registration_group_id:
+          typeof result.registrationGroupId === "string"
+            ? result.registrationGroupId
+            : null,
+      });
       getEl<HTMLElement>("regProgress")?.style.setProperty("display", "none");
       document
         .querySelector<HTMLElement>(".reg-trial")
@@ -1194,6 +1418,10 @@ const setupRegistrationRuntime = () => {
       getEl<HTMLElement>("regDone")?.classList.add("show");
     } catch (error) {
       console.error("Error submitting enrolment:", error);
+      track("registration_failed", {
+        status_code: statusCode,
+        error: error instanceof Error ? error.message.slice(0, 200) : "unknown",
+      });
       window.alert("Failed to submit enrolment.");
       resetTurnstile();
       isSubmitting = false;
@@ -1210,6 +1438,13 @@ const setupRegistrationRuntime = () => {
       button.classList.add("selected");
       draft.studentYear = button.dataset.val ?? "";
       draft.classes = [];
+      markStarted();
+      if (draft.studentYear) {
+        track("registration_year_selected", {
+          year: draft.studentYear,
+          stage: stageOf(draft.studentYear),
+        });
+      }
     });
   });
 
@@ -1227,13 +1462,41 @@ const setupRegistrationRuntime = () => {
           button.classList.add("selected");
         }
         draft.classes = [];
+        markStarted();
+        track("registration_subject_toggled", {
+          subject,
+          selected: index < 0,
+          subject_count: draft.studentSubjects.length,
+        });
       });
     });
 
   addListener(nextBtn, "click", () => {
-    if (!validate()) return;
+    markStarted();
+    const missing = validate();
+    if (missing.length) {
+      warn();
+      track("registration_step_blocked", {
+        ...stepProps(),
+        missing_fields: missing,
+      });
+      return;
+    }
+    track("registration_step_completed", {
+      ...stepProps(),
+      time_on_step_ms: Date.now() - stepEnteredAt,
+    });
     if (step === 4) {
+      const wasEditing = editingIndex !== null;
       commitDraft();
+      track(wasEditing ? "registration_child_edited" : "registration_child_added", {
+        child_count: students.length,
+      });
+      if (!wasEditing && students.length >= MAX_CHILDREN) {
+        track("registration_child_limit_reached", {
+          child_count: students.length,
+        });
+      }
       step = 5;
       render();
       return;
@@ -1246,6 +1509,10 @@ const setupRegistrationRuntime = () => {
     void submit();
   });
   addListener(backBtn, "click", () => {
+    track("registration_back_clicked", {
+      from_step: step,
+      from_step_name: stepName(step),
+    });
     if (step === 1) {
       // Cancel adding/editing this child and return to the children list.
       if (students.length > 0 || editingIndex !== null) {
@@ -1285,12 +1552,23 @@ const setupRegistrationRuntime = () => {
   addListener(getEl<HTMLInputElement>("termsAccepted"), "change", () => {
     getEl<HTMLElement>("termsCheck")?.classList.remove("err");
   });
-  addListener(getEl<HTMLInputElement>("sameAsParent"), "change", applySameAsParent);
-  addListener(
-    getEl<HTMLSelectElement>("referralSource"),
-    "change",
-    updateReferralSource
-  );
+  addListener(getEl<HTMLInputElement>("sameAsParent"), "change", () => {
+    applySameAsParent();
+    track("registration_same_as_parent_toggled", {
+      on: Boolean(getEl<HTMLInputElement>("sameAsParent")?.checked),
+    });
+  });
+  addListener(getEl<HTMLSelectElement>("referralSource"), "change", () => {
+    updateReferralSource();
+    track("registration_referral_source_selected", {
+      source: family.referralSource || "none",
+      has_detail_field: Boolean(
+        referralSourceOption(family.referralSource)?.detailLabel
+      ),
+      from_referral_link: Boolean(family.referralCode),
+    });
+  });
+  addListener(window, "pagehide", reportAbandoned);
   addListener(getEl<HTMLInputElement>("referralSourceDetail"), "input", () => {
     family.referralSourceDetail =
       getEl<HTMLInputElement>("referralSourceDetail")?.value.trim() ?? "";
@@ -1303,6 +1581,7 @@ const setupRegistrationRuntime = () => {
     const queryYear = query.get("year");
     const querySubject = query.get("subject");
     if (queryYear || querySubject) {
+      if (entry === "direct") entry = "query_prefill";
       parsed = {
         year: queryYear
           ? queryYear.startsWith("Year ")
@@ -1314,6 +1593,7 @@ const setupRegistrationRuntime = () => {
     } else {
       const raw = window.localStorage.getItem("tenacity_prefill");
       if (raw) {
+        if (entry === "direct") entry = "hero_prefill";
         window.localStorage.removeItem("tenacity_prefill");
         try {
           parsed = JSON.parse(raw) as { year?: string; subject?: string };
@@ -1325,6 +1605,9 @@ const setupRegistrationRuntime = () => {
 
     if (!parsed) return;
     if (parsed.year === "Year 11") {
+      trackBeacon("registration_redirected_to_year11", {
+        source: queryYear ? "query_prefill" : "hero_prefill",
+      });
       window.location.replace("/year-11-interest");
       return;
     }
@@ -1335,6 +1618,7 @@ const setupRegistrationRuntime = () => {
       if (yearButton) {
         yearButton.classList.add("selected");
         draft.studentYear = parsed.year;
+        prefilledYear = parsed.year;
       }
     }
     if (parsed.subject) {
@@ -1351,6 +1635,7 @@ const setupRegistrationRuntime = () => {
         const storedSubject = fromDisplaySubject(subject);
         if (!draft.studentSubjects.includes(storedSubject)) {
           draft.studentSubjects.push(storedSubject);
+          prefilledSubjects = [...draft.studentSubjects];
         }
       });
     }
@@ -1361,21 +1646,35 @@ const setupRegistrationRuntime = () => {
   prefill();
   render();
 
+  const slotsRequestedAt = Date.now();
   void getDocs(collection(db, "classes"))
     .then((querySnapshot) => {
       classSlots = querySnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
+      track("registration_class_slots_loaded", {
+        total: classSlots.length,
+        with_spots: classSlots.filter((slot) => {
+          const remaining = classSpotsRemaining(slot);
+          return remaining === null || remaining > 0;
+        }).length,
+        load_ms: Date.now() - slotsRequestedAt,
+      });
       if (step === 3) buildSlots();
     })
     .catch((error) => {
       console.error("Error loading class slots:", error);
+      track("registration_class_slots_failed", {
+        error: error instanceof Error ? error.message.slice(0, 200) : "unknown",
+      });
       slotList.innerHTML =
         '<p class="slot-hint">Class times could not be loaded. Please contact us and we will help you register.</p>';
     });
 
   return () => {
+    // Leaving through client-side navigation never fires pagehide.
+    reportAbandoned();
     cleanups.forEach((cleanup) => cleanup());
     if (turnstileRetry) window.clearTimeout(turnstileRetry);
   };

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-13 | [The website reports where families drop out, with a privacy page (WEB-8)](#2026-10-13--the-website-reports-where-families-drop-out-with-a-privacy-page-web-8) |
 | 2026-10-13 | [Mobile 3.2.0 (build 520)](#2026-10-13--mobile-320-build-520) |
 | 2026-10-13 | [Nobody can be booked or swapped into a cancelled class (MOB-58)](#2026-10-13--nobody-can-be-booked-or-swapped-into-a-cancelled-class-mob-58) |
 | 2026-10-12 | [A parent's permanent enrolment no longer fails after it succeeds (MOB-57)](#2026-10-12--a-parents-permanent-enrolment-no-longer-fails-after-it-succeeds-mob-57) |
@@ -169,6 +170,44 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-13 — The website reports where families drop out, with a privacy page (WEB-8)
+
+**What changed**
+- The website sends analytics to PostHog US Cloud: page views, every CTA,
+  phone and email link with where on the page it sits, the enquiry form, and
+  each of the 7 registration steps (viewed, completed, blocked and which
+  fields stopped it, abandoned). It also covers class slots picked, when no
+  class time was available, referral links, Year 11 interest, the parent
+  feedback survey and unsubscribes. The full list is in
+  `apps/website/docs/analytics.md`.
+- A completed registration is also recorded server-side from
+  `/api/register`, joined to the visitor's journey, so ad blockers or a closed
+  tab can't lose a conversion.
+- Nothing identifying is sent: no names, contact details, medical notes,
+  typed text, referral codes or unsubscribe tokens. Referral codes and tokens
+  are scrubbed from every URL before an event leaves the browser. Session
+  replay, surveys and feature flags are off in code.
+- New `/privacy` page: a full privacy policy for the website, with an opt-out
+  button. It is linked from the footer, registration step 7 and the enquiry
+  and Year 11 forms.
+- posthog-js loads after the page rather than in the first-load bundle, so
+  the site's shared JavaScript stays at 107 kB, not 209 kB.
+
+**Why:** To see where families come from and exactly where they drop out of
+enquiry and registration, and to give the app's terms the privacy policy they
+already refer to.
+
+**Status:** Live. [#241](https://github.com/tsowmi03/tenacity-platform/pull/241),
+the website deployed with the merge. The PostHog US project key was set in
+Vercel Production (only) on 2026-10-14.
+
+**Next steps**
+- Build the five dashboards listed in `apps/website/docs/analytics.md` once
+  events arrive (about an hour).
+- Tom to sign off the `/privacy` wording.
 
 ---
 

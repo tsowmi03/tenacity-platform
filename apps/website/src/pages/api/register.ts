@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { FieldValue } from "firebase-admin/firestore";
+import { captureServerEvent } from "@lib/analyticsServer";
 import { getAdminDb } from "@lib/firebaseAdmin";
 import { lookupReferrer, normaliseReferralCode } from "@lib/referralCodes";
 import { isReferralSourceCode } from "@lib/referralSources";
@@ -44,6 +45,9 @@ type RegisterRequest = {
   family?: FamilyPayload;
   students?: unknown;
   turnstileToken?: unknown;
+  // The visitor's PostHog distinct ID, so the server-side conversion joins
+  // their website journey. Not stored anywhere else.
+  analyticsId?: unknown;
 };
 
 const MAX_STUDENTS_PER_REGISTRATION = 5;
@@ -264,6 +268,22 @@ export default async function handler(
       return ref;
     });
     await batch.commit();
+
+    await captureServerEvent(
+      "registration_completed",
+      {
+        enrolment_ids: refs.map((ref) => ref.id),
+        registration_group_id: registrationGroupId,
+        child_count: enrolmentDocs.length,
+        years: Array.from(new Set(enrolmentDocs.map((doc) => doc.studentYear))),
+        subjects: Array.from(
+          new Set(enrolmentDocs.flatMap((doc) => doc.studentSubjects))
+        ),
+        referral_source: enrolmentDocs[0].referralSource || null,
+        referral_code_valid: Boolean(referrerParentId),
+      },
+      { distinctId: body.analyticsId, cookies: req.cookies }
+    );
 
     return res.status(200).json({
       ok: true,
