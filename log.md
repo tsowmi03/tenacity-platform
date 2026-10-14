@@ -204,8 +204,9 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** To see how families and staff use the app. The terms previously
 promised no behavioural analytics, so they had to change before capture ships.
 
-**Status:** Merged. The privacy page update deployed with the merge. App
-analytics, the summary acceptance and the iOS fix ship with the next store
+**Status:** Merged. [#243](https://github.com/tsowmi03/tenacity-platform/pull/243),
+the privacy page update deployed with the merge. App analytics, the summary
+acceptance and the iOS fix ship with the next store
 release; terms 1.1.0 go to production Remote Config once it is live.
 
 **Next steps**
