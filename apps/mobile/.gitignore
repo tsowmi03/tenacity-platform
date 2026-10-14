@@ -1,3 +1,6 @@
+# Local environment configuration (holds keys)
+.env
+
 # Miscellaneous
 *.class
 *.log

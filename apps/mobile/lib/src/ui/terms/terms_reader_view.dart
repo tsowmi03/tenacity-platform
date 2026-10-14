@@ -41,6 +41,17 @@ class _TermsReaderViewState extends State<TermsReaderView> {
 
   bool get _isBusy => widget.isAccepting || _isSubmitting;
 
+  List<TermsChangeLog> get _changes =>
+      termsChangesSince(widget.terms.changelog, widget.previousVersion);
+
+  /// Someone who accepted an earlier version, re-accepting a document whose
+  /// changes are summarised. They accept from the summary, as most apps do,
+  /// with the full terms still below it; only a first acceptance, or an update
+  /// with no changelog to show, asks them to read to the end.
+  bool get _isUpdate => widget.requireAcceptance && _changes.isNotEmpty;
+
+  bool get _canAccept => _isUpdate || _hasReachedEnd;
+
   @override
   void initState() {
     super.initState();
@@ -83,7 +94,7 @@ class _TermsReaderViewState extends State<TermsReaderView> {
   }
 
   Future<void> _accept() async {
-    if (!_hasReachedEnd || _isBusy || widget.onAccept == null) return;
+    if (!_canAccept || _isBusy || widget.onAccept == null) return;
 
     setState(() => _isSubmitting = true);
     try {
@@ -95,10 +106,8 @@ class _TermsReaderViewState extends State<TermsReaderView> {
 
   @override
   Widget build(BuildContext context) {
-    final changes = termsChangesSince(
-      widget.terms.changelog,
-      widget.previousVersion,
-    );
+    final changes = _changes;
+    final isUpdate = _isUpdate;
 
     return Scaffold(
       backgroundColor: AppColors.ink,
@@ -108,6 +117,7 @@ class _TermsReaderViewState extends State<TermsReaderView> {
           children: [
             _TermsHeader(
               requireAcceptance: widget.requireAcceptance,
+              isUpdate: isUpdate,
               title: widget.terms.title,
               version: widget.terms.version,
               onBack: widget.onBack,
@@ -117,11 +127,12 @@ class _TermsReaderViewState extends State<TermsReaderView> {
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: [
-                    _ProgressHeader(
-                      progress: _scrollProgress,
-                      hasReachedEnd: _hasReachedEnd,
-                      requireAcceptance: widget.requireAcceptance,
-                    ),
+                    if (!isUpdate)
+                      _ProgressHeader(
+                        progress: _scrollProgress,
+                        hasReachedEnd: _hasReachedEnd,
+                        requireAcceptance: widget.requireAcceptance,
+                      ),
                     Expanded(
                       child: SingleChildScrollView(
                         key: const Key('terms-scroll'),
@@ -142,14 +153,20 @@ class _TermsReaderViewState extends State<TermsReaderView> {
                               ),
                               const SizedBox(height: AppSpacing.xl),
                             ],
-                            MarkdownBody(
-                              key: const Key('terms-markdown'),
-                              data: widget.terms.content,
-                              selectable: true,
-                              onTapLink: (_, href, __) {
-                                if (href != null) widget.onOpenLink(href);
-                              },
-                              styleSheet: _markdownStyleSheet(),
+                            // SelectionArea rather than `selectable: true`:
+                            // that builds SelectableText, whose iOS copy menu
+                            // (Flutter 3.32) asserts there is a text field and
+                            // threw on a long-press. SelectionArea keeps the
+                            // text copyable with Flutter's own menu.
+                            SelectionArea(
+                              child: MarkdownBody(
+                                key: const Key('terms-markdown'),
+                                data: widget.terms.content,
+                                onTapLink: (_, href, __) {
+                                  if (href != null) widget.onOpenLink(href);
+                                },
+                                styleSheet: _markdownStyleSheet(),
+                              ),
                             ),
                             const SizedBox(height: AppSpacing.xl),
                             _DocumentEnd(version: widget.terms.version),
@@ -159,7 +176,13 @@ class _TermsReaderViewState extends State<TermsReaderView> {
                     ),
                     if (widget.requireAcceptance)
                       _AcceptanceFooter(
-                        canAccept: _hasReachedEnd,
+                        canAccept: _canAccept,
+                        hint: isUpdate
+                            ? 'Accepting agrees to the full terms '
+                                '(v${widget.terms.version}) below the summary.'
+                            : _hasReachedEnd
+                                ? 'You have reached the end of the document.'
+                                : 'Scroll to the end before accepting.',
                         isBusy: _isBusy,
                         errorMessage: widget.actionErrorMessage,
                         onDecline: widget.onDecline,
@@ -223,12 +246,14 @@ class _TermsReaderViewState extends State<TermsReaderView> {
 
 class _TermsHeader extends StatelessWidget {
   final bool requireAcceptance;
+  final bool isUpdate;
   final String title;
   final String version;
   final VoidCallback? onBack;
 
   const _TermsHeader({
     required this.requireAcceptance,
+    this.isUpdate = false,
     required this.title,
     required this.version,
     required this.onBack,
@@ -269,9 +294,11 @@ class _TermsHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  requireAcceptance
-                      ? 'Please review the full document to continue'
-                      : 'The agreement currently in effect',
+                  isUpdate
+                      ? "We've updated our terms. Here's what changed."
+                      : requireAcceptance
+                          ? 'Please review the full document to continue'
+                          : 'The agreement currently in effect',
                   style: AppText.serif(
                     fontSize: 14,
                     color: AppColors.onInkSubtitle,
@@ -477,6 +504,7 @@ class _DocumentEnd extends StatelessWidget {
 
 class _AcceptanceFooter extends StatelessWidget {
   final bool canAccept;
+  final String hint;
   final bool isBusy;
   final String? errorMessage;
   final VoidCallback? onDecline;
@@ -484,6 +512,7 @@ class _AcceptanceFooter extends StatelessWidget {
 
   const _AcceptanceFooter({
     required this.canAccept,
+    required this.hint,
     required this.isBusy,
     required this.errorMessage,
     required this.onDecline,
@@ -525,9 +554,8 @@ class _AcceptanceFooter extends StatelessWidget {
               const SizedBox(height: AppSpacing.md),
             ],
             Text(
-              canAccept
-                  ? 'You have reached the end of the document.'
-                  : 'Scroll to the end before accepting.',
+              hint,
+              key: const Key('terms-accept-hint'),
               textAlign: TextAlign.center,
               style: AppText.body(fontSize: 11.5, color: AppColors.muted),
             ),

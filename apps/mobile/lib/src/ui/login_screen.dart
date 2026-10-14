@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/helpers/offline_action_guard.dart';
+import 'package:tenacity/src/services/analytics_service.dart';
 import 'package:tenacity/src/ui/auth/login_form.dart';
 import 'package:tenacity/src/ui/auth/login_view.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
@@ -23,6 +24,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    Analytics.screen('login');
     _emailController.addListener(_onFieldChanged);
     _passwordController.addListener(_onFieldChanged);
   }

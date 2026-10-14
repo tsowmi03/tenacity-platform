@@ -215,6 +215,132 @@ void main() {
     expect(find.text('v2.0 · 27 Jul 2026'), findsOneWidget);
   });
 
+  group('an update to terms already accepted', () {
+    final longContent = [
+      '# Terms',
+      for (var index = 1; index <= 30; index++)
+        '## Section $index\n\n'
+            'This section explains an important condition in enough detail '
+            'to require the reader to continue through the document.',
+    ].join('\n\n');
+    final changelog = [
+      TermsChangeLog(version: '1.0', changes: 'Original wording'),
+      TermsChangeLog(version: '2.0', changes: 'Explains app analytics'),
+    ];
+
+    testWidgets('can be accepted from the summary without scrolling',
+        (tester) async {
+      final actions = await _pumpReader(
+        tester,
+        previousVersion: '1.0',
+        terms: _terms(content: longContent, changelog: changelog),
+        size: const Size(320, 640),
+      );
+
+      expect(find.byKey(const Key('terms-updated-card')), findsOneWidget);
+      expect(find.text('Explains app analytics'), findsOneWidget);
+      expect(find.byKey(const Key('terms-progress')), findsNothing);
+      expect(
+        find.text("We've updated our terms. Here's what changed."),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+            'Accepting agrees to the full terms (v2.0) below the summary.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('terms-accept')));
+      await tester.pump();
+      expect(actions.accepts, 1);
+    });
+
+    testWidgets('still asks for a full read when there is nothing to summarise',
+        (tester) async {
+      await _pumpReader(
+        tester,
+        previousVersion: '2.0',
+        terms: _terms(content: longContent, changelog: changelog),
+        size: const Size(320, 640),
+      );
+
+      expect(find.byKey(const Key('terms-updated-card')), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('terms-accept')))
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('a first acceptance still requires reading to the end',
+        (tester) async {
+      await _pumpReader(
+        tester,
+        terms: _terms(content: longContent, changelog: changelog),
+        size: const Size(320, 640),
+      );
+
+      expect(find.byKey(const Key('terms-progress')), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('terms-accept')))
+            .onPressed,
+        isNull,
+      );
+    });
+  });
+
+  testWidgets(
+      'long-pressing the terms on iOS selects text without the native menu '
+      'assertion', (tester) async {
+    tester.view.physicalSize = const Size(402, 874);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        // Above the navigator, so the overlay the menu is built in sees it:
+        // as on iOS 16+, where the system copy/paste menu is available.
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(supportsShowingSystemContextMenu: true),
+          child: child!,
+        ),
+        home: TermsReaderView(
+          terms: _terms(content: '# Terms\n\nYou agree to use the App.'),
+          requireAcceptance: true,
+          isAccepting: false,
+          onAccept: () async {},
+          onOpenLink: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.longPress(find.textContaining('You agree to use the App.'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('links in the terms still open when tapped', (tester) async {
+    final actions = await _pumpReader(
+      tester,
+      terms: _terms(
+        content:
+            '# Terms\n\n[Privacy Policy](https://www.tenacitytutoring.com/privacy)',
+      ),
+    );
+
+    await tester.tap(find.textContaining('Privacy Policy'));
+    await tester.pump();
+
+    expect(actions.links, ['https://www.tenacitytutoring.com/privacy']);
+  });
+
   testWidgets('read-only terms have a back action and no acceptance footer',
       (tester) async {
     final actions = await _pumpReader(

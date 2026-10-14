@@ -9,7 +9,7 @@ import Head from "@modules/common/components/head";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-const LAST_UPDATED = "13 October 2026";
+const LAST_UPDATED = "14 October 2026";
 
 type AnalyticsState = "loading" | "off_here" | "on" | "opted_out";
 
@@ -71,7 +71,7 @@ export default function Privacy() {
     <>
       <Head
         title="Privacy policy"
-        description="How Tenacity Tutoring collects, uses and protects your family's information, including website analytics."
+        description="How Tenacity Tutoring collects, uses and protects your family's information, including website and app analytics."
         canonicalPath="/privacy"
       />
       <header className="nav solid">
@@ -105,7 +105,8 @@ export default function Privacy() {
               <h1>Privacy policy</h1>
               <p>
                 How we collect, use and look after your family&apos;s
-                information on this website. Last updated {LAST_UPDATED}.
+                information on this website and in the Tenacity app. Last
+                updated {LAST_UPDATED}.
               </p>
             </div>
 
@@ -115,8 +116,9 @@ export default function Privacy() {
                 Tenacity Tutoring runs small-group Maths and English classes at
                 16 Broadarrow Road, Narwee NSW 2209. In this policy,
                 &ldquo;we&rdquo; and &ldquo;us&rdquo; mean Tenacity Tutoring.
-                This policy covers tenacitytutoring.com. The Tenacity mobile app
-                is covered by its own terms of use.
+                This policy covers tenacitytutoring.com and the analytics in the
+                Tenacity mobile app. The app&apos;s terms of use cover the rest
+                of how the app works.
               </p>
 
               <h2>What we collect</h2>
@@ -200,7 +202,7 @@ export default function Privacy() {
                 </div>
                 <div role="row">
                   <span role="cell">PostHog</span>
-                  <span role="cell">Website analytics (see below)</span>
+                  <span role="cell">Website and app analytics (see below)</span>
                   <span role="cell">United States</span>
                 </div>
               </div>
@@ -229,6 +231,23 @@ export default function Privacy() {
                 browser here, or block cookies in your browser settings.
               </p>
               <AnalyticsChoice />
+
+              <h2 id="app-analytics">App analytics</h2>
+              <p>
+                The Tenacity app also uses PostHog, to understand how families
+                and staff use it and to fix problems. When you are signed in,
+                the app sends your account ID, email address and account type
+                (for example, parent), together with which screens you open,
+                when the app is opened or closed, your device and app version,
+                and details of any errors.
+              </p>
+              <p>
+                The app does not send PostHog the content of your messages,
+                children&apos;s details, medical information or payment
+                details, and we do not record your screen. It is stored in the United States, is only used to
+                improve the app and our services, and is never used for
+                advertising or sold.
+              </p>
 
               <h2>Keeping your information</h2>
               <p>

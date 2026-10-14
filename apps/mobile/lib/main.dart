@@ -21,6 +21,7 @@ import 'package:tenacity/src/controllers/terms_controller.dart';
 import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/controllers/users_controller.dart';
 import 'package:tenacity/src/services/active_chat.dart';
+import 'package:tenacity/src/services/analytics_service.dart';
 import 'package:tenacity/src/services/chat_media.dart';
 import 'package:tenacity/src/services/chat_outbox.dart';
 import 'package:tenacity/src/services/chat_service.dart';
@@ -90,7 +91,17 @@ void main() async {
     appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
   );
 
+  // After FlutterError.onError above, so PostHog's error capture chains onto
+  // it. A no-op on staging builds, and never throws.
+  await Analytics.init();
+
   final authController = AuthController();
+  void syncAnalyticsUser() => Analytics.syncUser(
+        authController.currentUser,
+        isRestoringSession: authController.isRestoringSession,
+      );
+  authController.addListener(syncAnalyticsUser);
+  syncAnalyticsUser();
   final termsController = TermsController(termsService: TermsService());
   final notificationService = NotificationService();
 
