@@ -201,8 +201,8 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** To see what resource generation costs, how long it takes and where
 it fails, call by call.
 
-**Status:** Merged. Analytics starts with the next production Functions
-deploy.
+**Status:** Live. [#245](https://github.com/tsowmi03/tenacity-platform/pull/245),
+production Functions deployed 2026-10-14.
 
 ---
 
