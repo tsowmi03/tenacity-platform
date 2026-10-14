@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-14 | [The Terms & Conditions are a web page, not a PDF (WEB-9)](#2026-10-14--the-terms--conditions-are-a-web-page-not-a-pdf-web-9) |
 | 2026-10-14 | [Resource generation reports every AI call to PostHog (RES-42)](#2026-10-14--resource-generation-reports-every-ai-call-to-posthog-res-42) |
 | 2026-10-14 | [The app reports how it's used, with terms that say so (MOB-59)](#2026-10-14--the-app-reports-how-its-used-with-terms-that-say-so-mob-59) |
 | 2026-10-13 | [The website reports where families drop out, with a privacy page (WEB-8)](#2026-10-13--the-website-reports-where-families-drop-out-with-a-privacy-page-web-8) |
@@ -172,6 +173,26 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-14 — The Terms & Conditions are a web page, not a PDF (WEB-9)
+
+**What changed**
+- The family enrolment Terms & Conditions are now a page at `/terms`, with the
+  same wording as the PDF it replaces. It's styled like `/privacy`, reads well
+  on phones, and each section can be linked (for example `/terms#fees`).
+- Every T&Cs link points at `/terms`: the footer, registration step 7 (which
+  still opens in a new tab so the form isn't lost), the legacy registration
+  step and the privacy page. `/T&Cs.pdf` redirects permanently to `/terms`,
+  so old links and emails still work, and the PDF is removed.
+- `/privacy` and `/terms` share one page frame, `src/modules/legal/LegalPage.tsx`.
+- `terms_opened` analytics now fires for links to `/terms`.
+
+**Why:** A PDF is awkward on a phone, can't be linked by section, and is hard
+to keep up to date.
+
+**Status:** Live. The website deployed with the merge.
 
 ---
 

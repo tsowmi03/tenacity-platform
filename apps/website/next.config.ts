@@ -59,6 +59,17 @@ const nextConfig: NextConfig = {
         destination: "/programs",
         permanent: true,
       },
+      // The T&Cs were a PDF until WEB-9; old links and emails still point at it.
+      {
+        source: "/T&Cs.pdf",
+        destination: "/terms",
+        permanent: true,
+      },
+      {
+        source: "/T%26Cs.pdf",
+        destination: "/terms",
+        permanent: true,
+      },
     ];
   },
 };

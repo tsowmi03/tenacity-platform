@@ -507,7 +507,7 @@ const onLinkClick = (event: MouseEvent) => {
   }
 
   const path = decodeURIComponent(url.pathname);
-  if (path === "/T&Cs.pdf") {
+  if (path === "/terms" || path === "/T&Cs.pdf") {
     trackBeacon("terms_opened", { location, page });
     return;
   }

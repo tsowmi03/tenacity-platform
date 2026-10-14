@@ -1333,3 +1333,6 @@ p.privacy-choice { display: block; color: var(--muted); }
 }
 .form-privacy { margin-top: 14px; font-size: .85rem; color: var(--muted); }
 .form-privacy a { color: var(--navy); text-decoration: underline; text-underline-offset: 3px; }
+.legal-head a { color: var(--navy); text-decoration: underline; text-underline-offset: 3px; }
+/* Section links (/terms#fees) land below the fixed header, not under it. */
+.privacy-policy h2[id] { scroll-margin-top: 96px; }

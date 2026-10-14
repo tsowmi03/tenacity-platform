@@ -100,9 +100,7 @@ const FooterNav = () => {
             })}
 
             <Link
-              href="/T&Cs.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/terms"
               area-label="Terms & Conditions"
               className={clsx("hover:underline", {
                 "text-primary  font-bold": pathname === "/privacy-policy",
