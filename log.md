@@ -192,7 +192,8 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** A PDF is awkward on a phone, can't be linked by section, and is hard
 to keep up to date.
 
-**Status:** Live. The website deployed with the merge.
+**Status:** Live. [#247](https://github.com/tsowmi03/tenacity-platform/pull/247),
+the website deployed with the merge.
 
 ---
 
