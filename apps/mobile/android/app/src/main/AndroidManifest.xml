@@ -50,6 +50,11 @@
         <meta-data
             android:name="com.stripe.publishable_key"
             android:value="${stripePublishableKey}" />
+        <!-- PostHog is started from Dart (lib/src/services/analytics_service.dart),
+             which picks the project per environment (MOB-59). -->
+        <meta-data
+            android:name="com.posthog.posthog.AUTO_INIT"
+            android:value="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

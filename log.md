@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-14 | [The app reports how it's used, with terms that say so (MOB-59)](#2026-10-14--the-app-reports-how-its-used-with-terms-that-say-so-mob-59) |
 | 2026-10-13 | [The website reports where families drop out, with a privacy page (WEB-8)](#2026-10-13--the-website-reports-where-families-drop-out-with-a-privacy-page-web-8) |
 | 2026-10-13 | [Mobile 3.2.0 (build 520)](#2026-10-13--mobile-320-build-520) |
 | 2026-10-13 | [Nobody can be booked or swapped into a cancelled class (MOB-58)](#2026-10-13--nobody-can-be-booked-or-swapped-into-a-cancelled-class-mob-58) |
@@ -170,6 +171,49 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-14 — The app reports how it's used, with terms that say so (MOB-59)
+
+**What changed**
+- The app sends analytics to PostHog US Cloud through `posthog_flutter`, on
+  iOS and Android: app installed, opened and backgrounded, a screen view per
+  bottom-navigation tab and the login screen, and Flutter and native errors.
+  Signed-in users are identified by Firebase UID, with email and role as person
+  properties (approved by Tom). Sign-out resets the identity.
+- Only production builds send anything. Staging builds have no project token,
+  so test traffic never reaches production analytics. A missing token, or
+  PostHog failing to start, leaves analytics off and never crashes the app.
+- Session replay, surveys, feature flags and PostHog's push handling are off,
+  so the SDK never touches the app's own FCM notification handling.
+- Replaces the PostHog wizard's Android-only setup, whose Application class
+  sat in the wrong package and would have crashed Android on launch.
+- The app terms (`public/terms.html`, and terms 1.1.0 in Remote Config) and the
+  website `/privacy` page now describe the app analytics and the email shared
+  with PostHog.
+- Accepting updated terms no longer means scrolling the whole document again.
+  Someone who accepted an earlier version sees "What changed" and can accept
+  from there, with the full terms below. First-time acceptance, and an update
+  with no changelog entry to summarise, still require reading to the end.
+- Long-pressing the terms text on iOS no longer throws. The selectable text
+  used iOS's native copy menu, which (on Flutter 3.32) assumes a text field
+  and failed an assertion: a red error screen in debug builds. The terms now
+  sit in a `SelectionArea`, so they can still be copied and links still open.
+
+**Why:** To see how families and staff use the app. The terms previously
+promised no behavioural analytics, so they had to change before capture ships.
+
+**Status:** Merged. The privacy page update deployed with the merge. App
+analytics, the summary acceptance and the iOS fix ship with the next store
+release; terms 1.1.0 go to production Remote Config once it is live.
+
+**Next steps**
+- Once the release is live in the stores, publish terms 1.1.0 to production
+  Remote Config (the staging template is the model), and copy
+  `apps/mobile/public/terms.html` over the store-linked
+  `apps/admin-portal/public/terms.html` so the public page matches. Every user
+  then sees the summary and re-accepts on their next launch (about 15 minutes).
 
 ---
 

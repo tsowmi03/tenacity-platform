@@ -56,6 +56,29 @@ Execute Flutter tests with:
 flutter test
 ```
 
+### Analytics (PostHog)
+
+Production builds send product analytics to PostHog US Cloud through
+`lib/src/services/analytics_service.dart` (MOB-59). This covers:
+
+- app opened, backgrounded, installed and updated;
+- a screen view for each bottom-navigation tab;
+- Flutter and native errors;
+- the signed-in user's UID, with their email and role as person properties.
+
+Session replay, surveys, feature flags and PostHog's push handling are off.
+
+Staging builds send nothing. To test locally, point a staging build at a
+receiver of your own:
+
+```bash
+scripts/run.sh staging --dart-define=POSTHOG_PROJECT_TOKEN=phc_test \
+  --dart-define=POSTHOG_HOST=http://127.0.0.1:8787
+```
+
+The production project token lives in `lib/src/config/app_environment.dart`.
+It is public by design, the same token the website uses.
+
 ### Backend deployments
 
 Do not deploy Firebase Functions, rules, indexes, or Hosting from this

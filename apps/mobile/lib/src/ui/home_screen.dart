@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:tenacity/src/services/analytics_service.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
 import 'package:tenacity/src/controllers/auth_controller.dart';
 import 'package:tenacity/src/controllers/chat_controller.dart';
@@ -43,6 +44,7 @@ class HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      Analytics.screen(_selected.name);
       if (!_didProcessPendingNotification) {
         _didProcessPendingNotification = true;
         final data = NotificationService.takePendingNotification();
@@ -115,10 +117,12 @@ class HomeScreenState extends State<HomeScreen> {
     final available = destinationsForRole(role);
     if (!available.any((d) => d.id == destination)) return;
 
+    final changed = destination != _selected;
     setState(() {
       _selected = destination;
       _visited.add(destination);
     });
+    if (changed) Analytics.screen(destination.name);
     _fetchIndicators();
   }
 

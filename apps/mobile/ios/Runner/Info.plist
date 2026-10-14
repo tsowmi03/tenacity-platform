@@ -54,5 +54,11 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- PostHog is started from Dart, per environment (MOB-59). Push open
+	     capture stays off so the SDK never touches notification handling. -->
+	<key>com.posthog.posthog.AUTO_INIT</key>
+	<false/>
+	<key>com.posthog.posthog.CAPTURE_PUSH_NOTIFICATION_OPENED</key>
+	<false/>
 </dict>
 </plist>

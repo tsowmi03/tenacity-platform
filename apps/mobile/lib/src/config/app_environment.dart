@@ -49,6 +49,32 @@ class AppEnvironment {
         TenacityEnv.staging => staging.DefaultFirebaseOptions.currentPlatform,
       };
 
+  /// Production PostHog project token (US Cloud). Public by design: it ships
+  /// in every build and the website, and only allows sending events.
+  static const String _productionPosthogToken =
+      'phc_veJUQQxnqJBE9B4umMUfLqLfB36CfJDUCnncMDGnxLwY';
+
+  static const String _posthogTokenOverride =
+      String.fromEnvironment('POSTHOG_PROJECT_TOKEN');
+
+  /// The PostHog project token for this build, or null when analytics is off.
+  ///
+  /// Production builds use the production project. Staging builds send
+  /// nothing, so test traffic never lands in production analytics, unless
+  /// `--dart-define=POSTHOG_PROJECT_TOKEN=...` points them at another project.
+  static const String? posthogProjectToken = _posthogTokenOverride != ''
+      ? _posthogTokenOverride
+      : (String.fromEnvironment('TENACITY_ENV', defaultValue: 'prod') ==
+              'prod'
+          ? _productionPosthogToken
+          : null);
+
+  /// Overridable with `--dart-define=POSTHOG_HOST=...` for local testing.
+  static const String posthogHost = String.fromEnvironment(
+    'POSTHOG_HOST',
+    defaultValue: 'https://us.i.posthog.com',
+  );
+
   /// Label for the persistent staging ribbon; null in production.
   static String? get bannerLabel => isStaging ? 'STAGING' : null;
 
