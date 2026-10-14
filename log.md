@@ -200,8 +200,9 @@ omitted, and open follow-ups are tracked at the bottom.
 enquiry and registration, and to give the app's terms the privacy policy they
 already refer to.
 
-**Status:** Live. The website deployed with the merge. The PostHog US
-project key was set in Vercel Production (only) on 2026-10-14.
+**Status:** Live. [#241](https://github.com/tsowmi03/tenacity-platform/pull/241),
+the website deployed with the merge. The PostHog US project key was set in
+Vercel Production (only) on 2026-10-14.
 
 **Next steps**
 - Build the five dashboards listed in `apps/website/docs/analytics.md` once
