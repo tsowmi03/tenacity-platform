@@ -1963,6 +1963,45 @@ describe("English stimulus sourcing in the generation pipeline", () => {
     assert.equal(captured.stimulus[0].title, "Real Poem");
   });
 
+  it("counts sourcing usage once and tags every AI call for PostHog (RES-42)", async () => {
+    const parsed = {
+      title: "Reading Worksheet", subject: "english", year: 10, topic: "Growing up", totalMarks: 4,
+      stimulus: [{ label: "Text 1", textType: "poem", title: "Model Title", author: null, source: null, body: "model invented" }],
+      questions: [{ number: 1, stem: "Analyse Text 1.", marks: 4, workingLines: 4, parts: null }],
+    };
+    const aiCalls = [];
+    const callAi = async (request) => {
+      aiCalls.push(request);
+      return {
+        parsed,
+        raw: JSON.stringify(parsed),
+        provider: "anthropic",
+        usage: { inputTokens: 1000, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+      };
+    };
+    const { result } = await runEnglish({
+      resourceType: "worksheet",
+      parsed,
+      planStimulus: planOnePoem,
+      includeResult: true,
+      callAi,
+      // A sourcing step that makes its own AI call. Its usage reaches the job
+      // through the planner, so the pipeline must not count the call itself.
+      sourceText: async ({ callAi: sourcingCallAi }) => {
+        await sourcingCallAi({ model: "claude-sonnet-4-6", systemPrompt: "S", userMessage: "U" });
+        return sourcedPoem;
+      },
+    });
+
+    assert.equal(aiCalls.length, 2);
+    for (const request of aiCalls) {
+      assert.equal(request.posthogDistinctId, "tutor-1");
+      assert.equal(request.posthogTraceId, "attempt-1");
+      assert.equal(request.posthogProperties.$ai_session_id, "resource-job:job-en");
+    }
+    assert.equal(result.usageByProvider.anthropic.inputTokens, 1000);
+  });
+
   it("fetches nothing and adds no stimulus when the planner says none is needed", async () => {
     const parsed = {
       title: "Apostrophes Worksheet", subject: "english", year: 10, topic: "Apostrophes", totalMarks: 4,

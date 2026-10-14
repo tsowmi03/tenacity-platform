@@ -41,6 +41,7 @@ async function sourceVerifiedText({
   selection: presetSelection,
   signal,
   safetyIdentifier,
+  callAi,
   select = selectPublicDomainText,
   gutenberg = sourceGutenbergWork,
   wikisource = sourceWikisourcePoem,
@@ -52,6 +53,7 @@ async function sourceVerifiedText({
     brief,
     signal,
     safetyIdentifier,
+    callAi,
   }));
 
   let sourced;
