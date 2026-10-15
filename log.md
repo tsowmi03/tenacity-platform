@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-15 | [Session replay starts on the portals and in the app](#2026-10-15--session-replay-starts-on-the-portals-and-in-the-app) |
 | 2026-10-15 | [The app reports what parents do, with session replay (MOB-60)](#2026-10-15--the-app-reports-what-parents-do-with-session-replay-mob-60) |
 | 2026-10-15 | [Staging sends to PostHog, filtered out of dashboards (TP-36)](#2026-10-15--staging-sends-to-posthog-filtered-out-of-dashboards-tp-36) |
 | 2026-10-15 | [Website registration is recorded in session replay (WEB-10)](#2026-10-15--website-registration-is-recorded-in-session-replay-web-10) |
@@ -179,6 +180,25 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-15 — Session replay starts on the portals and in the app
+
+**What changed**
+- The resource portal, admin portal and app now load PostHog's project
+  settings at start-up. Session replay only begins once those settings (which
+  say recording is on) have loaded, and RES-43, AWP-26 and MOB-60 had switched
+  that loading off with feature flags, so they sent events but no recordings.
+- On the portals, surveys, heatmaps and dead-click capture are pinned off in
+  code instead, so a project toggle still can't switch them on. No feature
+  flags are defined.
+
+**Why:** Replay was approved for all three, and only the website was
+actually recording.
+
+**Status:** Live on the portals after deploy. The app ships it with the next
+store release (MOB-60).
 
 ---
 
