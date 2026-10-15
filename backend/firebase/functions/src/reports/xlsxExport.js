@@ -1,6 +1,8 @@
 "use strict";
 
-const XLSX = require("xlsx");
+const { lazyRequire } = require("../shared/lazyRequire");
+
+const loadXlsx = lazyRequire(() => require("xlsx"));
 
 function summaryToRows(summary) {
   return Object.entries(summary).map(([key, value]) => {
@@ -29,6 +31,7 @@ function applyColumnWidths(ws, columns) {
 }
 
 function reportToXlsx(report, columns, rows) {
+  const XLSX = loadXlsx();
   const wb = XLSX.utils.book_new();
 
   const summaryWs = XLSX.utils.json_to_sheet(summaryToRows(report.summary || {}));

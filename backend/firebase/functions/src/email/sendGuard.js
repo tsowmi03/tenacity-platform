@@ -27,8 +27,12 @@
  * something cannot accidentally put staging into production mode.
  */
 
-const sgMail = require("@sendgrid/mail");
 const logger = require("firebase-functions/logger");
+const { lazyRequire } = require("../shared/lazyRequire");
+
+// Loaded on the first send rather than at startup (TP-37); `@sendgrid/mail`
+// is a singleton, so the key set here is the one the later send uses.
+const loadSgMail = lazyRequire(() => require("@sendgrid/mail"));
 
 const PRODUCTION_PROJECT_ID = "tenacity-tutoring-b8eb2";
 
@@ -88,7 +92,7 @@ function redirectMessage(message, sink) {
 }
 
 function setApiKey(apiKey) {
-  return sgMail.setApiKey(apiKey);
+  return loadSgMail().setApiKey(apiKey);
 }
 
 /**
@@ -96,7 +100,7 @@ function setApiKey(apiKey) {
  */
 async function send(payload, isMultiple, callback) {
   if (isProduction()) {
-    return sgMail.send(payload, isMultiple, callback);
+    return loadSgMail().send(payload, isMultiple, callback);
   }
 
   const messages = Array.isArray(payload) ? payload : [payload];
@@ -129,7 +133,7 @@ async function send(payload, isMultiple, callback) {
     return rewritten;
   });
 
-  return sgMail.send(
+  return loadSgMail().send(
     Array.isArray(payload) ? redirected : redirected[0],
     isMultiple,
     callback

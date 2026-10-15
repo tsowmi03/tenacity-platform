@@ -217,6 +217,11 @@ jobs:
         run: npm --prefix backend/firebase/functions test
       - name: Load Function exports
         run: npm --prefix backend/firebase/functions run smoke
+      # Every instance loads the whole bundle, so its startup memory is every
+      # Function's floor. Caught here rather than by a Function failing to
+      # start in production, which is how TP-22 and TP-37 were found.
+      - name: Check startup memory
+        run: npm --prefix backend/firebase/functions run check:startup-memory
       - name: Validate managed inventory
         run: >-
           node scripts/ci/check-functions-inventory.mjs
