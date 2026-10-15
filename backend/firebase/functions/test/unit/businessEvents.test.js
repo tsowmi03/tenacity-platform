@@ -390,3 +390,18 @@ describe("sendToPostHog", () => {
     assert.equal(result.events, 0);
   });
 });
+
+describe("analyticsEnvironment", () => {
+  const { analyticsEnvironment } = require("../../src/shared/posthogClient");
+
+  it("tags staging so dashboards can filter it out of the shared project", () => {
+    assert.equal(analyticsEnvironment("tenacity-tutoring-staging"), "staging");
+    assert.equal(analyticsEnvironment("tenacity-tutoring-b8eb2"), "production");
+    assert.equal(analyticsEnvironment(""), "production");
+  });
+
+  it("puts the environment on every server event", () => {
+    const msg = captureMessage({ event: "x", distinctId: "p", properties: {} }, "staging");
+    assert.equal(msg.properties.environment, "staging");
+  });
+});

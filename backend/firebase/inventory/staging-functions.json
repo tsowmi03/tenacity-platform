@@ -30,13 +30,17 @@
       "invoiceCreatedNotif",
       "onAnnouncementCreated",
       "onAttendanceChangeNotifyAdmins",
+      "onAuditLogAnalytics",
       "onFeedbackCreated",
       "onInvoiceCreated",
+      "onInvoicePaidAnalytics",
       "onInvoicePaidNotifyAdmins",
       "onInvoiceStatusChanged",
       "onMessageReceived",
+      "onPaymentLogAnalytics",
       "onPermanentEnrolmentNotifyAdmins",
       "onPermanentSpotOpened",
+      "onUserAnalytics",
       "onWaitlistEntryCreatedNotifyAdmins",
       "onWaitlistEntryReactivatedNotifyAdmins"
     ],
@@ -94,6 +98,7 @@
   "notes": [
     "scripts/ci/check-functions-inventory.mjs is hard-pinned to tenacity-tutoring-b8eb2, so a staging subset deploy does not affect the production inventory gate.",
     "Deploy with: node scripts/firebase/staging-functions-only.mjs | xargs firebase deploy --project staging --only",
-    "Verify every name here is a real export with: cd backend/firebase/functions && npm run smoke"
+    "Verify every name here is a real export with: cd backend/firebase/functions && npm run smoke",
+    "The four *Analytics triggers (TP-35) send business events to PostHog tagged environment=staging (TP-36). Resource generation is excluded above, so staging sends no LLM analytics."
   ]
 }

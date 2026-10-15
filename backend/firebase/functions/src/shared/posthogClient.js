@@ -8,8 +8,9 @@ const { PostHog } = require("posthog-node");
 // 2026-10-14) and the business events in src/analytics (TP-35).
 //
 // The project token is a non-secret param, set per project in
-// .env.<projectId>: production carries it, staging leaves it empty. An empty
-// token turns analytics off rather than failing the caller.
+// .env.<projectId>. Staging shares the production project (TP-36) and tags its
+// events environment=staging. An empty token turns analytics off rather than
+// failing the caller.
 const posthogProjectToken = defineString("POSTHOG_PROJECT_TOKEN", {
   default: "",
 });
@@ -25,6 +26,15 @@ function readParam(param) {
   } catch {
     return "";
   }
+}
+
+/**
+ * Which environment events come from. Staging and production share one
+ * PostHog project (the free plan allows one, TP-36), so every event carries
+ * `environment` and dashboards filter out `staging`.
+ */
+function analyticsEnvironment(projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || "") {
+  return /staging/i.test(projectId) ? "staging" : "production";
 }
 
 /**
@@ -78,6 +88,7 @@ function posthogRequestFields(posthog, { posthogProperties, posthogTraceId, post
 }
 
 module.exports = {
+  analyticsEnvironment,
   createPostHogClient,
   posthogRequestFields,
   shutdownPostHogClient,

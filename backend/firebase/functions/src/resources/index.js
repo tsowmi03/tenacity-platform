@@ -5,6 +5,7 @@ const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret, defineBoolean, defineString } = require("firebase-functions/params");
+const { analyticsEnvironment } = require("../shared/posthogClient");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
@@ -632,7 +633,10 @@ function addUsage(target, provider, usage) {
 // the tutor, the generation attempt (one trace) and the job (one session).
 function posthogFieldsForJob(job) {
   return {
-    posthogProperties: { $ai_session_id: aiSessionId("resource-job", job.jobId) },
+    posthogProperties: {
+      $ai_session_id: aiSessionId("resource-job", job.jobId),
+      environment: analyticsEnvironment(),
+    },
     posthogTraceId: job.attemptId || randomUUID(),
     posthogDistinctId: job.createdBy,
   };
@@ -963,7 +967,10 @@ async function chatAboutResourceImpl({ payload, actor, deps }) {
   const model = chatModel();
   // The callable has no persistent chat identifier, so one invocation is one
   // AI session and its file-summary and reply generations share one trace.
-  const posthogProperties = { $ai_session_id: aiSessionId("resource-chat", randomUUID()) };
+  const posthogProperties = {
+    $ai_session_id: aiSessionId("resource-chat", randomUUID()),
+    environment: analyticsEnvironment(),
+  };
   const posthogTraceId = randomUUID();
   // Normalising inside the try means an unusable response (an empty reply)
   // reads as a failed model call, the same as a provider error.
