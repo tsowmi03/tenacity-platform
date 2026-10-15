@@ -20,8 +20,8 @@
  *   node scripts/backfillPostHog.js --project=prod --send
  *   node scripts/backfillPostHog.js --project=prod --no-people --events=enrolment_created --send
  *
- * The PostHog token comes from `.env.<projectId>` (staging has none, so a
- * staging run can only be a dry run unless --token=phc_... is given).
+ * The PostHog token comes from `.env.<projectId>`. Staging shares the
+ * production project, and its events are tagged environment=staging (TP-36).
  */
 
 const fs = require("fs");
@@ -37,6 +37,7 @@ const {
   personPropertiesForUser,
 } = require("../src/analytics/businessEvents");
 const { captureMessage } = require("../src/analytics/serverAnalytics");
+const { analyticsEnvironment } = require("../src/shared/posthogClient");
 
 const PROJECTS = {
   staging: "tenacity-tutoring-staging",
@@ -201,7 +202,8 @@ function summarise({ people, events, skipped }) {
   };
 }
 
-async function send({ people, events }, token) {
+async function send({ people, events }, token, projectId) {
+  const environment = analyticsEnvironment(projectId);
   const client = new PostHog(token, {
     host: "https://us.i.posthog.com",
     // Routes old timestamps through PostHog's historical import path.
@@ -214,7 +216,7 @@ async function send({ people, events }, token) {
   }
   // People first, so events are stored with the names already on the person.
   if (people.length) await client.flush();
-  for (const evt of events) client.capture(captureMessage(evt));
+  for (const evt of events) client.capture(captureMessage(evt, environment));
   await client.shutdown();
 }
 
@@ -237,7 +239,7 @@ async function main() {
   }
   const token = args.token || envToken(projectId);
   if (!token) throw new Error(`No PostHog token for ${projectId}; pass --token=phc_...`);
-  await send(collected, token);
+  await send(collected, token, projectId);
   console.log(`Sent ${collected.people.length} people and ${collected.events.length} events.`);
 }
 
