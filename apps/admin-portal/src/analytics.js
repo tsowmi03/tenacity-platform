@@ -73,7 +73,11 @@ export function initAnalytics() {
           maskTextSelector: null,
         },
         disable_surveys: true,
-        advanced_disable_flags: true,
+        // Replay only starts once PostHog has loaded the project's settings
+        // (which say recording is on), so flags stay enabled. Anything else a
+        // project toggle could switch on is pinned off here instead.
+        capture_heatmaps: false,
+        capture_dead_clicks: false,
         before_send: DRY_RUN ? [tagEvent, logAndDrop] : tagEvent,
       });
       client = posthog;

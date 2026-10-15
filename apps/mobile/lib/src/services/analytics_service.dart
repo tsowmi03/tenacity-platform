@@ -74,7 +74,9 @@ class Analytics {
       // native screens such as Stripe's payment sheet are not captured.
       ..sessionReplay = true
       ..surveys = false
-      ..preloadFeatureFlags = false
+      // Loads the project's remote settings at launch, which is what tells
+      // the native SDK that recording is on. No flags are defined.
+      ..preloadFeatureFlags = true
       ..sendFeatureFlagEvent = false
       // The app's own FCM handling owns push. Left on, the SDK registers the
       // token with PostHog and, on iOS, observes the notification delegate.

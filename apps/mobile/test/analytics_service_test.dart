@@ -74,6 +74,8 @@ void main() {
       final setup = calls.firstWhere((c) => c.method == 'setup');
       final args = Map<String, Object?>.from(setup.arguments as Map);
       expect(args['sessionReplay'], isTrue);
+      // Replay needs the remote settings that the flag preload fetches.
+      expect(args['preloadFeatureFlags'], isTrue);
       final replay =
           Map<String, Object?>.from(args['sessionReplayConfig'] as Map);
       expect(replay['maskAllTexts'], isFalse);
