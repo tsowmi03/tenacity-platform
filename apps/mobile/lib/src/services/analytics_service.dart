@@ -91,7 +91,7 @@ class Analytics {
 
     try {
       await Posthog().setup(config);
-      await Posthog().register('environment', AppEnvironment.analyticsName);
+      await _registerEnvironment();
       _enabled = true;
     } catch (error) {
       debugPrint('Analytics failed to start: $error');
@@ -126,6 +126,9 @@ class Analytics {
       if (_identifiedUid == null) return;
       _identifiedUid = null;
       await _guard(() => Posthog().reset());
+      // reset() clears super properties, and staging events without the tag
+      // would slip past the dashboards' staging filter.
+      await _guard(_registerEnvironment);
       return;
     }
 
@@ -160,6 +163,9 @@ class Analytics {
       () => Posthog().capture(eventName: event.eventName, properties: cleaned),
     );
   }
+
+  static Future<void> _registerEnvironment() =>
+      Posthog().register('environment', AppEnvironment.analyticsName);
 
   static Future<void> _guard(Future<void> Function() run) async {
     try {

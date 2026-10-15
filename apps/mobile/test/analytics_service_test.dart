@@ -74,7 +74,8 @@ void main() {
       final setup = calls.firstWhere((c) => c.method == 'setup');
       final args = Map<String, Object?>.from(setup.arguments as Map);
       expect(args['sessionReplay'], isTrue);
-      final replay = Map<String, Object?>.from(args['sessionReplayConfig'] as Map);
+      final replay =
+          Map<String, Object?>.from(args['sessionReplayConfig'] as Map);
       expect(replay['maskAllTexts'], isFalse);
       expect(replay['maskAllImages'], isFalse);
       expect(args['surveys'], isFalse);
@@ -104,7 +105,8 @@ void main() {
       final capture = calls.singleWhere((c) => c.method == 'capture');
       final args = Map<String, Object?>.from(capture.arguments as Map);
       expect(args['eventName'], 'absence_reported');
-      expect(args['properties'], {'outcome': 'succeeded', 'token_awarded': true});
+      expect(
+          args['properties'], {'outcome': 'succeeded', 'token_awarded': true});
     });
 
     test('identifies by UID with name, email, role and students, once per user',
@@ -146,6 +148,16 @@ void main() {
         calls.map((c) => c.method).where((m) => m != 'register'),
         ['identify', 'reset', 'identify'],
       );
+    });
+
+    test('tags events with the environment again after a sign-out reset',
+        () async {
+      await Analytics.syncUser(_parent(), isRestoringSession: false);
+      await Analytics.syncUser(null, isRestoringSession: false);
+
+      final methods = calls.map((c) => c.method).toList();
+      expect(
+          methods.indexOf('register'), greaterThan(methods.indexOf('reset')));
     });
 
     test('a signed-out launch never calls reset', () async {

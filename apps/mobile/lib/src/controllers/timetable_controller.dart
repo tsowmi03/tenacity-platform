@@ -1212,16 +1212,15 @@ class TimetableController extends ChangeNotifier {
         );
       }
 
+      if (authController?.currentUser?.uid == parentId) {
+        await authController?.refreshCurrentUser();
+      }
+
       Analytics.capture(AppEvent.absenceReported, {
         'outcome': 'succeeded',
         'class_id': classId,
         'token_awarded': tokenAwarded,
       });
-
-      if (authController?.currentUser?.uid == parentId) {
-        await authController?.refreshCurrentUser();
-      }
-
       _stopLoading();
     } catch (e) {
       Analytics.capture(AppEvent.absenceReported, {

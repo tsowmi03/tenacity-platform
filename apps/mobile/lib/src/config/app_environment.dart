@@ -63,8 +63,9 @@ class AppEnvironment {
   /// one, TP-36): staging events carry `environment: staging` and dashboards
   /// filter them out. `--dart-define=POSTHOG_PROJECT_TOKEN=...` points a build
   /// at another project.
-  static const String posthogProjectToken =
-      _posthogTokenOverride != '' ? _posthogTokenOverride : _productionPosthogToken;
+  static const String posthogProjectToken = _posthogTokenOverride != ''
+      ? _posthogTokenOverride
+      : _productionPosthogToken;
 
   /// The `environment` every analytics event carries: `staging` or
   /// `production`, the same values the server sends.
