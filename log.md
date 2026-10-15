@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-15 | [The admin portal reports errors, with session replay (AWP-26)](#2026-10-15--the-admin-portal-reports-errors-with-session-replay-awp-26) |
 | 2026-10-15 | [PostHog shows what families do, by name (TP-35)](#2026-10-15--posthog-shows-what-families-do-by-name-tp-35) |
 | 2026-10-14 | [The Terms & Conditions are a web page, not a PDF (WEB-9)](#2026-10-14--the-terms--conditions-are-a-web-page-not-a-pdf-web-9) |
 | 2026-10-14 | [Resource generation reports every AI call to PostHog (RES-42)](#2026-10-14--resource-generation-reports-every-ai-call-to-posthog-res-42) |
@@ -174,6 +175,26 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-15 — The admin portal reports errors, with session replay (AWP-26)
+
+**What changed**
+- The admin portal sends uncaught errors to PostHog error tracking, with page
+  views, clicks and unmasked session replay (approved by Tom), so a broken
+  page can be seen as it happened. PostHog still never records password
+  fields.
+- Admins are identified by Firebase UID and named by the server's person sync
+  (TP-35).
+- Staging builds are tagged `environment: staging` and filtered out of
+  dashboards (TP-36). Local dev sends nothing; `VITE_POSTHOG_DRY_RUN=1` logs
+  events to the console instead.
+- posthog-js loads after the page, in its own chunk.
+
+**Why:** To know when an admin page breaks, and see what led to it.
+
+**Status:** Live. Deploys with the admin portal.
 
 ---
 
