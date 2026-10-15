@@ -27,6 +27,21 @@ export function analyticsEnvironment(projectId = firebaseConfig?.projectId || ""
 }
 
 const DRY_RUN = import.meta.env.VITE_POSTHOG_DRY_RUN === "1";
+
+// Tags every event as it is sent, including the first page view, which
+// posthog.init() can capture before a register() call would run.
+const TAGS = Object.freeze({ app: "admin_portal" });
+
+export function tagEvent(event) {
+  if (!event) return event;
+  event.properties = { ...event.properties, ...TAGS, environment: analyticsEnvironment() };
+  return event;
+}
+
+function logAndDrop(event) {
+  console.info("[analytics]", event?.event, event?.properties);
+  return null;
+}
 const ENABLED = DRY_RUN || (import.meta.env.PROD && import.meta.env.MODE !== "test");
 
 let client = null;
@@ -59,14 +74,8 @@ export function initAnalytics() {
         },
         disable_surveys: true,
         advanced_disable_flags: true,
-        before_send: DRY_RUN
-          ? (event) => {
-              console.info("[analytics]", event?.event, event?.properties);
-              return null;
-            }
-          : undefined,
+        before_send: DRY_RUN ? [tagEvent, logAndDrop] : tagEvent,
       });
-      posthog.register({ environment: analyticsEnvironment(), app: "admin_portal" });
       client = posthog;
       pending.splice(0).forEach((run) => run(posthog));
     })
