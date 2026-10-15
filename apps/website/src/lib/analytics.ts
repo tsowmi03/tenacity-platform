@@ -368,7 +368,7 @@ export const initAnalytics = () => {
           : [scrubEvent, tagEnvironment],
       });
       client = posthog;
-      if (currentPage() === "register") posthog.startSessionRecording(true);
+      syncRegistrationRecording(window.location.pathname);
       if (DRY_RUN) {
         (window as unknown as { posthog?: PostHogClient }).posthog = posthog;
       }
@@ -391,7 +391,23 @@ export const track = <E extends AnalyticsEvent>(
     posthog.capture(event, properties, { timestamp });
     // Registration is reached by client-side navigation, so the recording
     // starts with it rather than only on a fresh load of /register.
-    if (event === "registration_started") posthog.startSessionRecording(true);
+    if (event === "registration_started") syncRegistrationRecording("/register");
+  });
+};
+
+/**
+ * Records only while the visitor is on /register (WEB-10). Called on load, on
+ * every client-side route change (`_app.tsx`), and when registration starts,
+ * so leaving registration for another page stops the recording.
+ */
+export const syncRegistrationRecording = (pathname: string) => {
+  withClient((posthog) => {
+    const onRegister = pageFromPath(pathname) === "register";
+    if (onRegister && !posthog.sessionRecordingStarted()) {
+      posthog.startSessionRecording(true);
+    } else if (!onRegister && posthog.sessionRecordingStarted()) {
+      posthog.stopSessionRecording();
+    }
   });
 };
 

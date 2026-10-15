@@ -9,7 +9,7 @@ import LegalPage from "@modules/legal/LegalPage";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-const LAST_UPDATED = "14 October 2026";
+const LAST_UPDATED = "15 October 2026";
 
 type AnalyticsState = "loading" | "off_here" | "on" | "opted_out";
 
