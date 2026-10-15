@@ -5,6 +5,7 @@ import {
   signOut,
 } from "firebase/auth";
 import { auth } from "./firebaseConfig";
+import { syncAnalyticsUser } from "./analytics";
 
 const AuthContext = createContext(null);
 
@@ -40,6 +41,7 @@ export function AuthProvider({ children }) {
         setRole(null);
         setIsAdmin(false);
         setLoading(false);
+        syncAnalyticsUser(null);
         return;
       }
 
@@ -60,6 +62,7 @@ export function AuthProvider({ children }) {
         }
 
         setAccessError("");
+        syncAnalyticsUser(u, claimRole);
         setRole(claimRole);
         setIsAdmin(true);
       } catch (e) {
