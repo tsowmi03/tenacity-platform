@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-10-15 | [Website registration is recorded in session replay (WEB-10)](#2026-10-15--website-registration-is-recorded-in-session-replay-web-10) |
+| 2026-10-15 | [The admin portal reports errors, with session replay (AWP-26)](#2026-10-15--the-admin-portal-reports-errors-with-session-replay-awp-26) |
 | 2026-10-15 | [The resource portal reports tutor usage, with session replay (RES-43)](#2026-10-15--the-resource-portal-reports-tutor-usage-with-session-replay-res-43) |
 | 2026-10-15 | [PostHog shows what families do, by name (TP-35)](#2026-10-15--posthog-shows-what-families-do-by-name-tp-35) |
 | 2026-10-14 | [The Terms & Conditions are a web page, not a PDF (WEB-9)](#2026-10-14--the-terms--conditions-are-a-web-page-not-a-pdf-web-9) |
@@ -198,6 +199,26 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** To see exactly where families drop out of registration.
 
 **Status:** Live. Deployed to the website with the merge.
+
+---
+
+## 2026-10-15 — The admin portal reports errors, with session replay (AWP-26)
+
+**What changed**
+- The admin portal sends uncaught errors to PostHog error tracking, with page
+  views, clicks and unmasked session replay (approved by Tom), so a broken
+  page can be seen as it happened. PostHog still never records password
+  fields.
+- Admins are identified by Firebase UID and named by the server's person sync
+  (TP-35).
+- Staging builds are tagged `environment: staging` and filtered out of
+  dashboards (TP-36). Local dev sends nothing; `VITE_POSTHOG_DRY_RUN=1` logs
+  events to the console instead.
+- posthog-js loads after the page, in its own chunk.
+
+**Why:** To know when an admin page breaks, and see what led to it.
+
+**Status:** Live. Deploys with the admin portal.
 
 ---
 
