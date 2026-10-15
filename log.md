@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-10-15 | [The app reports what parents do, with session replay (MOB-60)](#2026-10-15--the-app-reports-what-parents-do-with-session-replay-mob-60) |
+| 2026-10-15 | [Website registration is recorded in session replay (WEB-10)](#2026-10-15--website-registration-is-recorded-in-session-replay-web-10) |
 | 2026-10-15 | [The admin portal reports errors, with session replay (AWP-26)](#2026-10-15--the-admin-portal-reports-errors-with-session-replay-awp-26) |
 | 2026-10-15 | [The resource portal reports tutor usage, with session replay (RES-43)](#2026-10-15--the-resource-portal-reports-tutor-usage-with-session-replay-res-43) |
 | 2026-10-15 | [PostHog shows what families do, by name (TP-35)](#2026-10-15--posthog-shows-what-families-do-by-name-tp-35) |
@@ -209,6 +210,28 @@ what happened when something goes wrong.
 - When the release is live, publish terms 1.1.0 to production Remote Config
   with the updated App Analytics paragraph from `public/terms.html` (MOB-59
   step), and update the KB Platform page.
+
+---
+
+## 2026-10-15 — Website registration is recorded in session replay (WEB-10)
+
+**What changed**
+- PostHog records the registration form, unmasked (approved by Tom), so we
+  can watch where families get stuck. Recording starts on `/register` or when
+  registration starts after a click-through, and never runs on other pages.
+  PostHog still never records password fields.
+- Family details stay out of events (`ph-no-capture`), but replay no longer
+  blanks those containers.
+- Surveys, heatmaps and dead-click capture are pinned off in code. Feature
+  flags are back on, because replay only starts once PostHog has loaded the
+  project's settings.
+- Events carry `environment` (`staging` on Vercel previews, TP-36).
+- `/privacy` now says the enrolment form is recorded, and that app sessions
+  may be recorded (MOB-60), instead of "we do not record your screen".
+
+**Why:** To see exactly where families drop out of registration.
+
+**Status:** Live. Deployed to the website with the merge.
 
 ---
 
