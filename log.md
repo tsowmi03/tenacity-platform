@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-15 | [Staging sends to PostHog, filtered out of dashboards (TP-36)](#2026-10-15--staging-sends-to-posthog-filtered-out-of-dashboards-tp-36) |
 | 2026-10-15 | [PostHog shows what families do, by name (TP-35)](#2026-10-15--posthog-shows-what-families-do-by-name-tp-35) |
 | 2026-10-14 | [The Terms & Conditions are a web page, not a PDF (WEB-9)](#2026-10-14--the-terms--conditions-are-a-web-page-not-a-pdf-web-9) |
 | 2026-10-14 | [Resource generation reports every AI call to PostHog (RES-42)](#2026-10-14--resource-generation-reports-every-ai-call-to-posthog-res-42) |
@@ -174,6 +175,27 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-15 — Staging sends to PostHog, filtered out of dashboards (TP-36)
+
+**What changed**
+- Staging Functions now send to PostHog (LLM analytics and business events).
+  PostHog's free plan allows one project, so staging shares the production
+  project and every server event and AI call carries `environment`
+  (`staging` or `production`, from the Firebase project ID).
+- In PostHog, the project's test-account filter drops `environment =
+  staging`, new charts apply it by default, and every existing chart and SQL
+  table (including both alerts) now excludes staging.
+- The backfill script tags staging runs as staging.
+
+**Why:** So new analytics can be tested in staging before they reach
+production, without staging data showing up on the dashboards.
+
+**Status:** Live. Staging Functions pick up the token on their next deploy.
+The app, portals and website tag their staging builds in MOB-60, RES-43,
+AWP-26 and the website replay work.
 
 ---
 

@@ -1,6 +1,7 @@
 "use strict";
 
 const {
+  analyticsEnvironment,
   createPostHogClient,
   shutdownPostHogClient,
 } = require("../shared/posthogClient");
@@ -37,10 +38,10 @@ async function studentStillEnrolled(db, studentId) {
   return !snap.empty;
 }
 
-function captureMessage(evt) {
+function captureMessage(evt, environment = analyticsEnvironment()) {
   // `source: "server"` matches the website's server events, so event
   // properties must not use `source` for anything else.
-  const properties = { ...evt.properties, source: "server" };
+  const properties = { ...evt.properties, source: "server", environment };
   if (evt.setOnce) properties.$set_once = evt.setOnce;
   if (evt.set) properties.$set = evt.set;
   return {
