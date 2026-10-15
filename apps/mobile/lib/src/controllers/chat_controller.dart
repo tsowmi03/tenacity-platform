@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:tenacity/src/services/analytics_service.dart';
 import '../models/chat_model.dart';
 import '../models/message_model.dart';
 import '../services/chat_service.dart';
@@ -172,17 +173,29 @@ class ChatController with ChangeNotifier {
       recipientId: recipientId,
     );
 
-    await _chatService.sendMessage(
-      chatId: chatId,
-      messageId: messageId,
-      text: text,
-      mediaUrl: mediaUrl,
-      thumbnailUrl: thumbnailUrl,
-      messageType: messageType,
-      fileName: fileName,
-      fileSize: fileSize,
-      participants: cachedParticipants,
-    );
+    try {
+      await _chatService.sendMessage(
+        chatId: chatId,
+        messageId: messageId,
+        text: text,
+        mediaUrl: mediaUrl,
+        thumbnailUrl: thumbnailUrl,
+        messageType: messageType,
+        fileName: fileName,
+        fileSize: fileSize,
+        participants: cachedParticipants,
+      );
+      Analytics.capture(AppEvent.chatMessageSent, {
+        'outcome': 'sent',
+        'message_type': messageType,
+      });
+    } catch (_) {
+      Analytics.capture(AppEvent.chatMessageSent, {
+        'outcome': 'failed',
+        'message_type': messageType,
+      });
+      rethrow;
+    }
   }
 
   /// Records that this user has read [chatId] up to now.

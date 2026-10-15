@@ -57,16 +57,18 @@ class AppEnvironment {
   static const String _posthogTokenOverride =
       String.fromEnvironment('POSTHOG_PROJECT_TOKEN');
 
-  /// The PostHog project token for this build, or null when analytics is off.
+  /// The PostHog project token for this build.
   ///
-  /// Production builds use the production project. Staging builds send
-  /// nothing, so test traffic never lands in production analytics, unless
-  /// `--dart-define=POSTHOG_PROJECT_TOKEN=...` points them at another project.
-  static const String? posthogProjectToken = _posthogTokenOverride != ''
-      ? _posthogTokenOverride
-      : (String.fromEnvironment('TENACITY_ENV', defaultValue: 'prod') == 'prod'
-          ? _productionPosthogToken
-          : null);
+  /// Staging and production share one project (PostHog's free plan allows
+  /// one, TP-36): staging events carry `environment: staging` and dashboards
+  /// filter them out. `--dart-define=POSTHOG_PROJECT_TOKEN=...` points a build
+  /// at another project.
+  static const String posthogProjectToken =
+      _posthogTokenOverride != '' ? _posthogTokenOverride : _productionPosthogToken;
+
+  /// The `environment` every analytics event carries: `staging` or
+  /// `production`, the same values the server sends.
+  static String get analyticsName => isStaging ? 'staging' : 'production';
 
   /// Overridable with `--dart-define=POSTHOG_HOST=...` for local testing.
   static const String posthogHost = String.fromEnvironment(

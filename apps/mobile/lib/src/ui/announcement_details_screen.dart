@@ -10,6 +10,7 @@ import 'package:tenacity/src/ui/components/components.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:tenacity/src/utils/error_presenter.dart';
+import 'package:tenacity/src/services/analytics_service.dart';
 
 class AnnouncementDetailsScreen extends StatefulWidget {
   final String? announcementId;
@@ -37,6 +38,9 @@ class _AnnouncementDetailsScreenState extends State<AnnouncementDetailsScreen> {
   void initState() {
     super.initState();
     _announcement = widget.announcement;
+    Analytics.capture(AppEvent.announcementOpened, {
+      'announcement_id': widget.announcement?.id ?? widget.announcementId,
+    });
     if (_announcement == null && widget.announcementId != null) {
       _load();
     } else if (_announcement == null) {

@@ -3,6 +3,7 @@ import 'package:tenacity/src/models/terms_and_conditions_model.dart';
 import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/terms_service.dart';
 import 'package:tenacity/src/utils/error_presenter.dart';
+import 'package:tenacity/src/services/analytics_service.dart';
 
 class TermsController extends ChangeNotifier {
   final TermsService _termsService;
@@ -106,6 +107,10 @@ class TermsController extends ChangeNotifier {
 
     try {
       await _termsService.recordTermsAcceptance(userId, version);
+      Analytics.capture(AppEvent.termsAccepted, {
+        'version': version,
+        'previously_accepted': previousAccepted,
+      });
       _auditService.record(
         action: 'terms.accept',
         targetType: 'user',
