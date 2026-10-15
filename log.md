@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-10-15 | [Website registration is recorded in session replay (WEB-10)](#2026-10-15--website-registration-is-recorded-in-session-replay-web-10) |
+| 2026-10-15 | [The resource portal reports tutor usage, with session replay (RES-43)](#2026-10-15--the-resource-portal-reports-tutor-usage-with-session-replay-res-43) |
 | 2026-10-15 | [PostHog shows what families do, by name (TP-35)](#2026-10-15--posthog-shows-what-families-do-by-name-tp-35) |
 | 2026-10-14 | [The Terms & Conditions are a web page, not a PDF (WEB-9)](#2026-10-14--the-terms--conditions-are-a-web-page-not-a-pdf-web-9) |
 | 2026-10-14 | [Resource generation reports every AI call to PostHog (RES-42)](#2026-10-14--resource-generation-reports-every-ai-call-to-posthog-res-42) |
@@ -197,6 +198,33 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** To see exactly where families drop out of registration.
 
 **Status:** Live. Deployed to the website with the merge.
+
+---
+
+## 2026-10-15 — The resource portal reports tutor usage, with session replay (RES-43)
+
+**What changed**
+- The resource portal sends PostHog events: generation submitted, revision
+  submitted, chat turn, retry, cancel and delete (each with succeeded or
+  failed), resource downloaded, preview opened, and generation finished
+  (complete, failed or cancelled, with how long it took) for jobs the tab saw
+  finish. Properties are the resource type, subject, year, answer mode,
+  model, file count and job ID, never the prompt, chat text or a student's
+  name.
+- Tutors are identified by Firebase UID, the same ID as their AI calls
+  (RES-42) and app use, so usage and cost join on one person, named by the
+  server's person sync (TP-35).
+- Page views, clicks, page leaves and errors are captured, and session replay
+  is on and unmasked (approved by Tom). Surveys and feature flags are off.
+- Staging builds are tagged `environment: staging` and filtered out of
+  dashboards (TP-36). Local dev sends nothing; `VITE_POSTHOG_DRY_RUN=1` logs
+  events to the console instead.
+- posthog-js loads after the page, in its own chunk.
+
+**Why:** To see how tutors use the generator, where it fails them, and what
+it costs per tutor.
+
+**Status:** Live. Deploys with the resource portal.
 
 ---
 
