@@ -30,9 +30,17 @@ enquiry and registration. The mobile app and admin portal are not covered.
   skips them: the enquiry, Year 11 and feedback forms, and the registration
   child list, child chip, extras, summary and confirmation message. Link
   clicks inside them still report their destination, but not their text.
-- Session replay, surveys and feature flags are off in code
-  (`advanced_disable_flags: true`), so a toggle in the PostHog project
-  settings cannot switch them on.
+- **Session replay records registration only**, unmasked (approved by Tom,
+  2026-10-15): it starts on `/register` or with `registration_started`, never
+  on other pages. Replay blocks `ph-no-replay` (unused), not `ph-no-capture`,
+  so the registration details above are visible in recordings while staying
+  out of events. PostHog still never records password fields.
+- Surveys, heatmaps and dead-click capture are off in code, so a toggle in the
+  PostHog project settings cannot switch them on. Flags stay on only because
+  replay needs the project settings to load.
+- Every event carries `environment`: `staging` on Vercel preview and
+  development builds, otherwise `production` (TP-36). Previews have no key
+  today, so they send nothing.
 - Families can opt out on [`/privacy`](../src/pages/privacy/index.tsx). The
   policy there describes what is collected. Update it if a change here
   collects something new.

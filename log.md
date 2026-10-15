@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-10-15 | [Staging sends to PostHog, filtered out of dashboards (TP-36)](#2026-10-15--staging-sends-to-posthog-filtered-out-of-dashboards-tp-36) |
+| 2026-10-15 | [Website registration is recorded in session replay (WEB-10)](#2026-10-15--website-registration-is-recorded-in-session-replay-web-10) |
 | 2026-10-15 | [The admin portal reports errors, with session replay (AWP-26)](#2026-10-15--the-admin-portal-reports-errors-with-session-replay-awp-26) |
 | 2026-10-15 | [The resource portal reports tutor usage, with session replay (RES-43)](#2026-10-15--the-resource-portal-reports-tutor-usage-with-session-replay-res-43) |
 | 2026-10-15 | [PostHog shows what families do, by name (TP-35)](#2026-10-15--posthog-shows-what-families-do-by-name-tp-35) |
@@ -201,6 +202,28 @@ production, without staging data showing up on the dashboards.
 **Status:** Live. Staging Functions pick up the token on their next deploy.
 The app, portals and website tag their staging builds in MOB-60, RES-43,
 AWP-26 and the website replay work.
+
+---
+
+## 2026-10-15 — Website registration is recorded in session replay (WEB-10)
+
+**What changed**
+- PostHog records the registration form, unmasked (approved by Tom), so we
+  can watch where families get stuck. Recording starts on `/register` or when
+  registration starts after a click-through, and never runs on other pages.
+  PostHog still never records password fields.
+- Family details stay out of events (`ph-no-capture`), but replay no longer
+  blanks those containers.
+- Surveys, heatmaps and dead-click capture are pinned off in code. Feature
+  flags are back on, because replay only starts once PostHog has loaded the
+  project's settings.
+- Events carry `environment` (`staging` on Vercel previews, TP-36).
+- `/privacy` now says the enrolment form is recorded, and that app sessions
+  may be recorded (MOB-60), instead of "we do not record your screen".
+
+**Why:** To see exactly where families drop out of registration.
+
+**Status:** Live. Deployed to the website with the merge.
 
 ---
 

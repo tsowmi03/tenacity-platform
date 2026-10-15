@@ -274,9 +274,26 @@ export const scrubEvent = (event: CaptureResult | null) => {
   return event;
 };
 
+// Only an explicit preview or development build counts as staging, so a build
+// without Vercel's system variables can't hide production from dashboards.
+const ANALYTICS_ENVIRONMENT = ["preview", "development"].includes(
+  process.env.NEXT_PUBLIC_VERCEL_ENV ?? ""
+)
+  ? "staging"
+  : "production";
+
 // Local development: `NEXT_PUBLIC_POSTHOG_DRY_RUN=1` with any placeholder key
 // logs each event (after scrubbing) to the console and sends nothing.
 const DRY_RUN = process.env.NEXT_PUBLIC_POSTHOG_DRY_RUN === "1";
+
+// Staging and production share one PostHog project (TP-36): Vercel previews
+// are tagged staging so dashboards filter them out. Added as each event is
+// sent, so the first page view (captured inside init) is tagged too.
+export const tagEnvironment = (event: CaptureResult | null) => {
+  if (!event) return event;
+  event.properties = { ...event.properties, environment: ANALYTICS_ENVIRONMENT };
+  return event;
+};
 
 const logAndDrop = (event: CaptureResult | null) => {
   if (!event) return null;
@@ -328,17 +345,30 @@ export const initAnalytics = () => {
         capture_pageleave: true,
         capture_exceptions: true,
         capture_performance: { web_vitals: true },
-        // Replay is out of scope until a masking review (child names render
-        // on screen during registration).
+        // Session replay records only the enrolment form, and unmasked
+        // (approved by Tom, 2026-10-15): it starts when registration does
+        // (`startRegistrationRecording`), never on other pages. `ph-no-capture`
+        // still keeps family details out of click events, but doesn't blank
+        // them in recordings, so replay uses its own block class.
         disable_session_recording: true,
+        session_recording: {
+          maskAllInputs: false,
+          maskTextSelector: null,
+          blockClass: "ph-no-replay",
+        },
         disable_surveys: true,
-        // No feature flags on the website. This also means a toggle in the
-        // PostHog project settings (replay, surveys...) can't switch anything
-        // on here: only what is configured in this file runs.
-        advanced_disable_flags: true,
-        before_send: DRY_RUN ? [scrubEvent, logAndDrop] : scrubEvent,
+        // Project settings must load for replay to start (they say recording
+        // is enabled), so flags stay on. Everything a project toggle could
+        // otherwise switch on is pinned here instead: surveys and replay above,
+        // heatmaps and dead clicks below.
+        capture_heatmaps: false,
+        capture_dead_clicks: false,
+        before_send: DRY_RUN
+          ? [scrubEvent, tagEnvironment, logAndDrop]
+          : [scrubEvent, tagEnvironment],
       });
       client = posthog;
+      syncRegistrationRecording(window.location.pathname);
       if (DRY_RUN) {
         (window as unknown as { posthog?: PostHogClient }).posthog = posthog;
       }
@@ -357,7 +387,28 @@ export const track = <E extends AnalyticsEvent>(
   properties: AnalyticsEvents[E]
 ) => {
   const timestamp = new Date();
-  withClient((posthog) => posthog.capture(event, properties, { timestamp }));
+  withClient((posthog) => {
+    posthog.capture(event, properties, { timestamp });
+    // Registration is reached by client-side navigation, so the recording
+    // starts with it rather than only on a fresh load of /register.
+    if (event === "registration_started") syncRegistrationRecording("/register");
+  });
+};
+
+/**
+ * Records only while the visitor is on /register (WEB-10). Called on load, on
+ * every client-side route change (`_app.tsx`), and when registration starts,
+ * so leaving registration for another page stops the recording.
+ */
+export const syncRegistrationRecording = (pathname: string) => {
+  withClient((posthog) => {
+    const onRegister = pageFromPath(pathname) === "register";
+    if (onRegister && !posthog.sessionRecordingStarted()) {
+      posthog.startSessionRecording(true);
+    } else if (!onRegister && posthog.sessionRecordingStarted()) {
+      posthog.stopSessionRecording();
+    }
+  });
 };
 
 /** For the last event before a page unloads. */
