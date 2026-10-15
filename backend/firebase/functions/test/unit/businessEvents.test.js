@@ -313,6 +313,28 @@ describe("auditLogEventImpl", () => {
     assert.equal(evt.setOnce.referral_source, "google");
   });
 
+  it("dates a live intake by the enrolment's acceptedAt, as the backfill does", async () => {
+    const accepted = new Date("2026-09-30T01:00:00Z");
+    const db = fakeDb({ enrolments: { e1: { acceptedAt: ts(accepted), createdParentId: "p1" } } });
+    const live = await auditLogEventImpl({
+      db,
+      logId: "l5",
+      entry: {
+        action: "enrolment.accept",
+        targetId: "e1",
+        createdAt: ts(WHEN),
+        payloadSummary: { parentId: "p1", classIds: ["c1"] },
+      },
+    });
+    const backfill = enrolmentCreatedFromIntake({
+      enrolmentId: "e1",
+      enrolment: { acceptedAt: ts(accepted), createdParentId: "p1" },
+    });
+    assert.equal(live.timestamp.getTime(), accepted.getTime());
+    assert.equal(live.timestamp.getTime(), backfill.timestamp.getTime());
+    assert.equal(live.uuid, backfill.uuid);
+  });
+
   it("skips an event whose family can't be found", async () => {
     const evt = await auditLogEventImpl({
       db: fakeDb(),

@@ -109,6 +109,9 @@ async function collect(db) {
       enrolmentId: doc.id,
       enrolment,
       parentId: enrolment.createdParentId || parentByEmail.get(carerEmail),
+      classIds: Array.isArray(enrolment.classes)
+        ? enrolment.classes.map((c) => c?.id).filter(Boolean)
+        : [],
       acceptedAt: enrolment.acceptedAt || enrolment.updatedAt || enrolment.createdAt,
     });
     if (evt) events.push(evt);
@@ -144,9 +147,25 @@ async function collect(db) {
     events.push({ ...draft, distinctId, properties });
   }
 
+  const paymentLogs = await db.collection("paymentLogs").get();
+  const oneOffIntents = new Set(
+    paymentLogs.docs.filter((d) => d.get("source") === "one_off_booking").map((d) => d.id)
+  );
+  for (const doc of paymentLogs.docs) {
+    const evt = paymentFromPaymentLog({ paymentIntentId: doc.id, before: null, after: doc.data() });
+    if (evt) events.push(evt);
+  }
+
   const invoices = await db.collection("invoices").where("status", "==", "paid").get();
   for (const doc of invoices.docs) {
     const invoice = doc.data();
+    // A paid one-off booking also writes an invoice that is born paid, with
+    // the same Stripe intent. Its payment log is the event of record (the
+    // live invoice trigger never sees a born-paid invoice), so skip it here.
+    if (oneOffIntents.has(invoice.stripePaymentIntentId)) {
+      tally(skipped, "payment_received:invoice (one-off booking, counted from its payment)");
+      continue;
+    }
     // Older invoices have no paidAt or updatedAt; the due date is the best
     // guess at when they were paid (flagged paid_at_estimated).
     const evt = paymentFromInvoice({
@@ -157,12 +176,6 @@ async function collect(db) {
     });
     if (evt) events.push(evt);
     else tally(skipped, "payment_received:invoice (no parent or paidAt)");
-  }
-
-  const paymentLogs = await db.collection("paymentLogs").get();
-  for (const doc of paymentLogs.docs) {
-    const evt = paymentFromPaymentLog({ paymentIntentId: doc.id, before: null, after: doc.data() });
-    if (evt) events.push(evt);
   }
 
   for (const evt of events) evt.properties = { ...evt.properties, backfilled: true };

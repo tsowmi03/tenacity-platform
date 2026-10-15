@@ -40,14 +40,17 @@ async function auditLogEventImpl({ entry, logId, db }) {
   if (entry?.action === "enrolment.accept") {
     const payload = entry.payloadSummary || {};
     const enrolmentSnap = await db.collection("enrolments").doc(entry.targetId).get();
+    const enrolment = enrolmentSnap.exists ? enrolmentSnap.data() : {};
     return enrolmentCreatedFromIntake({
       enrolmentId: entry.targetId,
-      enrolment: enrolmentSnap.exists ? enrolmentSnap.data() : {},
+      enrolment,
       parentId: payload.parentId,
       studentId: payload.studentId,
       classIds: payload.classIds,
       newParent: payload.authUserCreated,
-      acceptedAt: entry.createdAt,
+      // The enrolment's own acceptedAt, as the backfill uses: PostHog only
+      // treats a resend as the same event when the timestamp matches too.
+      acceptedAt: enrolment.acceptedAt || entry.createdAt,
       actorRole: entry.actorRole,
     });
   }
