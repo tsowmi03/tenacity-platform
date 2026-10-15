@@ -286,6 +286,15 @@ const ANALYTICS_ENVIRONMENT = ["preview", "development"].includes(
 // logs each event (after scrubbing) to the console and sends nothing.
 const DRY_RUN = process.env.NEXT_PUBLIC_POSTHOG_DRY_RUN === "1";
 
+// Staging and production share one PostHog project (TP-36): Vercel previews
+// are tagged staging so dashboards filter them out. Added as each event is
+// sent, so the first page view (captured inside init) is tagged too.
+export const tagEnvironment = (event: CaptureResult | null) => {
+  if (!event) return event;
+  event.properties = { ...event.properties, environment: ANALYTICS_ENVIRONMENT };
+  return event;
+};
+
 const logAndDrop = (event: CaptureResult | null) => {
   if (!event) return null;
   console.info("[analytics]", event.event, event.properties);
@@ -354,11 +363,10 @@ export const initAnalytics = () => {
         // heatmaps and dead clicks below.
         capture_heatmaps: false,
         capture_dead_clicks: false,
-        before_send: DRY_RUN ? [scrubEvent, logAndDrop] : scrubEvent,
+        before_send: DRY_RUN
+          ? [scrubEvent, tagEnvironment, logAndDrop]
+          : [scrubEvent, tagEnvironment],
       });
-      // Staging and production share one PostHog project (TP-36): Vercel
-      // previews are tagged staging so dashboards filter them out.
-      posthog.register({ environment: ANALYTICS_ENVIRONMENT });
       client = posthog;
       if (currentPage() === "register") posthog.startSessionRecording(true);
       if (DRY_RUN) {
