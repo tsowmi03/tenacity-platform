@@ -187,11 +187,13 @@ export default function Privacy() {
             IP address.
           </p>
           <p>
-            <strong>Analytics never includes</strong> names, email
+            <strong>Analytics events never include</strong> names, email
             addresses, phone numbers, children&apos;s details, medical
             information, anything you type into a form, or referral codes.
-            We do not record your screen. Analytics data is stored in the
-            United States and is only used to improve this website.
+            On the enrolment form, we record the session (what is shown on
+            screen, including what you type) to see where families get
+            stuck. Analytics data is stored in the United States and is only
+            used to improve this website.
           </p>
           <p>
             PostHog keeps a random ID in a cookie and in your
@@ -213,7 +215,8 @@ export default function Privacy() {
           <p>
             The app does not send PostHog the content of your messages,
             children&apos;s details, medical information or payment
-            details, and we do not record your screen. It is stored in the United States, is only used to
+            details. Sessions in the app may be recorded (what is shown on
+            screen and where you tap) to help us fix problems. It is stored in the United States, is only used to
             improve the app and our services, and is never used for
             advertising or sold.
           </p>
