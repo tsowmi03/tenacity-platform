@@ -99,20 +99,18 @@ Properties are listed in `AnalyticsEvents`. Grouped by page:
 
 ## Dashboards
 
-Build these in PostHog:
+Built in PostHog (US project 663597):
 
-1. **Registration funnel:** `$pageview` on `/register` → `registration_started`
-   → `registration_step_completed` for steps 1–7 → `registration_completed`.
-   Break it down by `$initial_utm_source`, `referral_source` and
-   `$device_type`.
-2. **Enquiries:** the enquiry funnel, plus `cta_clicked` by `cta` and
-   `location`, plus `faq_opened` and `section_viewed`.
-3. **Unmet demand:** `registration_no_slots_available` by year and subjects,
-   plus `year11_interest_submitted`.
-4. **Referral links:** `referral_link_opened` → `referral_link_landed` →
-   `registration_completed` where `referral_code_valid`.
-5. **Health:** `*_failed`, `registration_turnstile_result` other than success,
-   `registration_class_slots_failed`, and `$exception`.
+| Dashboard | What it shows |
+| --- | --- |
+| Website: Registration | The 7-step funnel, blocked steps and fields, abandonment, time per step, referral source, conversion by device |
+| Website: Traffic & enquiries | Visitors, referrers, top pages, CTAs, contact taps, the enquiry funnel, FAQs, devices |
+| Demand & referrals | `registration_no_slots_available` by year and subjects, Year 11 interest and days, the referral link funnel |
+| Health & errors | Website `*_failed` events, `$exception` by app, registration failures, Turnstile problems, AI call errors, failed payments, LCP |
+
+Two alerts email Tom daily: any website failure in 24 hours, and AI spend
+over $5 in 24 hours. The app, resource generator and server (TP-35)
+dashboards are described in the repo `log.md`.
 
 ## Adding an event
 

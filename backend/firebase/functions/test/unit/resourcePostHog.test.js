@@ -7,7 +7,7 @@ const {
   createPostHogClient,
   posthogRequestFields,
   shutdownPostHogClient,
-} = require("../../src/resources/posthogClient");
+} = require("../../src/shared/posthogClient");
 const { callAnthropicForResource } = require("../../src/resources/apiClient");
 const { callOpenAiForResource } = require("../../src/resources/openaiClient");
 

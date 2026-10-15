@@ -3,12 +3,13 @@
 const { defineString } = require("firebase-functions/params");
 const { PostHog } = require("posthog-node");
 
-// PostHog LLM analytics for resource generation (RES-42). Prompts and outputs
-// are sent in full (privacyMode off, approved 2026-10-14).
+// The Functions' PostHog client, shared by resource generation's LLM analytics
+// (RES-42: prompts and outputs are sent in full, privacyMode off, approved
+// 2026-10-14) and the business events in src/analytics (TP-35).
 //
 // The project token is a non-secret param, set per project in
 // .env.<projectId>: production carries it, staging leaves it empty. An empty
-// token turns analytics off rather than failing a generation.
+// token turns analytics off rather than failing the caller.
 const posthogProjectToken = defineString("POSTHOG_PROJECT_TOKEN", {
   default: "",
 });
