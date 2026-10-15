@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-15 | [The app reports what parents do, with session replay (MOB-60)](#2026-10-15--the-app-reports-what-parents-do-with-session-replay-mob-60) |
 | 2026-10-15 | [Staging sends to PostHog, filtered out of dashboards (TP-36)](#2026-10-15--staging-sends-to-posthog-filtered-out-of-dashboards-tp-36) |
 | 2026-10-15 | [Website registration is recorded in session replay (WEB-10)](#2026-10-15--website-registration-is-recorded-in-session-replay-web-10) |
 | 2026-10-15 | [The admin portal reports errors, with session replay (AWP-26)](#2026-10-15--the-admin-portal-reports-errors-with-session-replay-awp-26) |
@@ -178,6 +179,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-15 — The app reports what parents do, with session replay (MOB-60)
+
+**What changed**
+- The app sends a typed list of events (`AppEvent` in `analytics_service.dart`;
+  an undeclared event doesn't compile), each with an outcome: absence
+  reported, swap requested (one-week or permanent), one-off booked, permanent
+  enrolment requested, waitlist joined, chat message sent, announcement
+  opened, invoice payment started, submitted, cancelled or failed (with the
+  Stripe code), notification opened (by type) and terms accepted.
+- Signed-in people carry their name, email, role and, for parents, how many
+  students they have.
+- Session replay is on and unmasked (approved by Tom). PostHog still hides
+  password fields, and native screens such as Stripe's payment sheet aren't
+  recorded. The app terms no longer say the screen isn't recorded.
+- Staging builds now send too, tagged `environment: staging`, which every
+  dashboard filters out (TP-36). Production events are tagged `production`.
+- A parent enrolling their own child in a class is now written to the audit
+  log, so the server's `enrolment_created` (TP-35) counts it. Only admin
+  enrolments were counted before.
+
+**Why:** To see what parents do in the app, where actions fail, and to watch
+what happened when something goes wrong.
+
+**Status:** Merged. Ships with the next store release.
+
+**Next steps**
+- When the release is live, publish terms 1.1.0 to production Remote Config
+  with the updated App Analytics paragraph from `public/terms.html` (MOB-59
+  step), and update the KB Platform page.
 
 ---
 

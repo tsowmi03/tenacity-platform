@@ -13,6 +13,7 @@ import 'package:tenacity/src/ui/home_navigation.dart';
 import 'package:tenacity/src/ui/announcement_details_screen.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
+import 'package:tenacity/src/services/analytics_service.dart';
 
 /// Whether a push arriving while the app is open should be presented as a
 /// notification.
@@ -143,6 +144,9 @@ class NotificationService {
   }
 
   void handleNotificationTap(Map<String, dynamic> data) async {
+    Analytics.capture(AppEvent.notificationOpened, {
+      'type': data['type']?.toString() ?? 'unknown',
+    });
     final context = navigatorKey.currentContext;
     if (context == null) {
       return;

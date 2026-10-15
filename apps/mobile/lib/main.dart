@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:posthog_flutter/posthog_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:tenacity/auth_wrapper.dart';
 import 'package:tenacity/src/controllers/announcement_controller.dart';
@@ -92,7 +93,7 @@ void main() async {
   );
 
   // After FlutterError.onError above, so PostHog's error capture chains onto
-  // it. A no-op on staging builds, and never throws.
+  // it. Staging builds send too, tagged environment=staging; never throws.
   await Analytics.init();
 
   final authController = AuthController();
@@ -250,7 +251,8 @@ void main() async {
             ),
         ),
       ],
-      child: const Tenacity(),
+      // Session replay records only what this widget wraps (MOB-60).
+      child: const PostHogWidget(child: Tenacity()),
     ),
   );
 

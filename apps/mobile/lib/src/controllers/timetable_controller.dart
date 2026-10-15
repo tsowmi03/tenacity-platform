@@ -11,6 +11,7 @@ import 'package:tenacity/src/models/student_model.dart';
 import 'package:tenacity/src/models/term_model.dart';
 import 'package:tenacity/src/models/waitlist_entry_model.dart';
 import 'package:tenacity/src/models/waitlist_promotion_result_model.dart';
+import 'package:tenacity/src/services/analytics_service.dart';
 import 'package:tenacity/src/services/audit_service.dart';
 import 'package:tenacity/src/services/timetable_service.dart';
 import 'package:tenacity/src/utils/class_session_dates.dart';
@@ -649,12 +650,23 @@ class TimetableController extends ChangeNotifier {
       );
       // Only the parent's own entries: the rules let parents read nothing
       // else, so a class-wide refresh here is denied and reads as a failure.
+      Analytics.capture(AppEvent.waitlistJoined, {
+        'outcome': 'succeeded',
+        'class_id': classId,
+        'reason': reason.value,
+        'position': entry.position,
+      });
       parentWaitlistEntries = await _service.fetchWaitlistEntriesForParent(
         parentId: parentId,
       );
       _stopLoading();
       return entry;
     } catch (e) {
+      Analytics.capture(AppEvent.waitlistJoined, {
+        'outcome': 'failed',
+        'class_id': classId,
+        'reason': reason.value,
+      });
       _reportFailure(e, action: 'join the waitlist');
       return null;
     }
@@ -667,11 +679,32 @@ class TimetableController extends ChangeNotifier {
   }) async {
     _startLoading();
     try {
+      final classBefore = _classById(classId);
       final result = await _service.enrollStudentPermanentForParent(
         classId: classId,
         studentId: studentId,
         parentId: parentId,
       );
+      Analytics.capture(AppEvent.permanentEnrolmentRequested, {
+        'outcome': result.outcome.value,
+        'class_id': classId,
+      });
+      if (result.outcome == PermanentEnrollmentOutcome.enrolled &&
+          classBefore != null) {
+        // The admin path already audits this; a parent's own enrolment did
+        // not, so the server never counted it as an enrolment (TP-35).
+        _auditService.record(
+          action: 'class.enrol_permanent',
+          targetType: 'class',
+          targetId: classId,
+          targetName: AuditService.classTargetName(classBefore),
+          payloadSummary: {
+            'classId': classId,
+            'className': AuditService.classTargetName(classBefore),
+            'studentId': studentId,
+          },
+        );
+      }
 
       if (result.enrolled) {
         await loadAllClasses(silent: true);
@@ -685,6 +718,10 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
       return result;
     } catch (e) {
+      Analytics.capture(AppEvent.permanentEnrolmentRequested, {
+        'outcome': 'failed',
+        'class_id': classId,
+      });
       _reportFailure(e, action: 'enrol your student');
       return null;
     }
@@ -966,6 +1003,10 @@ class TimetableController extends ChangeNotifier {
         errorMessage =
             "Student already has a booking for this class this week.";
         notifyListeners();
+        Analytics.capture(AppEvent.oneOffBooked, {
+          'outcome': 'already_booked',
+          'class_id': classId,
+        });
         return const OneOffEnrollmentResult(
           added: false,
           alreadyEnrolled: true,
@@ -977,6 +1018,10 @@ class TimetableController extends ChangeNotifier {
         studentId: studentId,
         attendanceDocId: attendanceDocId,
       );
+      Analytics.capture(AppEvent.oneOffBooked, {
+        'outcome': result.added ? 'succeeded' : 'already_booked',
+        'class_id': classId,
+      });
       final classModel = _classById(classId);
       if (result.added && classModel != null && attendance != null) {
         _auditService.record(
@@ -1002,6 +1047,10 @@ class TimetableController extends ChangeNotifier {
       _stopLoading();
       return result;
     } catch (e) {
+      Analytics.capture(AppEvent.oneOffBooked, {
+        'outcome': 'failed',
+        'class_id': classId,
+      });
       _reportFailure(e, action: 'book this class');
       return null;
     }
@@ -1094,8 +1143,20 @@ class TimetableController extends ChangeNotifier {
           },
         );
       }
+      Analytics.capture(AppEvent.swapRequested, {
+        'mode': 'one_week',
+        'outcome': 'succeeded',
+        'from_class_id': oldClassId,
+        'to_class_id': newClassId,
+      });
       _stopLoading();
     } catch (e) {
+      Analytics.capture(AppEvent.swapRequested, {
+        'mode': 'one_week',
+        'outcome': 'failed',
+        'from_class_id': oldClassId,
+        'to_class_id': newClassId,
+      });
       _reportFailure(e, action: 'reschedule this student');
       rethrow;
     }
@@ -1155,8 +1216,17 @@ class TimetableController extends ChangeNotifier {
         await authController?.refreshCurrentUser();
       }
 
+      Analytics.capture(AppEvent.absenceReported, {
+        'outcome': 'succeeded',
+        'class_id': classId,
+        'token_awarded': tokenAwarded,
+      });
       _stopLoading();
     } catch (e) {
+      Analytics.capture(AppEvent.absenceReported, {
+        'outcome': 'failed',
+        'class_id': classId,
+      });
       _reportFailure(e, action: 'record this absence');
       rethrow;
     }
@@ -1294,9 +1364,21 @@ class TimetableController extends ChangeNotifier {
           },
         );
       }
+      Analytics.capture(AppEvent.swapRequested, {
+        'mode': 'permanent',
+        'outcome': 'succeeded',
+        'from_class_id': oldClassId,
+        'to_class_id': newClassId,
+      });
       _stopLoading();
       return keptSessionIds;
     } catch (e) {
+      Analytics.capture(AppEvent.swapRequested, {
+        'mode': 'permanent',
+        'outcome': 'failed',
+        'from_class_id': oldClassId,
+        'to_class_id': newClassId,
+      });
       _reportFailure(e, action: 'swap this enrolment');
       rethrow;
     }

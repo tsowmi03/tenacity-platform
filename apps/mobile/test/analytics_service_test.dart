@@ -35,7 +35,7 @@ void main() {
   setUp(Analytics.resetForTest);
   tearDown(() => messenger.setMockMethodCallHandler(_channel, null));
 
-  group('without a project token (staging builds)', () {
+  group('without a project token', () {
     test('stays off and never reaches PostHog', () async {
       recordNativeCalls();
 
@@ -65,21 +65,52 @@ void main() {
       calls.clear();
     });
 
-    test('starts with replay, surveys and push handling off', () async {
+    test('starts with unmasked replay, and surveys and push handling off',
+        () async {
       Analytics.resetForTest();
       recordNativeCalls();
       await Analytics.init(projectToken: 'phc_test');
 
       final setup = calls.firstWhere((c) => c.method == 'setup');
       final args = Map<String, Object?>.from(setup.arguments as Map);
-      expect(args['sessionReplay'], isFalse);
+      expect(args['sessionReplay'], isTrue);
+      final replay =
+          Map<String, Object?>.from(args['sessionReplayConfig'] as Map);
+      expect(replay['maskAllTexts'], isFalse);
+      expect(replay['maskAllImages'], isFalse);
       expect(args['surveys'], isFalse);
       expect(args['capturePushNotificationSubscriptions'], isFalse);
       expect(args['capturePushNotificationOpened'], isFalse);
       expect(Analytics.isEnabled, isTrue);
     });
 
-    test('identifies by UID with email and role, once per user', () async {
+    test('tags every event with the environment', () async {
+      Analytics.resetForTest();
+      recordNativeCalls();
+      await Analytics.init(projectToken: 'phc_test');
+
+      final register = calls.firstWhere((c) => c.method == 'register');
+      final args = Map<String, Object?>.from(register.arguments as Map);
+      expect(args['key'], 'environment');
+      expect(args['value'], 'production');
+    });
+
+    test('captures a declared event without null properties', () async {
+      await Analytics.capture(AppEvent.absenceReported, {
+        'outcome': 'succeeded',
+        'token_awarded': true,
+        'reason': null,
+      });
+
+      final capture = calls.singleWhere((c) => c.method == 'capture');
+      final args = Map<String, Object?>.from(capture.arguments as Map);
+      expect(args['eventName'], 'absence_reported');
+      expect(
+          args['properties'], {'outcome': 'succeeded', 'token_awarded': true});
+    });
+
+    test('identifies by UID with name, email, role and students, once per user',
+        () async {
       await Analytics.syncUser(_parent(), isRestoringSession: false);
       await Analytics.syncUser(_parent(), isRestoringSession: false);
 
@@ -89,8 +120,12 @@ void main() {
           Map<String, Object?>.from(identifies.single.arguments as Map);
       expect(args['userId'], 'parent-1');
       expect(args['userProperties'], {
+        'name': 'Pat Parent',
+        'first_name': 'Pat',
+        'last_name': 'Parent',
         'email': 'pat@example.com',
         'role': 'parent',
+        'student_count': 0,
       });
     });
 
@@ -113,6 +148,16 @@ void main() {
         calls.map((c) => c.method).where((m) => m != 'register'),
         ['identify', 'reset', 'identify'],
       );
+    });
+
+    test('tags events with the environment again after a sign-out reset',
+        () async {
+      await Analytics.syncUser(_parent(), isRestoringSession: false);
+      await Analytics.syncUser(null, isRestoringSession: false);
+
+      final methods = calls.map((c) => c.method).toList();
+      expect(
+          methods.indexOf('register'), greaterThan(methods.indexOf('reset')));
     });
 
     test('a signed-out launch never calls reset', () async {

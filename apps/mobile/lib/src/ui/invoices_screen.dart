@@ -18,6 +18,7 @@ import 'invoices/parent_invoices_data.dart';
 import 'theme/design_tokens.dart';
 import 'package:tenacity/src/config/app_environment.dart';
 import 'package:tenacity/src/utils/error_presenter.dart';
+import 'package:tenacity/src/services/analytics_service.dart';
 
 abstract interface class ParentInvoicePaymentSheet {
   Future<void> prepare(String clientSecret);
@@ -297,6 +298,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       _activePaymentInvoiceIds = invoiceIds;
       _feedback = null;
     });
+    final paymentProperties = {'invoice_count': invoiceIds.length};
+    Analytics.capture(AppEvent.invoicePaymentStarted, paymentProperties);
 
     try {
       final clientSecret = await getClientSecret();
@@ -304,6 +307,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       await widget.paymentSheet.prepare(clientSecret);
       if (!_isCurrentScope(generation)) return;
       await widget.paymentSheet.present();
+      Analytics.capture(AppEvent.invoicePaymentSubmitted, paymentProperties);
 
       if (!_isCurrentScope(generation)) return;
 
@@ -320,8 +324,18 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       });
       await _verifyPendingPayment();
     } on StripeException catch (error) {
-      if (!_isCurrentScope(generation)) return;
       final canceled = error.error.code == FailureCode.Canceled;
+      Analytics.capture(
+        canceled
+            ? AppEvent.invoicePaymentCancelled
+            : AppEvent.invoicePaymentFailed,
+        {
+          ...paymentProperties,
+          if (!canceled) 'stage': 'payment_sheet',
+          if (!canceled) 'code': error.error.code.name,
+        },
+      );
+      if (!_isCurrentScope(generation)) return;
       setState(() {
         _feedback = canceled
             ? const _InvoiceFeedback(
@@ -337,6 +351,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               );
       });
     } catch (error, stackTrace) {
+      Analytics.capture(AppEvent.invoicePaymentFailed, {
+        ...paymentProperties,
+        'stage': 'start',
+      });
       if (!_isCurrentScope(generation)) return;
       // The StripeException branch above is told by Stripe that the payment
       // did not start, so it can promise the invoices are untouched. Here we
