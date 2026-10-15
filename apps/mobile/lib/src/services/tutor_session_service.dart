@@ -62,16 +62,22 @@ Map<String, Object?> feedbackEditFor({
   };
 }
 
-/// The document id for one student's feedback from one session.
+/// The document id for one student's feedback from one class's session.
 ///
 /// Derived rather than generated, so two tutors writing about the same student
 /// land on the same document. With `add()` they each created one and the family
 /// received two notes about the same lesson.
+///
+/// The class is part of the id because [sessionId] is the week, shared by every
+/// class that week. Without it, a student in two classes on one day had the
+/// second class's note overwrite the first, and since an overwrite is not a
+/// creation the family was never told about it.
 String sessionFeedbackId({
   required String sessionId,
+  required String classId,
   required String studentId,
 }) =>
-    '${sessionId}_$studentId';
+    '${sessionId}_${classId}_$studentId';
 
 /// Writes a tutor's session: the roll, and the feedback written alongside it.
 ///
@@ -200,7 +206,7 @@ class TutorSessionService {
   /// notes can land in between, and sending the family a second note about the
   /// same lesson is the failure worth spending a read to avoid.
   ///
-  /// The document id is derived from the session and student, so even if that
+  /// The document id is derived from the session, class and student, so even if that
   /// read races the write cannot duplicate — at worst it overwrites a note
   /// with an equally valid one.
   Future<void> _writeFeedback({
@@ -221,6 +227,7 @@ class TutorSessionService {
 
       final id = sessionFeedbackId(
         sessionId: sessionId,
+        classId: classId,
         studentId: entry.studentId,
       );
 
