@@ -214,8 +214,8 @@ omitted, and open follow-ups are tracked at the bottom.
 of hearing about us bring families who stay.
 
 **Status:** Live once the Functions deploy after merge. The production
-backfill ran on 2026-10-15: 53 people and 152 events back to December 2025,
-including 101 payments. 29 older invoices never recorded when they were paid,
+backfill ran on 2026-10-15: 53 people and 148 events back to December 2025,
+including 97 payments (93 invoices, 4 one-off bookings). 29 older invoices never recorded when they were paid,
 so they are dated at their due date and flagged `paid_at_estimated`.
 Backfilled cancellations say whether the student is in any class now, not at
 the time (`still_enrolled_as_of_backfill`).
@@ -227,6 +227,10 @@ the time (`still_enrolled_as_of_backfill`).
   overwritten too, without the new fields and marked `superseded`, so the
   Families & revenue charts (which count only events carrying the new fields)
   skip it.
+- A paid one-off booking also writes an invoice that is born paid, so the
+  first backfill counted 4 bookings twice. Those invoice events were
+  overwritten with amount 0 and `superseded`, and the backfill now skips
+  such invoices. The live triggers never double-counted them.
 
 ---
 
