@@ -16,7 +16,10 @@
 // rect-semicircle, annulus, function-plot, bar-graph, histogram, dot-plot,
 // tree-diagram, venn-diagram, angles.
 
-const sharp = require("sharp");
+const { lazyRequire } = require("../shared/lazyRequire");
+
+const loadSharp = lazyRequire(() => require("sharp"));
+const sharp = (...args) => loadSharp()(...args);
 const { displayTextLength, svgTextContent } = require("./mathNotation");
 const {
   DIAGRAM_STATUS,

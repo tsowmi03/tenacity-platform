@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-15 | [Functions no longer run out of memory at startup (TP-37)](#2026-10-15--functions-no-longer-run-out-of-memory-at-startup-tp-37) |
 | 2026-10-15 | [Session replay starts on the portals and in the app](#2026-10-15--session-replay-starts-on-the-portals-and-in-the-app) |
 | 2026-10-15 | [The app reports what parents do, with session replay (MOB-60)](#2026-10-15--the-app-reports-what-parents-do-with-session-replay-mob-60) |
 | 2026-10-15 | [Staging sends to PostHog, filtered out of dashboards (TP-36)](#2026-10-15--staging-sends-to-posthog-filtered-out-of-dashboards-tp-36) |
@@ -180,6 +181,35 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-15 — Functions no longer run out of memory at startup (TP-37)
+
+**What changed**
+- Every Function now gets 512 MiB by default (`setGlobalOptions` in
+  `lib/index.js`, plus `runWith` on the one v1 Function). The few that already
+  asked for more keep their own setting.
+- The heavy libraries (the Anthropic, OpenAI and PostHog SDKs, Stripe, Xero,
+  SendGrid, sharp, pdfkit, pdf-parse, mammoth, xlsx) now load the first time
+  they are used instead of at startup, through `src/shared/lazyRequire.js`.
+  Loading the bundle dropped from about 225 MiB to about 86 MiB.
+- CI fails a pull request if loading the bundle takes more than 160 MiB
+  (`scripts/checkStartupMemory.js`), and lists the packages loaded at startup
+  so the new one is easy to find. A unit test also fails if any of the
+  libraries above is loaded at startup again.
+- A Cloud Monitoring alert emails admin@tenacitytutoring.com when any Function
+  hits its memory limit. It is kept in code: `scripts/applyMemoryAlert.js`.
+
+**Why:** Every instance loads the whole bundle, whichever Function it serves,
+and most Functions ran on the 256 MiB default with almost no headroom. When
+RES-42 added the PostHog AI SDK, the one-week swap began failing at startup for
+every family (500/503 on every call). Nine Functions, including feedback, audit
+logging and attendance notifications, had hit the same limit since 8 Oct
+without anyone noticing. TP-22 was the same problem.
+
+**Status:** Live. All Functions redeployed with this change, and the alert was
+applied to production on 2026-10-15.
 
 ---
 

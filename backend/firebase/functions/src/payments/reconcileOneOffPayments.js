@@ -3,8 +3,10 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
-const Stripe = require("stripe");
 const { defineSecret } = require("firebase-functions/params");
+const { lazyRequire } = require("../shared/lazyRequire");
+
+const loadStripe = lazyRequire(() => require("stripe"));
 
 const { PAYMENT_SOURCE } = require("./paymentLedger");
 const { decodeBookingMetadata } = require("./oneOffBookingMetadata");
@@ -286,6 +288,7 @@ const reconcileOneOffPayments = onSchedule(
     secrets: [stripeSecretKey],
   },
   async () => {
+    const Stripe = loadStripe();
     const stripe = new Stripe(stripeSecretKey.value(), {
       apiVersion: "2025-02-24.acacia",
     });

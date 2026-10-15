@@ -5,9 +5,11 @@ const firestore_1 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
 const params_1 = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
-const xero_node_1 = require("xero-node");
 const admin = require("firebase-admin");
 const { requireParentOrAdmin } = require("../src/payments/paymentSecurity");
+const { lazyRequire } = require("../src/shared/lazyRequire");
+// Loaded on first use rather than at startup (TP-37).
+const loadXeroNode = lazyRequire(() => require("xero-node"));
 const { xeroPaymentSyncEnabled } = require("./xero_sync_flag");
 // 1. Define secrets for Xero credentials.
 const XERO_CLIENT_ID = (0, params_1.defineSecret)("XERO_CLIENT_ID");
@@ -19,7 +21,7 @@ if (!admin.apps.length) {
     });
 }
 function getXeroClient() {
-    return new xero_node_1.XeroClient({
+    return new loadXeroNode().XeroClient({
         clientId: XERO_CLIENT_ID.value(),
         clientSecret: XERO_CLIENT_SECRET.value(),
         grantType: "authorization_code",
@@ -89,7 +91,7 @@ async function refreshXeroToken() {
         throw new Error("No Xero tokens found in Firestore.");
     }
     logger.info("Existing token data:", tokenData);
-    const xero = new xero_node_1.XeroClient({
+    const xero = new loadXeroNode().XeroClient({
         clientId: XERO_CLIENT_ID.value(),
         clientSecret: XERO_CLIENT_SECRET.value(),
         grantType: "authorization_code",
@@ -298,13 +300,13 @@ async function createXeroInvoice(invoiceId) {
     const dueDateString = dueDate.toISOString().split("T")[0];
     // 6) Construct the Xero invoice object
     const xeroInvoice = {
-        type: xero_node_1.Invoice.TypeEnum.ACCREC,
+        type: loadXeroNode().Invoice.TypeEnum.ACCREC,
         contact: { contactID: contactId },
         lineItems: xeroLineItems,
         date: dateString,
         dueDate: dueDateString,
         invoiceNumber: `INV-${invoiceData.invoiceNumber || invoiceId}`,
-        status: xero_node_1.Invoice.StatusEnum.AUTHORISED,
+        status: loadXeroNode().Invoice.StatusEnum.AUTHORISED,
     };
     logger.info("About to create invoice in Xero...", xeroInvoice);
     // 7) Create the invoice in Xero
