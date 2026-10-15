@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-15 | [A second class's feedback no longer overwrites the first (MOB-61)](#2026-10-15--a-second-classs-feedback-no-longer-overwrites-the-first-mob-61) |
 | 2026-10-15 | [Session replay starts on the portals and in the app](#2026-10-15--session-replay-starts-on-the-portals-and-in-the-app) |
 | 2026-10-15 | [The app reports what parents do, with session replay (MOB-60)](#2026-10-15--the-app-reports-what-parents-do-with-session-replay-mob-60) |
 | 2026-10-15 | [Staging sends to PostHog, filtered out of dashboards (TP-36)](#2026-10-15--staging-sends-to-posthog-filtered-out-of-dashboards-tp-36) |
@@ -180,6 +181,26 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-15 — A second class's feedback no longer overwrites the first (MOB-61)
+
+**What changed**
+- Session feedback is now saved under an id made from the week, the class and
+  the student. Before, the id left out the class, and every class in a week
+  shares the week's id.
+- A student in two classes in one week (for example, back to back on one day)
+  now gets two notes, and the family is notified about each one.
+- Two tutors submitting for the same class still produce one note per student.
+  Existing notes keep their old ids and are unaffected.
+
+**Why:** Tutors reported that when a student came for two hours in one day, the
+second session's feedback replaced the first. Because the second write was an
+update rather than a creation, the family wasn't notified, and the first note
+was lost for good.
+
+**Status:** Live. Ships to tutors with the next mobile release.
 
 ---
 

@@ -139,23 +139,33 @@ void main() {
   });
 
   group('feedback id', () {
-    test('is the same for one student in one session', () {
+    test('is the same for one student in one class session', () {
       // Two tutors writing about the same student now overwrite rather than
       // sending the family two notes about the same lesson.
       expect(
-        sessionFeedbackId(sessionId: 'T3_W1', studentId: 's1'),
-        sessionFeedbackId(sessionId: 'T3_W1', studentId: 's1'),
+        sessionFeedbackId(sessionId: 'T3_W1', classId: 'c1', studentId: 's1'),
+        sessionFeedbackId(sessionId: 'T3_W1', classId: 'c1', studentId: 's1'),
       );
     });
 
     test('separates students and sessions', () {
       final ids = {
-        sessionFeedbackId(sessionId: 'T3_W1', studentId: 's1'),
-        sessionFeedbackId(sessionId: 'T3_W1', studentId: 's2'),
-        sessionFeedbackId(sessionId: 'T3_W2', studentId: 's1'),
+        sessionFeedbackId(sessionId: 'T3_W1', classId: 'c1', studentId: 's1'),
+        sessionFeedbackId(sessionId: 'T3_W1', classId: 'c1', studentId: 's2'),
+        sessionFeedbackId(sessionId: 'T3_W2', classId: 'c1', studentId: 's1'),
       };
 
       expect(ids, hasLength(3));
+    });
+
+    test('separates two classes in the same week', () {
+      // Every class that week shares the session id. A student in back-to-back
+      // classes must get two notes, not have the second overwrite the first.
+      expect(
+        sessionFeedbackId(sessionId: 'T3_W1', classId: 'c1', studentId: 's1'),
+        isNot(sessionFeedbackId(
+            sessionId: 'T3_W1', classId: 'c2', studentId: 's1')),
+      );
     });
   });
 
