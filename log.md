@@ -181,10 +181,13 @@ omitted, and open follow-ups are tracked at the bottom.
 ## 2026-10-15 — Staging sends to PostHog, filtered out of dashboards (TP-36)
 
 **What changed**
-- Staging Functions now send to PostHog (LLM analytics and business events).
-  PostHog's free plan allows one project, so staging shares the production
-  project and every server event and AI call carries `environment`
-  (`staging` or `production`, from the Firebase project ID).
+- Staging Functions now send business events to PostHog. The four analytics
+  triggers are added to the staging deploy list
+  (`inventory/staging-functions.json`). Resource generation still isn't
+  deployed to staging, so no AI-call analytics come from there. PostHog's
+  free plan allows one project, so staging shares the production project and
+  every server event and AI call carries `environment` (`staging` or
+  `production`, from the Firebase project ID).
 - In PostHog, the project's test-account filter drops `environment =
   staging`, new charts apply it by default, and every existing chart and SQL
   table (including both alerts) now excludes staging.
