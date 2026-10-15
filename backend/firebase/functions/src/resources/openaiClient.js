@@ -6,7 +6,7 @@ const {
   createPostHogClient,
   posthogRequestFields,
   shutdownPostHogClient,
-} = require("./posthogClient");
+} = require("../shared/posthogClient");
 const { parseAiJsonResponse } = require("./apiClient");
 
 function createDefaultOpenAiClient(apiKey) {

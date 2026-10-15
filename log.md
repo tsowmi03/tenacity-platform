@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-15 | [PostHog shows what families do, by name (TP-35)](#2026-10-15--posthog-shows-what-families-do-by-name-tp-35) |
 | 2026-10-14 | [The Terms & Conditions are a web page, not a PDF (WEB-9)](#2026-10-14--the-terms--conditions-are-a-web-page-not-a-pdf-web-9) |
 | 2026-10-14 | [Resource generation reports every AI call to PostHog (RES-42)](#2026-10-14--resource-generation-reports-every-ai-call-to-posthog-res-42) |
 | 2026-10-14 | [The app reports how it's used, with terms that say so (MOB-59)](#2026-10-14--the-app-reports-how-its-used-with-terms-that-say-so-mob-59) |
@@ -176,6 +177,63 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-10-15 — PostHog shows what families do, by name (TP-35)
+
+**What changed**
+- Firebase Functions send business events to PostHog, each attributed to the
+  family's parent account: `enrolment_created` (an intake accepted, or a
+  student added to a class), `enrolment_cancelled` (a class dropped or a
+  student removed, with whether the student is still in any class, which is
+  churn when not), `swap_processed` (one-week or permanent), `payment_received`
+  (an invoice paid by any method, or a one-off booking) and `payment_failed`.
+- They come from records the platform already keeps, through four triggers:
+  the audit log (enrolments, unenrolments and swaps from the app and the
+  portal), invoices turning paid, Stripe payment logs, and user docs. No app
+  release is needed, and ad blockers or old app versions can't lose them.
+- Parents, tutors and admins carry their name, email and role in PostHog, kept
+  in sync from their user doc, so dashboards and person pages show names
+  rather than IDs. A parent also carries how they heard about us and when they
+  first enrolled. Tom confirmed (2026-10-15) that all Firebase production data
+  may go to PostHog and the privacy policy needs no change for it.
+- `scripts/backfillPostHog.js` sends the same events from existing Firestore
+  data: people, every accepted intake and paid invoice, one-off bookings, and
+  six months of audit-logged changes. It builds events with the triggers' code
+  and the same IDs, so it can be rerun without double-counting. Dry run unless
+  `--send`.
+- New "Families & revenue" dashboard: revenue per week and this month,
+  enrolments against cancellations and churn, swaps, a per-family table (name,
+  email, how they heard, total paid, activity), revenue and churn by referral
+  source, recent cancellations and failed payments. "AI usage by tutor" now
+  shows each tutor's name and email.
+- Website dashboards and alerts from the WEB-8 follow-up are built (see
+  `apps/website/docs/analytics.md`).
+- The Functions' PostHog client moved to `src/shared/posthogClient.js`, shared
+  with resource generation (RES-42).
+
+**Why:** So we can see revenue, churn and swaps in one place, and which ways
+of hearing about us bring families who stay.
+
+**Status:** Live once the Functions deploy after merge. The production
+backfill ran on 2026-10-15: 53 people and 148 events back to December 2025,
+including 97 payments (93 invoices, 4 one-off bookings). 29 older invoices never recorded when they were paid,
+so they are dated at their due date and flagged `paid_at_estimated`.
+Backfilled cancellations say whether the student is in any class now, not at
+the time (`still_enrolled_as_of_backfill`).
+
+- The first send stored `source: "server"` over the intake/class-add and
+  payment source values (since renamed `enrolment_type` and
+  `payment_source`). Those 26 events were resent under the same IDs, which
+  PostHog overwrites. A second copy sent under new IDs by mistake was
+  overwritten too, without the new fields and marked `superseded`, so the
+  Families & revenue charts (which count only events carrying the new fields)
+  skip it.
+- A paid one-off booking also writes an invoice that is born paid, so the
+  first backfill counted 4 bookings twice. Those invoice events were
+  overwritten with amount 0 and `superseded`, and the backfill now skips
+  such invoices. The live triggers never double-counted them.
+
+---
+
 ## 2026-10-14 — The Terms & Conditions are a web page, not a PDF (WEB-9)
 
 **What changed**
@@ -304,8 +362,6 @@ the website deployed with the merge. The PostHog US project key was set in
 Vercel Production (only) on 2026-10-14.
 
 **Next steps**
-- Build the five dashboards listed in `apps/website/docs/analytics.md` once
-  events arrive (about an hour).
 - Tom to sign off the `/privacy` wording.
 
 ---

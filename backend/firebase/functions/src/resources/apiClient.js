@@ -6,7 +6,7 @@ const {
   createPostHogClient,
   posthogRequestFields,
   shutdownPostHogClient,
-} = require("./posthogClient");
+} = require("../shared/posthogClient");
 const {
   LATEX_COMMANDS,
   EMPTY_COMMANDS,

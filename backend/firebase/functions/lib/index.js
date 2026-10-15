@@ -93,6 +93,12 @@ const {
 const {
   reconcileOneOffPayments,
 } = require("../src/payments/reconcileOneOffPayments");
+const {
+  onAuditLogAnalytics,
+  onInvoicePaidAnalytics,
+  onPaymentLogAnalytics,
+  onUserAnalytics,
+} = require("../src/analytics/triggers");
 
 // Export all functions so Firebase can recognize them
 module.exports = Object.assign(
@@ -155,6 +161,10 @@ module.exports = Object.assign(
     reconcileOneOffPayments,
     getReferralLink,
     adminUpdateReferral,
+    onAuditLogAnalytics,
+    onInvoicePaidAnalytics,
+    onPaymentLogAnalytics,
+    onUserAnalytics,
   }
 );
 module.exports.submitResourceJob = submitResourceJob;
