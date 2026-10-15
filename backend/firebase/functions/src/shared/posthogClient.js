@@ -1,7 +1,9 @@
 "use strict";
 
 const { defineString } = require("firebase-functions/params");
-const { PostHog } = require("posthog-node");
+const { lazyRequire } = require("./lazyRequire");
+
+const loadPostHogNode = lazyRequire(() => require("posthog-node"));
 
 // The Functions' PostHog client, shared by resource generation's LLM analytics
 // (RES-42: prompts and outputs are sent in full, privacyMode off, approved
@@ -44,11 +46,12 @@ function analyticsEnvironment(projectId = process.env.GCLOUD_PROJECT || process.
 function createPostHogClient({
   projectToken = readParam(posthogProjectToken),
   host = readParam(posthogHost),
-  PostHogClass = PostHog,
+  PostHogClass,
 } = {}) {
   if (!projectToken) return null;
   try {
-    return new PostHogClass(projectToken, {
+    const Client = PostHogClass || loadPostHogNode().PostHog;
+    return new Client(projectToken, {
       host: host || "https://us.i.posthog.com",
       privacyMode: false,
       // Sent when the call's client shuts down, before the invocation ends.

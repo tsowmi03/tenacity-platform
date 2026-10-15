@@ -4,11 +4,13 @@ exports.stripeWebhook = exports.verifyPaymentStatus = exports.createStripeCustom
 // payment_functions.ts
 const https_1 = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
-const stripe_1 = require("stripe");
 const params_1 = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const crypto_1 = require("crypto");
 const { auditLogIdForRequest } = require("../src/shared/auditLog");
+const { lazyRequire } = require("../src/shared/lazyRequire");
+// Loaded on first use rather than at startup (TP-37).
+const loadStripe = lazyRequire(() => require("stripe"));
 const {
     requireParentOrAdmin,
     loadValidatedInvoicesForPayment,
@@ -164,7 +166,7 @@ async function getOrCreateStripeCustomerId(params) {
 // loses a booking, so it gets headroom until the entrypoint is slimmed down.
 const PAYMENT_FUNCTION_MEMORY = "512MiB";
 exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey], memory: PAYMENT_FUNCTION_MEMORY }, async (request) => {
-    const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
+    const stripe = new (loadStripe().default)(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const { amount, currency, parentId, invoiceIds, booking } = request.data;
     const hasInvoiceIds = Array.isArray(invoiceIds) && invoiceIds.length > 0;
     const hasBooking = booking !== undefined && booking !== null;
@@ -383,7 +385,7 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey], 
 // Your Flutter client can call this and pass the result into SetupPaymentSheetParameters.
 exports.createStripeCustomerEphemeralKey = (0, https_1.onCall)({ secrets: [stripeSecretKey] }, async (request) => {
     var _a, _b, _c;
-    const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
+    const stripe = new (loadStripe().default)(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const parentId = (_a = request.data) === null || _a === void 0 ? void 0 : _a.parentId;
     const parentEmail = typeof ((_b = request.data) === null || _b === void 0 ? void 0 : _b.parentEmail) === 'string' ? request.data.parentEmail : undefined;
     const parentName = typeof ((_c = request.data) === null || _c === void 0 ? void 0 : _c.parentName) === 'string' ? request.data.parentName : undefined;
@@ -406,7 +408,7 @@ exports.createStripeCustomerEphemeralKey = (0, https_1.onCall)({ secrets: [strip
     };
 });
 exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey], memory: PAYMENT_FUNCTION_MEMORY }, async (request) => {
-    const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
+    const stripe = new (loadStripe().default)(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const { clientSecret } = request.data;
     if (!clientSecret) {
         throw new https_1.HttpsError('invalid-argument', 'Missing clientSecret');
@@ -490,7 +492,7 @@ exports.verifyPaymentStatus = (0, https_1.onCall)({ secrets: [stripeSecretKey], 
 });
 // Add Stripe webhook handler for more reliable payment confirmation
 exports.stripeWebhook = (0, https_1.onRequest)({ secrets: [stripeWebhookSecret, stripeSecretKey], memory: PAYMENT_FUNCTION_MEMORY }, async (req, res) => {
-    const stripe = new stripe_1.default(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
+    const stripe = new (loadStripe().default)(stripeSecretKey.value(), { apiVersion: "2025-02-24.acacia" });
     const sig = req.headers['stripe-signature'];
     if (!sig) {
         logger.error('Missing stripe-signature header');

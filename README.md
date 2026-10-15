@@ -134,8 +134,13 @@ Locally, run the checks for each area you touched:
 | Mobile | From `apps/mobile`: `dart format --output=none --set-exit-if-changed lib test` · `flutter analyze --no-fatal-infos` · `flutter test` · `flutter build web` |
 | Admin portal | From the root: `npm --prefix apps/admin-portal test` · `node --test apps/admin-portal/test/enrolmentEditPayload.test.mjs` · `npm --prefix apps/admin-portal run build` · `npm --prefix apps/admin-portal run test:rules` when rules change |
 | Resource portal | `npm --prefix apps/resource-portal test` · `npm --prefix apps/resource-portal run build` |
-| Functions | `npm --prefix backend/firebase/functions test` · `npm --prefix backend/firebase/functions run smoke` · `npm --prefix backend/firebase/functions run test:emulator` when integration behaviour changes |
+| Functions | `npm --prefix backend/firebase/functions test` · `npm --prefix backend/firebase/functions run smoke` · `npm --prefix backend/firebase/functions run check:startup-memory` · `npm --prefix backend/firebase/functions run test:emulator` when integration behaviour changes |
 | Website | From `apps/website`: `yarn lint` · `yarn build` |
+
+Every Function instance loads the whole Functions bundle at startup, so a
+library required at the top of any file costs memory in all of them.
+`check:startup-memory` fails above 160 MiB. Load heavy libraries with
+`src/shared/lazyRequire.js` where they are used instead (TP-37).
 
 The emulator suites (`test:rules`, `test:emulator`) need the Firebase CLI, use
 isolated `demo-*` project IDs, and share port 8080, so run them one at a time.

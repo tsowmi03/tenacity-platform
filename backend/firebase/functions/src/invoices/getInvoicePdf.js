@@ -4,12 +4,14 @@ const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
-const { XeroClient } = require("xero-node");
 
 const { requireAdminCallable } = require("../auth/requireAdmin");
 const { toHttpsError } = require("../shared/errors");
+const { lazyRequire } = require("../shared/lazyRequire");
 const { invoiceName, writeAuditLog } = require("../shared/auditLog");
 const { assertString, validateShape } = require("../shared/validation");
+
+const loadXeroNode = lazyRequire(() => require("xero-node"));
 
 const xeroClientId = defineSecret("XERO_CLIENT_ID");
 const xeroClientSecret = defineSecret("XERO_CLIENT_SECRET");
@@ -21,6 +23,7 @@ function validateGetInvoicePdfPayload(input) {
 }
 
 function buildXeroClient({ clientId, clientSecret }) {
+  const { XeroClient } = loadXeroNode();
   return new XeroClient({
     clientId,
     clientSecret,

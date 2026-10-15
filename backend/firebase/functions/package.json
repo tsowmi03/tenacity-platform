@@ -17,6 +17,7 @@
     "dryrun:purge-orphaned-chats": "node scripts/purgeOrphanedChats.js",
     "purge-orphaned-chats:once": "node scripts/purgeOrphanedChats.js --commit --yes",
     "seed:staging": "node scripts/seedStaging.js",
+    "check:startup-memory": "node scripts/checkStartupMemory.js",
     "smoke": "node -e \"const f = require('./lib/index.js'); console.log(Object.keys(f).sort().join('\\n'))\"",
     "smoke:resources:live": "node scripts/liveResourceSmoke.js",
     "smoke:resources:live:preflight": "node scripts/liveResourceSmoke.js --preflight",

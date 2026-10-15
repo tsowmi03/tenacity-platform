@@ -2,8 +2,10 @@
 
 const path = require("path");
 const zlib = require("zlib");
-const mammoth = require("mammoth");
-const { PDFParse } = require("pdf-parse");
+const { lazyRequire } = require("../shared/lazyRequire");
+
+const loadMammoth = lazyRequire(() => require("mammoth"));
+const loadPdfParse = lazyRequire(() => require("pdf-parse"));
 
 const PDF_MIME_TYPES = new Set(["application/pdf"]);
 const DOCX_MIME_TYPES = new Set([
@@ -38,6 +40,7 @@ function inferFileType({ mimeType, fileName } = {}) {
 }
 
 async function extractPdfText(buffer) {
+  const { PDFParse } = loadPdfParse();
   const parser = new PDFParse({ data: buffer });
   try {
     const result = await parser.getText();
@@ -120,7 +123,7 @@ function extractDocxMainXmlText(buffer) {
 }
 
 async function extractDocxText(buffer) {
-  const result = await mammoth.extractRawText({ buffer });
+  const result = await loadMammoth().extractRawText({ buffer });
   const mammothText = result?.value || "";
   const xmlText = extractDocxMainXmlText(buffer);
   return xmlText.hasMath && xmlText.text ? xmlText.text : mammothText;

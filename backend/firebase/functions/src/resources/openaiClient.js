@@ -1,7 +1,6 @@
 "use strict";
 
-const OpenAI = require("openai").default;
-const { OpenAI: PostHogOpenAI } = require("@posthog/ai");
+const { lazyRequire } = require("../shared/lazyRequire");
 const {
   createPostHogClient,
   posthogRequestFields,
@@ -9,11 +8,14 @@ const {
 } = require("../shared/posthogClient");
 const { parseAiJsonResponse } = require("./apiClient");
 
+const loadOpenAiSdk = lazyRequire(() => require("openai"));
+const loadPostHogAi = lazyRequire(() => require("@posthog/ai"));
+
 function createDefaultOpenAiClient(apiKey) {
   const posthog = createPostHogClient();
   const client = posthog
-    ? new PostHogOpenAI({ apiKey, maxRetries: 1, posthog })
-    : new OpenAI({ apiKey, maxRetries: 1 });
+    ? new (loadPostHogAi().OpenAI)({ apiKey, maxRetries: 1, posthog })
+    : new (loadOpenAiSdk().default)({ apiKey, maxRetries: 1 });
   return { client, posthog };
 }
 

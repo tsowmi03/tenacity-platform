@@ -268,6 +268,9 @@ const sendCustomPasswordResetEmail = onCall(
 
 const syncUserRoleClaim = functions
   .region("us-central1")
+  // The one v1 function, so the 512MiB global default in lib/index.js does
+  // not reach it; it loads the same bundle as the rest (TP-37).
+  .runWith({ memory: "512MB" })
   .firestore.document("users/{uid}")
   .onWrite(async (change, context) => {
     const { uid } = context.params;

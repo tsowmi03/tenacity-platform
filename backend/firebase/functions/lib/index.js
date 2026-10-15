@@ -1,6 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const admin = require("firebase-admin");
+const { setGlobalOptions } = require("firebase-functions/v2/options");
+// Before any function is defined: some options are read at definition time.
+//
+// Every instance loads this whole bundle, whichever function it serves, so the
+// 256MiB default left each function a few megabytes from failing at startup
+// whenever a dependency grew. It did, repeatedly: TP-22, then the one-week
+// swap after RES-42 added the PostHog AI SDK (TP-37). Functions that need
+// more still say so on their own definition, which overrides this.
+// `scripts/checkStartupMemory.js` fails CI before the bundle nears it.
+setGlobalOptions({ memory: "512MiB" });
 admin.initializeApp(); // Firebase Admin SDK initialization
 // Import functions from other files
 const emailFunctions = require("./email_functions");

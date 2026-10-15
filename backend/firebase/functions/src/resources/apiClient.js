@@ -1,7 +1,6 @@
 "use strict";
 
-const Anthropic = require("@anthropic-ai/sdk").default;
-const { Anthropic: PostHogAnthropic } = require("@posthog/ai");
+const { lazyRequire } = require("../shared/lazyRequire");
 const {
   createPostHogClient,
   posthogRequestFields,
@@ -12,6 +11,9 @@ const {
   EMPTY_COMMANDS,
   repairJsonBackslashes,
 } = require("./aiJsonRepair");
+
+const loadAnthropicSdk = lazyRequire(() => require("@anthropic-ai/sdk"));
+const loadPostHogAi = lazyRequire(() => require("@posthog/ai"));
 
 /**
  * Wrap the system prompt so it can be served from the prompt cache.
@@ -181,8 +183,8 @@ async function streamResponseText(stream) {
 function createDefaultAnthropicClient(apiKey) {
   const posthog = createPostHogClient();
   const client = posthog
-    ? new PostHogAnthropic({ apiKey, maxRetries: 1, posthog })
-    : new Anthropic({ apiKey, maxRetries: 1 });
+    ? new (loadPostHogAi().Anthropic)({ apiKey, maxRetries: 1, posthog })
+    : new (loadAnthropicSdk().default)({ apiKey, maxRetries: 1 });
   return { client, posthog };
 }
 

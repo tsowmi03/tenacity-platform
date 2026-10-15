@@ -21,7 +21,10 @@
  * a second model call.
  */
 
-const sharp = require("sharp");
+const { lazyRequire } = require("../shared/lazyRequire");
+
+const loadSharp = lazyRequire(() => require("sharp"));
+const sharp = (...args) => loadSharp()(...args);
 
 const COMMONS_API = "https://commons.wikimedia.org/w/api.php";
 const COMMONS_PAGE = "https://commons.wikimedia.org/wiki/";

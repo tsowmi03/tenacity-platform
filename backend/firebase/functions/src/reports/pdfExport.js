@@ -1,6 +1,8 @@
 "use strict";
 
-const PDFDocument = require("pdfkit");
+const { lazyRequire } = require("../shared/lazyRequire");
+
+const loadPdfKit = lazyRequire(() => require("pdfkit"));
 
 const NAVY = "#1B3A6B";
 const BLUE = "#4A90C4";
@@ -24,6 +26,7 @@ function humanLabel(key) {
 
 function generateReportPdf(title, report, columns, rows) {
   return new Promise((resolve, reject) => {
+    const PDFDocument = loadPdfKit();
     const doc = new PDFDocument({ margin: MARGIN, size: "A4", layout: "landscape" });
     const chunks = [];
     doc.on("data", (c) => chunks.push(c));
