@@ -40,6 +40,21 @@ export function analyticsEnvironment(projectId = firebaseConfig?.projectId || ""
 }
 
 const DRY_RUN = import.meta.env.VITE_POSTHOG_DRY_RUN === "1";
+
+// Tags every event as it is sent, including the first page view, which
+// posthog.init() can capture before a register() call would run.
+const TAGS = Object.freeze({ app: "resource_portal" });
+
+export function tagEvent(event) {
+  if (!event) return event;
+  event.properties = { ...event.properties, ...TAGS, environment: analyticsEnvironment() };
+  return event;
+}
+
+function logAndDrop(event) {
+  console.info("[analytics]", event?.event, event?.properties);
+  return null;
+}
 const ENABLED = DRY_RUN || (import.meta.env.PROD && import.meta.env.MODE !== "test");
 
 let client = null;
@@ -72,14 +87,8 @@ export function initAnalytics() {
         },
         disable_surveys: true,
         advanced_disable_flags: true,
-        before_send: DRY_RUN
-          ? (event) => {
-              console.info("[analytics]", event?.event, event?.properties);
-              return null;
-            }
-          : undefined,
+        before_send: DRY_RUN ? [tagEvent, logAndDrop] : tagEvent,
       });
-      posthog.register({ environment: analyticsEnvironment(), app: "resource_portal" });
       client = posthog;
       pending.splice(0).forEach((run) => run(posthog));
     })
@@ -122,17 +131,21 @@ export function track(event, properties = {}) {
 /**
  * Reports a job reaching a final status, once, and only for transitions this
  * tab saw happen (not jobs that were already finished when the list loaded).
+ * Only the signed-in tutor's own jobs count: the queue is shared, and every
+ * open tab would otherwise report everyone's jobs as its viewer's.
  */
-export function createJobOutcomeTracker() {
+export function createJobOutcomeTracker(uid) {
   const lastStatus = new Map();
   const FINAL = new Set(["complete", "failed", "cancelled"]);
   return (jobs = []) => {
     for (const job of jobs) {
+      if (!uid || job.createdBy !== uid) continue;
       const id = job.jobId || job.id;
       const previous = lastStatus.get(id);
       lastStatus.set(id, job.status);
       if (previous && !FINAL.has(previous) && FINAL.has(job.status)) {
-        const started = Date.parse(job.createdAtIso || "");
+        // This attempt's start: a retry keeps the job's createdAt.
+        const started = Date.parse(job.startedAtIso || job.createdAtIso || "");
         const finished = Date.parse(job.completedAtIso || "") || Date.now();
         track(EVENTS.GENERATION_FINISHED, {
           job_id: id,

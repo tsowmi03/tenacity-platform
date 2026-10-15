@@ -47,7 +47,7 @@ export function subscribeResourceJobs({ user }, onNext, onError) {
   }
 
   const constraints = [orderBy("createdAt", "desc"), limit(50)];
-  const reportOutcomes = createJobOutcomeTracker();
+  const reportOutcomes = createJobOutcomeTracker(user.uid);
 
   return onSnapshot(
     query(collection(db, "resourceJobs"), ...constraints),
