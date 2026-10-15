@@ -16,6 +16,7 @@ import { db, firebaseConfig, storage } from "../firebaseConfig";
 import { callFunction, BackendError } from "./callable";
 import { requestedModelForJob } from "../components/resources/modelOptions";
 import { assertFirestoreConfigured, listDocuments, timestampToIso } from "./firestoreReads";
+import { EVENTS, createJobOutcomeTracker, track } from "../analytics";
 
 export function normalizeResourceJob(id, data = {}) {
   const warnings = Array.isArray(data.warnings)
@@ -46,10 +47,15 @@ export function subscribeResourceJobs({ user }, onNext, onError) {
   }
 
   const constraints = [orderBy("createdAt", "desc"), limit(50)];
+  const reportOutcomes = createJobOutcomeTracker(user.uid);
 
   return onSnapshot(
     query(collection(db, "resourceJobs"), ...constraints),
-    (snap) => onNext(snap.docs.map((docSnap) => normalizeResourceJob(docSnap.id, docSnap.data() || {}))),
+    (snap) => {
+      const jobs = snap.docs.map((docSnap) => normalizeResourceJob(docSnap.id, docSnap.data() || {}));
+      reportOutcomes(jobs);
+      onNext(jobs);
+    },
     onError
   );
 }
@@ -152,8 +158,36 @@ export async function findSimilarResources({
   };
 }
 
+// What a submission was, without its prompt or the student's name.
+function submissionProperties(payload = {}) {
+  return {
+    resource_type: payload.resourceType || null,
+    subject: payload.subject || null,
+    year: payload.year ?? null,
+    answer_mode: payload.answerMode || null,
+    model_choice: payload.modelChoice || null,
+    file_count: Array.isArray(payload.uploadedFiles) ? payload.uploadedFiles.length : 0,
+    has_custom_prompt: Boolean(payload.customPrompt),
+    resubmit: Boolean(payload.sourceJobId),
+  };
+}
+
+// Reports a call's outcome and passes its result or error straight through.
+async function tracked(event, properties, run) {
+  try {
+    const result = await run();
+    track(event, { ...properties, outcome: "succeeded", job_id: result?.jobId || properties.job_id || null });
+    return result;
+  } catch (error) {
+    track(event, { ...properties, outcome: "failed", error_code: error?.code || null });
+    throw error;
+  }
+}
+
 export function submitResourceJob(payload) {
-  return callFunction("submitResourceJob", payload);
+  return tracked(EVENTS.GENERATION_SUBMITTED, submissionProperties(payload), () =>
+    callFunction("submitResourceJob", payload)
+  );
 }
 
 // The reference files a job was generated from, as the `{ path, name }` shape
@@ -214,10 +248,12 @@ export function resubmitResourceJob(job) {
  * reads as two versions of one resource rather than a replacement.
  */
 export function submitResourceRevision({ sourceJobId, instruction }) {
-  return callFunction("submitResourceRevision", {
-    sourceJobId,
-    instruction: String(instruction || "").trim(),
-  });
+  return tracked(EVENTS.REVISION_SUBMITTED, { source_job_id: sourceJobId || null }, () =>
+    callFunction("submitResourceRevision", {
+      sourceJobId,
+      instruction: String(instruction || "").trim(),
+    })
+  );
 }
 
 /**
@@ -229,7 +265,11 @@ export function submitResourceRevision({ sourceJobId, instruction }) {
  */
 export function chatAboutResource({ draft, fileSummaries = {}, messages = [] }) {
   const uploadedFiles = (draft.uploadedFiles || []).map((file) => ({ path: file.path, name: file.name }));
-  return callFunction("chatAboutResource", {
+  const chatProperties = {
+    ...submissionProperties({ ...draft, uploadedFiles }),
+    message_count: messages.length,
+  };
+  return tracked(EVENTS.CHAT_TURN, chatProperties, () => callFunction("chatAboutResource", {
     studentId: draft.studentId,
     subject: draft.subject,
     year: Number(draft.year),
@@ -247,19 +287,25 @@ export function chatAboutResource({ draft, fileSummaries = {}, messages = [] }) 
       content: message.content,
       proposedPrompt: message.proposedPrompt || null,
     })),
-  });
+  }));
 }
 
 export function retryResourceJob(jobId) {
-  return callFunction("retryResourceJob", { jobId });
+  return tracked(EVENTS.RESOURCE_RETRIED, { job_id: jobId }, () =>
+    callFunction("retryResourceJob", { jobId })
+  );
 }
 
 export function cancelResourceJob(jobId) {
-  return callFunction("cancelResourceJob", { jobId });
+  return tracked(EVENTS.RESOURCE_CANCELLED, { job_id: jobId }, () =>
+    callFunction("cancelResourceJob", { jobId })
+  );
 }
 
 export function deleteResourceJob(jobId) {
-  return callFunction("deleteResourceJob", { jobId });
+  return tracked(EVENTS.RESOURCE_DELETED, { job_id: jobId }, () =>
+    callFunction("deleteResourceJob", { jobId })
+  );
 }
 
 export function assertResourceStorageConfigured() {
@@ -319,6 +365,10 @@ export async function downloadResourceJob(job) {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   });
   triggerBrowserDownload(blob, job.outputFileName || "tenacity-resource.docx");
+  track(EVENTS.RESOURCE_DOWNLOADED, {
+    job_id: job.jobId || job.id || null,
+    resource_type: job.resourceType || null,
+  });
 }
 
 // Fetch the PDF preview stored alongside a generated resource, as a Blob the
@@ -332,6 +382,10 @@ export async function fetchResourceJobPreview(job) {
 
   assertResourceStorageConfigured();
   const data = await getBytes(ref(storage, job.previewPath), 25 * 1024 * 1024);
+  track(EVENTS.PREVIEW_OPENED, {
+    job_id: job.jobId || job.id || null,
+    resource_type: job.resourceType || null,
+  });
   return new Blob([data], { type: "application/pdf" });
 }
 
