@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-16 | [Mobile 3.3.0 (build 521)](#2026-10-16--mobile-330-build-521) |
 | 2026-10-15 | [A second class's feedback no longer overwrites the first (MOB-61)](#2026-10-15--a-second-classs-feedback-no-longer-overwrites-the-first-mob-61) |
 | 2026-10-15 | [Functions no longer run out of memory at startup (TP-37)](#2026-10-15--functions-no-longer-run-out-of-memory-at-startup-tp-37) |
 | 2026-10-15 | [Session replay starts on the portals and in the app](#2026-10-15--session-replay-starts-on-the-portals-and-in-the-app) |
@@ -182,6 +183,21 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-16 — Mobile 3.3.0 (build 521)
+
+**What changed**
+- Bumped the mobile app from `3.2.0+520` to `3.3.0+521` in
+  `apps/mobile/pubspec.yaml`. It is a minor bump because usage reporting and
+  session replay are new features, not fixes.
+- Ships everything merged for mobile since 3.2.0 (520):
+  - The app reports how it's used, with terms that say so (MOB-59).
+  - Session replay in the app, with the parent identified by name (MOB-60).
+  - A second class's feedback no longer overwrites the first (MOB-61).
+
+**Status:** Live. Submitted to the App Store and Google Play as 3.3.0 (521).
 
 ---
 
