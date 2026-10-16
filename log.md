@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-16 | [Staff can start group chats (MOB-54)](#2026-10-16--staff-can-start-group-chats-mob-54) |
 | 2026-10-16 | [Mobile 3.3.0 (build 521)](#2026-10-16--mobile-330-build-521) |
 | 2026-10-15 | [A second class's feedback no longer overwrites the first (MOB-61)](#2026-10-15--a-second-classs-feedback-no-longer-overwrites-the-first-mob-61) |
 | 2026-10-15 | [Functions no longer run out of memory at startup (TP-37)](#2026-10-15--functions-no-longer-run-out-of-memory-at-startup-tp-37) |
@@ -183,6 +184,46 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-16 — Staff can start group chats (MOB-54)
+
+**What changed**
+- Admins and tutors get **New group** in the New message picker. They tick two
+  or more people, up to 32 in the group including themselves, and start a
+  group. Parents can be members but never see the option, and the new
+  `createGroupChat` function refuses them.
+- Picking the same people again opens the group they already share rather than
+  a second one. A group nobody has written in yet stays out of the other
+  members' inboxes until its first message, as in iMessage.
+- A group has no name of its own. It is labelled by the other members' first
+  names ("Sarah, Tom & 2 others") in the inbox, the thread header and
+  notifications. Members' names are stored on the chat, so parents in a group
+  see each other's names without being able to read each other's profiles.
+- In a group thread, other people's messages show the sender's name above the
+  first bubble of a run and their initials beside the last. The typing line
+  names who is typing. Receipts say "Delivered" and never "Read".
+- Every member except the sender gets a push titled with the group's label,
+  reading "Sender: message".
+- Security rules: the app can now only create one-to-one chats directly. A
+  member can hide a group only from their own inbox and can never delete it
+  for everyone.
+- A group stays a group if it shrinks to two people; it is never mistaken for
+  their one-to-one thread. When a member's account is deleted, the group
+  carries on and keeps their name on their old messages.
+- The staging seed includes a group of a tutor and two parents.
+
+**Why:** Staff wanted to talk to several families, or several staff, in one
+conversation instead of repeating the same message thread by thread.
+
+**Status:** Live. Functions and Firestore rules deployed 2026-10-16. The app
+side ships with the next mobile release; older builds show a group under one
+member's name and can still send and receive in it.
+
+**Next steps**
+- MOB-62: staff add and remove members, staff can leave, with "Tom added
+  Sarah" lines in the thread.
 
 ---
 

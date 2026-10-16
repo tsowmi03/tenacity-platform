@@ -173,6 +173,8 @@ class NotificationService {
               builder: (context) => ChatScreen(
                 chatId: chatId,
                 otherUserName: otherUserName,
+                // Sent as a string: FCM data values are strings only.
+                isGroup: data['isGroup'] == 'true',
               ),
             ),
           );

@@ -52,6 +52,7 @@ const { adminUpdateStudent } = require("../src/students/updateStudent");
 const { adminDeleteStudent } = require("../src/students/deleteStudent");
 const { adminAcceptEnrolment } = require("../src/enrolments/acceptEnrolment");
 const { getReferralLink } = require("../src/referrals/getReferralLink");
+const { createGroupChat } = require("../src/chats/createGroupChat");
 const { adminUpdateReferral } = require("../src/referrals/updateReferral");
 const {
   adminArchiveEnrolment,
@@ -170,6 +171,7 @@ module.exports = Object.assign(
     syncGoogleCalendar,
     reconcileOneOffPayments,
     getReferralLink,
+    createGroupChat,
     adminUpdateReferral,
     onAuditLogAnalytics,
     onInvoicePaidAnalytics,

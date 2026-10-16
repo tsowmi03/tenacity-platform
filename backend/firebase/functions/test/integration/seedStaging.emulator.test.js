@@ -301,6 +301,19 @@ describe("seedStaging against the emulator", () => {
     }
   });
 
+  it("seeds a group the app can read like one it made itself", async () => {
+    const group = await db.collection("chats").doc("seed-group-1").get();
+    const data = group.data();
+
+    assert.equal(data.isGroup, true);
+    assert.equal(data.participants.length, 3);
+    assert.equal(data.createdBy, data.participants[0]);
+    for (const uid of data.participants) {
+      assert.ok(data.participantNames[uid].firstName, `no name for ${uid}`);
+    }
+    assert.match(data.memberKey, /^[0-9a-f]{64}$/);
+  });
+
   it("does not leave the user document truncated by the chat links", async () => {
     const chats = await db
       .collection("chats")

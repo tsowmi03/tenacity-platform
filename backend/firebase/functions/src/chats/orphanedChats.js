@@ -1,5 +1,7 @@
 "use strict";
 
+const { groupMemberKey } = require("./groupChat");
+
 /**
  * Decides what to do with a chat whose participants may no longer exist.
  *
@@ -89,8 +91,18 @@ function classifyChat({ participants, liveUids }) {
  * Per-participant maps on a chat doc are keyed by uid, so pruning a member has
  * to clear their entries too or they linger forever — `unreadCounts` in
  * particular is summed for the inbox badge in `fetchUnreadMessagesCount`.
+ *
+ * `participantNames` (MOB-54) is deliberately not in this list. The departed
+ * member's messages stay in the group, and their name is what attributes them;
+ * the group's label is built from `participants`, so it drops them anyway.
  */
-const PARTICIPANT_KEYED_FIELDS = ["unreadCounts", "typingStatus", "deletedFor"];
+const PARTICIPANT_KEYED_FIELDS = [
+  "unreadCounts",
+  "typingStatus",
+  "typingHeartbeats",
+  "lastReadAt",
+  "deletedFor",
+];
 
 /**
  * Builds the update that removes [deadUids] from a group chat.
@@ -106,7 +118,13 @@ function buildPruneUpdate({ deadUids, remainingParticipants, fieldValue }) {
     throw new TypeError("buildPruneUpdate requires FieldValue");
   }
 
-  const update = { participants: remainingParticipants };
+  const update = {
+    participants: remainingParticipants,
+    // Kept in step with the members, or starting a group with the people who
+    // are left would not find this one, and starting one with the original
+    // members would reopen a group that no longer contains them all.
+    memberKey: groupMemberKey(remainingParticipants),
+  };
   for (const uid of deadUids) {
     for (const field of PARTICIPANT_KEYED_FIELDS) {
       update[`${field}.${uid}`] = fieldValue.delete();

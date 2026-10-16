@@ -642,6 +642,21 @@ function buildScenario({
         { from: "parent-3", text: "Will there be a practice exam this term?", minutesAgo: 45 },
       ],
     },
+    {
+      // A group (MOB-54): a tutor and two parents, so staging shows a group's
+      // label, sender names on bubbles, and a parent seeing another parent.
+      id: "seed-group-1",
+      isGroup: true,
+      createdBy: "tutor-1",
+      participants: ["tutor-1", "parent-1", "parent-2"],
+      unreadFor: "parent-1",
+      messages: [
+        { from: "tutor-1", text: "Hi both — Thursday's class is moving to 5pm this week.", minutesAgo: 240 },
+        { from: "parent-2", text: "Thanks for letting us know.", minutesAgo: 200 },
+        { from: "parent-2", text: "Is the room the same?", minutesAgo: 199 },
+        { from: "tutor-1", text: "Same room, yes.", minutesAgo: 30 },
+      ],
+    },
   ];
 
   // -------------------------------------------------------- announcements

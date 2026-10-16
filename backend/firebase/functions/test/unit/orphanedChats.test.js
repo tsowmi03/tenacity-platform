@@ -117,7 +117,7 @@ describe("buildPruneUpdate", () => {
     assert.equal(update["unreadCounts.b"], "DELETE");
     assert.equal(
       Object.keys(update).length,
-      1 + 2 * PARTICIPANT_KEYED_FIELDS.length
+      2 + 2 * PARTICIPANT_KEYED_FIELDS.length
     );
   });
 

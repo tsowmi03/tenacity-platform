@@ -16,6 +16,7 @@
  */
 
 const { buildUserDoc } = require("../../src/users/userFactory");
+const { groupMemberKey, memberNameFrom } = require("../../src/chats/groupChat");
 const {
   buildAttendanceDoc,
   makeAttendanceDocId,
@@ -332,6 +333,26 @@ async function writeScenario({
   }
 
   // ---------------------------------------------------------------- chats
+  // The fields `createGroupChat` writes on a group, so a seeded group is
+  // indistinguishable from one the app made.
+  const groupFieldsFor = (chat, participantUids) => ({
+    isGroup: true,
+    createdBy: uidBySymbolicId.get(chat.createdBy),
+    memberKey: groupMemberKey(participantUids),
+    participantNames: Object.fromEntries(
+      chat.participants.map((symbolicId) => {
+        const user = resolved.users.find((u) => u.symbolicId === symbolicId);
+        return [
+          uidBySymbolicId.get(symbolicId),
+          memberNameFrom(user),
+        ];
+      })
+    ),
+    typingHeartbeats: {},
+    lastReadAt: {},
+    inactive: false,
+  });
+
   for (const chat of resolved.chats) {
     const participantUids = chat.participants.map((symbolicId) => {
       const uid = uidBySymbolicId.get(symbolicId);
@@ -376,6 +397,7 @@ async function writeScenario({
         ),
         deletedFor: {},
         typingStatus: {},
+        ...(chat.isGroup ? groupFieldsFor(chat, participantUids) : {}),
         ...seedMeta(),
       },
       "chats"

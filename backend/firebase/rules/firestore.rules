@@ -229,11 +229,17 @@ service cloud.firestore {
 
     match /chats/{chatId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participants;
+      // One-to-one threads only. Groups are created by the `createGroupChat`
+      // callable, which is where "only staff start a group" is checked
+      // (MOB-54); a client writing a larger participant list directly would
+      // walk straight past that.
       allow create: if signedIn()
         && request.resource.data.participants is list
         && request.auth.uid in request.resource.data.participants
-        && request.resource.data.participants.size() >= 2
-        && request.resource.data.participants.size() <= 10;
+        && request.resource.data.participants.size() == 2
+        && request.resource.data.get('isGroup', false) == false;
+      // `deletedFor` is how a member hides a thread from their own inbox. In a
+      // group, writing somebody else's entry would hide it from them instead.
       allow update: if signedIn()
         && request.auth.uid in resource.data.participants
         && onlyChangedKeys([
@@ -244,10 +250,15 @@ service cloud.firestore {
           'lastReadAt',
           'updatedAt'
         ])
+        && participantMapOnlyTouchesOwnKey('deletedFor')
         && participantMapOnlyTouchesOwnKey('typingStatus')
         && participantMapOnlyTouchesOwnKey('typingHeartbeats')
         && participantMapOnlyTouchesOwnKey('lastReadAt');
-      allow delete: if signedIn() && request.auth.uid in resource.data.participants;
+      // A group belongs to all of its members, so none of them can delete it;
+      // leaving the inbox is a `deletedFor` stamp.
+      allow delete: if signedIn()
+        && request.auth.uid in resource.data.participants
+        && resource.data.get('isGroup', false) != true;
 
       match /messages/{messageId} {
         allow read: if chatParticipant(chatId);

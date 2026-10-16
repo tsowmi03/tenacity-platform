@@ -18,6 +18,7 @@ enum AppEvent {
   permanentEnrolmentRequested('permanent_enrolment_requested'),
   waitlistJoined('waitlist_joined'),
   chatMessageSent('chat_message_sent'),
+  chatGroupStarted('chat_group_started'),
   announcementOpened('announcement_opened'),
   invoicePaymentStarted('invoice_payment_started'),
   invoicePaymentSubmitted('invoice_payment_submitted'),

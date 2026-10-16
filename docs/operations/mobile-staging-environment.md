@@ -336,7 +336,8 @@ What gets created: three terms (one active, in week 5 of 10), 8 users, 6
 students including one shared-custody case, 5 classes covering all three
 enrolment states, 50 attendance docs (marked past weeks, one partially marked,
 one cancelled, an unmarked current week, future bookings, and a one-off), 6
-invoices across unpaid/paid/overdue, 3 chats, 3 announcements, 4 feedback
+invoices across unpaid/paid/overdue, 3 one-to-one chats and a group chat
+(a tutor and two parents), 3 announcements, 4 feedback
 entries, a waitlist entry, and 2 enrolments.
 
 ### Keeping staging terms aligned with production

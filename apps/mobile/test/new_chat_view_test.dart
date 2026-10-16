@@ -56,6 +56,8 @@ List<ContactSection> _sections() => [
 class Taps {
   int back = 0;
   int retries = 0;
+  int startGroup = 0;
+  int createGroup = 0;
   final searches = <String>[];
   final selected = <String>[];
 }
@@ -69,6 +71,9 @@ Future<Taps> pumpPicker(
   bool isOffline = false,
   Size size = const Size(402, 874),
   double textScale = 1.0,
+  bool canStartGroup = false,
+  bool isPickingGroup = false,
+  Set<String> selectedIds = const {},
 }) async {
   final taps = Taps();
 
@@ -95,6 +100,11 @@ Future<Taps> pumpPicker(
             onSelect: (contact) => taps.selected.add(contact.uid),
             onBack: () => taps.back++,
             onRetry: () => taps.retries++,
+            canStartGroup: canStartGroup,
+            isPickingGroup: isPickingGroup,
+            selectedIds: selectedIds,
+            onStartGroup: () => taps.startGroup++,
+            onCreateGroup: () => taps.createGroup++,
           ),
         ),
       ),
@@ -175,6 +185,74 @@ void main() {
 
       expect(taps.searches, ['ali']);
     });
+  });
+
+  group('groups', () {
+    testWidgets('offers a new group only to those who can start one',
+        (tester) async {
+      await pumpPicker(tester);
+      expect(find.byKey(const Key('new-group-row')), findsNothing);
+
+      final taps = await pumpPicker(tester, canStartGroup: true);
+      expect(find.text('New group'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('new-group-row')));
+      await tester.pump();
+      expect(taps.startGroup, 1);
+    });
+
+    testWidgets('picking shows who is ticked and waits for two people',
+        (tester) async {
+      final taps = await pumpPicker(
+        tester,
+        canStartGroup: true,
+        isPickingGroup: true,
+        selectedIds: {'u1'},
+      );
+
+      expect(find.text('1 selected'), findsOneWidget);
+      expect(find.byKey(const Key('new-group-row')), findsNothing);
+      expect(find.byKey(const Key('contact-selected')), findsOneWidget);
+      expect(find.byKey(const Key('contact-unselected')), findsNWidgets(2));
+
+      await tester.tap(find.byKey(const Key('create-group')));
+      await tester.pump();
+      expect(taps.createGroup, 0);
+      expect(find.text('Pick at least 2 people'), findsOneWidget);
+
+      // A tap while picking is still reported; the screen decides it ticks.
+      await tester.tap(find.text('Cara Smith'));
+      await tester.pump();
+      expect(taps.selected, ['u3']);
+    });
+
+    testWidgets('creates the group once two people are ticked', (tester) async {
+      final taps = await pumpPicker(
+        tester,
+        canStartGroup: true,
+        isPickingGroup: true,
+        selectedIds: {'u1', 'u3'},
+      );
+
+      await tester.tap(find.text('Create group'));
+      await tester.pump();
+      expect(taps.createGroup, 1);
+    });
+
+    for (final entry in _viewports.entries) {
+      testWidgets('picking renders without overflow at ${entry.key}',
+          (tester) async {
+        await pumpPicker(
+          tester,
+          size: entry.value,
+          textScale: 1.3,
+          canStartGroup: true,
+          isPickingGroup: true,
+          selectedIds: {'u1', 'u3'},
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   group('states', () {

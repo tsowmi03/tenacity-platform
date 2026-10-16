@@ -17,6 +17,9 @@ class InboxThread {
   /// initials.
   final bool isTeam;
 
+  /// A group conversation, which shows a group glyph in place of initials.
+  final bool isGroup;
+
   const InboxThread({
     required this.chatId,
     required this.name,
@@ -25,6 +28,7 @@ class InboxThread {
     required this.unreadCount,
     required this.initials,
     required this.isTeam,
+    this.isGroup = false,
   });
 }
 
@@ -38,6 +42,9 @@ const attachmentPlaceholder = '[Attachment]';
 /// Firestore. [namesByChatId] is resolved by the caller, which has to look each
 /// participant up. Chats without a resolved entry are omitted so a loading
 /// lookup is not presented as a real `Unknown` identity.
+///
+/// Groups need no lookup: they carry their members' names, and are labelled
+/// from those (MOB-54).
 ///
 /// [query] filters on the other party's name, matching the existing behaviour.
 List<InboxThread> buildInboxThreads({
@@ -63,7 +70,8 @@ List<InboxThread> buildInboxThreads({
   final threads = <InboxThread>[];
   for (final chat in chats) {
     if (!chat.isVisibleTo(currentUserId)) continue;
-    final name = namesByChatId[chat.id];
+    final name =
+        chat.isGroup ? chat.groupLabel(currentUserId) : namesByChatId[chat.id];
     if (name == null) continue;
     if (trimmedQuery.isNotEmpty && !name.toLowerCase().contains(trimmedQuery)) {
       continue;
@@ -92,7 +100,8 @@ List<InboxThread> buildInboxThreads({
         timeLabel: inboxTimeLabel(activityTime, now),
         unreadCount: chat.unreadCounts[currentUserId] ?? 0,
         initials: initialsFor(name),
-        isTeam: isTeamIdentity(name),
+        isTeam: !chat.isGroup && isTeamIdentity(name),
+        isGroup: chat.isGroup,
       ),
     );
   }

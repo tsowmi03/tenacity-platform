@@ -68,9 +68,11 @@ class _InboxScreenState extends State<InboxScreen> {
     final currentUserId = authController.currentUser?.uid;
     if (currentUserId == null) return;
 
+    // Groups carry their own members' names, so there is nothing to look up.
     final unresolved = chats
         .where(
           (chat) =>
+              !chat.isGroup &&
               !_namesByChatId.containsKey(chat.id) &&
               !_resolvingChatIds.contains(chat.id),
         )
@@ -161,6 +163,7 @@ class _InboxScreenState extends State<InboxScreen> {
         builder: (_) => ChatScreen(
           chatId: thread.chatId,
           otherUserName: thread.name,
+          isGroup: thread.isGroup,
         ),
       ),
     );
@@ -191,7 +194,7 @@ class _InboxScreenState extends State<InboxScreen> {
       (sum, chat) => sum + (chat.unreadCounts[currentUserId] ?? 0),
     );
     final unresolvedNameCount = chatController.chats
-        .where((chat) => !_namesByChatId.containsKey(chat.id))
+        .where((chat) => !chat.isGroup && !_namesByChatId.containsKey(chat.id))
         .length;
     final showInitialLoading = threads.isEmpty &&
         (!_hasRequestedChats ||
@@ -253,6 +256,7 @@ class _InboxScreenState extends State<InboxScreen> {
                                             'lib/assets/img/icon.png',
                                           )
                                         : null,
+                                    isGroup: thread.isGroup,
                                     showDivider: index < threads.length - 1,
                                     onTap: () => _openThread(thread),
                                   ),

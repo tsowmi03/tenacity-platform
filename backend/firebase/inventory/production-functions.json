@@ -96,6 +96,7 @@
       "chatAboutResource",
       "createAnnouncement",
       "createFeedback",
+      "createGroupChat",
       "createInvoice",
       "createPaymentIntent",
       "createStripeCustomerEphemeralKey",
