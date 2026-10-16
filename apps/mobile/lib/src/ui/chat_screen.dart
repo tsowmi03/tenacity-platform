@@ -32,13 +32,23 @@ enum _AttachmentChoice { camera, photoLibrary, file }
 
 class ChatScreen extends StatefulWidget {
   final String? chatId;
+
+  /// The other person's name, or for a group its label. A group's header
+  /// switches to the live label once the chat document arrives; this is what
+  /// shows until then.
   final String otherUserName;
   final String? receipientId;
+
+  /// Whether the thread is known to be a group before its document arrives,
+  /// so the header does not flash a person's initials first. The document's
+  /// own flag wins once it is here.
+  final bool isGroup;
 
   const ChatScreen({
     required this.chatId,
     required this.otherUserName,
     this.receipientId,
+    this.isGroup = false,
     super.key,
   });
 
@@ -355,8 +365,21 @@ class _ChatScreenState extends State<ChatScreen>
     return message.readBy[otherUserId];
   }
 
+  /// Whether this thread is a group, as far as is known yet.
+  bool get _isGroup => _chat?.isGroup ?? widget.isGroup;
+
+  /// What the header calls the thread: a group's live label, or the person.
+  String _title(ChatController controller) {
+    final chat = _chat;
+    if (chat != null && chat.isGroup) return chat.groupLabel(controller.userId);
+    return widget.otherUserName;
+  }
+
   Widget _buildReadStatus(Message message, String otherUserId) {
-    final readAt = _readAt(message, otherUserId);
+    // Groups say "Delivered" and never "Read", as iMessage does: a read
+    // receipt in a group would have to name who has and has not read it, and
+    // the watermarks are still kept for unread counts either way (MOB-54).
+    final readAt = _isGroup ? null : _readAt(message, otherUserId);
     final label = readAt == null
         ? 'Delivered'
         : readReceiptLabel(readAt.toDate(), DateTime.now());
@@ -820,13 +843,38 @@ class _ChatScreenState extends State<ChatScreen>
             final isLastMessage =
                 index == 0; // Only the very last message in chat
 
+            final inGroupFrame = _isGroup && !isMe;
+            // In a group the frame draws the time itself, below its row, so the
+            // sender's initials line up with the bubble rather than the time.
+            final bubble = _buildMessageBubble(
+              item,
+              showTime: isLastMessage && !isMe && !inGroupFrame,
+            );
+
             return Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                _buildMessageBubble(
-                  item,
-                  showTime: isLastMessage && !isMe,
-                ),
+                if (inGroupFrame)
+                  _GroupMessageFrame(
+                    // The list is newest first, so the message before this one
+                    // in time is the next item, and the one after it the last.
+                    startsRun: !_sameSender(items, index + 1, item.senderId),
+                    endsRun: !_sameSender(items, index - 1, item.senderId),
+                    senderName:
+                        _chat?.memberFirstName(item.senderId) ?? 'Unknown',
+                    senderInitials: initialsFor(
+                      _chat?.memberFullName(item.senderId) ?? 'Unknown',
+                    ),
+                    timeLabel: isLastMessage
+                        ? messageTimeLabel(
+                            item.timestamp.toDate(),
+                            DateTime.now(),
+                          )
+                        : null,
+                    child: bubble,
+                  )
+                else
+                  bubble,
                 if (undeliveredIds.contains(item.id))
                   _UndeliveredNotice(
                     key: Key('undelivered-${item.id}'),
@@ -863,9 +911,20 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  /// Whether [items] holds a message from [senderId] at [index].
+  ///
+  /// A date separator, or the end of the list, breaks a run just as a
+  /// different sender does: a new day re-introduces whoever is speaking.
+  static bool _sameSender(List<dynamic> items, int index, String senderId) {
+    if (index < 0 || index >= items.length) return false;
+    final item = items[index];
+    return item is Message && item.senderId == senderId;
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatController = context.watch<ChatController>();
+    final title = _title(chatController);
 
     return Scaffold(
       appBar: AppBar(
@@ -885,15 +944,22 @@ class _ChatScreenState extends State<ChatScreen>
                 color: AppColors.blue,
                 borderRadius: BorderRadius.circular(AppRadii.sm),
               ),
-              child: Text(
-                initialsFor(widget.otherUserName),
-                style: AppText.display(fontSize: 13, color: Colors.white),
-              ),
+              child: _isGroup
+                  ? const Icon(
+                      Icons.groups_rounded,
+                      key: Key('chat-group-avatar'),
+                      size: 20,
+                      color: Colors.white,
+                    )
+                  : Text(
+                      initialsFor(widget.otherUserName),
+                      style: AppText.display(fontSize: 13, color: Colors.white),
+                    ),
             ),
             const SizedBox(width: AppSpacing.labelGap),
             Expanded(
               child: Text(
-                widget.otherUserName,
+                title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppText.display(fontSize: 18, color: Colors.white),
@@ -1537,21 +1603,26 @@ class _TypingIndicatorState extends State<_TypingIndicator> {
     super.dispose();
   }
 
+  /// Schedules a rebuild for when the soonest live heartbeat goes stale.
+  ///
+  /// Soonest rather than any: in a group several people can be typing, and the
+  /// line has to change when the first of them stops, not the last.
   void _scheduleExpiry(Chat? chat, String userId, DateTime now) {
     _expiry?.cancel();
     _expiry = null;
     if (chat == null) return;
 
-    final otherUserId = chat.otherParticipant(userId);
-    if (otherUserId == null) return;
+    Duration? soonest;
+    for (final otherUserId in chat.otherParticipants(userId)) {
+      final heartbeat = chat.typingHeartbeats[otherUserId];
+      if (heartbeat == null) continue;
+      final remaining = typingHeartbeatTtl - now.difference(heartbeat.toDate());
+      if (remaining <= Duration.zero) continue;
+      if (soonest == null || remaining < soonest) soonest = remaining;
+    }
+    if (soonest == null) return;
 
-    final heartbeat = chat.typingHeartbeats[otherUserId];
-    if (heartbeat == null) return;
-
-    final remaining = typingHeartbeatTtl - now.difference(heartbeat.toDate());
-    if (remaining <= Duration.zero) return;
-
-    _expiry = Timer(remaining, () {
+    _expiry = Timer(soonest, () {
       if (mounted) setState(() {});
     });
   }
@@ -1575,8 +1646,16 @@ class _TypingIndicatorState extends State<_TypingIndicator> {
 
         _scheduleExpiry(chat, controller.userId, now);
 
-        if (!controller.isOtherUserTyping(chat, now)) {
-          return const SizedBox.shrink();
+        final String label;
+        if (chat != null && chat.isGroup) {
+          final typing = controller.typingParticipants(chat, now);
+          if (typing.isEmpty) return const SizedBox.shrink();
+          label = groupTypingLabel(typing.map(chat.memberFirstName).toList());
+        } else {
+          if (!controller.isOtherUserTyping(chat, now)) {
+            return const SizedBox.shrink();
+          }
+          label = '${widget.otherUserName.split(' ').first} is typing…';
         }
 
         return Padding(
@@ -1585,12 +1664,114 @@ class _TypingIndicatorState extends State<_TypingIndicator> {
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '${widget.otherUserName.split(' ').first} is typing…',
+              label,
               style: AppText.body(fontSize: 13.5, color: AppColors.muted),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// Who is typing in a group, by first name.
+///
+///   `Sarah is typing…`, `Sarah and Tom are typing…`, `Several people are typing…`
+String groupTypingLabel(List<String> firstNames) => switch (firstNames.length) {
+      0 => '',
+      1 => '${firstNames[0]} is typing…',
+      2 => '${firstNames[0]} and ${firstNames[1]} are typing…',
+      _ => 'Several people are typing…',
+    };
+
+/// Someone else's message in a group: their name above the first bubble of a
+/// run, and their initials beside the last, as iMessage lays a group out.
+///
+/// Bubbles in the middle of a run keep the avatar's width as a gap, so a run
+/// reads as one column rather than shuffling sideways under its own avatar.
+class _GroupMessageFrame extends StatelessWidget {
+  final bool startsRun;
+  final bool endsRun;
+  final String senderName;
+  final String senderInitials;
+
+  /// Shown under the newest message in the thread, beneath the row rather than
+  /// inside it, so the avatar aligns with the bubble.
+  final String? timeLabel;
+  final Widget child;
+
+  const _GroupMessageFrame({
+    required this.startsRun,
+    required this.endsRun,
+    required this.senderName,
+    required this.senderInitials,
+    required this.child,
+    this.timeLabel,
+  });
+
+  static const double _avatarSize = 28;
+  static const double _gap = AppSpacing.sm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(top: startsRun ? AppSpacing.sm : 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (startsRun)
+            Padding(
+              padding: const EdgeInsets.only(
+                left: _avatarSize + _gap + AppSpacing.xs,
+                bottom: AppSpacing.xxs,
+              ),
+              child: Text(
+                senderName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.body(fontSize: 12, color: AppColors.muted),
+              ),
+            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              SizedBox(
+                width: _avatarSize,
+                height: _avatarSize,
+                child: endsRun
+                    ? Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppColors.blue100,
+                          borderRadius: BorderRadius.circular(AppRadii.sm),
+                        ),
+                        child: Text(
+                          senderInitials,
+                          style: AppText.display(
+                            fontSize: 11,
+                            color: AppColors.navy,
+                          ),
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: _gap),
+              Flexible(child: child),
+            ],
+          ),
+          if (timeLabel != null)
+            Padding(
+              padding: const EdgeInsets.only(
+                left: _avatarSize + _gap + AppSpacing.sm,
+                top: AppSpacing.xxs,
+              ),
+              child: Text(
+                timeLabel!,
+                style: AppText.body(fontSize: 11.5, color: AppColors.muted),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

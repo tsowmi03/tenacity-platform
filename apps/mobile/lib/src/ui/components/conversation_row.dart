@@ -19,6 +19,9 @@ class ConversationRow extends StatelessWidget {
   /// Used for identities with real branding, such as the Tenacity team.
   final ImageProvider? avatarImage;
 
+  /// A group conversation, drawn with a group glyph rather than initials.
+  final bool isGroup;
+
   final VoidCallback? onTap;
   final bool showDivider;
 
@@ -30,6 +33,7 @@ class ConversationRow extends StatelessWidget {
     required this.initials,
     this.unreadCount = 0,
     this.avatarImage,
+    this.isGroup = false,
     this.onTap,
     this.showDivider = true,
   });
@@ -54,6 +58,7 @@ class ConversationRow extends StatelessWidget {
               _Avatar(
                 initials: initials,
                 image: avatarImage,
+                isGroup: isGroup,
                 highlighted: _isUnread,
               ),
               const SizedBox(width: 13),
@@ -116,11 +121,13 @@ class ConversationRow extends StatelessWidget {
 class _Avatar extends StatelessWidget {
   final String initials;
   final ImageProvider? image;
+  final bool isGroup;
   final bool highlighted;
 
   const _Avatar({
     required this.initials,
     required this.image,
+    required this.isGroup,
     required this.highlighted,
   });
 
@@ -147,13 +154,20 @@ class _Avatar extends StatelessWidget {
         color: highlighted ? AppColors.blue : AppColors.blue100,
         borderRadius: BorderRadius.circular(AppRadii.tile + 2),
       ),
-      child: Text(
-        initials,
-        style: AppText.display(
-          fontSize: 16,
-          color: highlighted ? Colors.white : AppColors.navy,
-        ),
-      ),
+      child: isGroup
+          ? Icon(
+              Icons.groups_rounded,
+              key: const Key('conversation-group-avatar'),
+              size: 26,
+              color: highlighted ? Colors.white : AppColors.navy,
+            )
+          : Text(
+              initials,
+              style: AppText.display(
+                fontSize: 16,
+                color: highlighted ? Colors.white : AppColors.navy,
+              ),
+            ),
     );
   }
 }

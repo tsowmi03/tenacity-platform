@@ -7,6 +7,7 @@ const firestore_2 = require("firebase-admin/firestore");
 const messaging_1 = require("firebase-admin/messaging");
 const chat_action_1 = require("./chat_action");
 const send_1 = require("../../src/notifications/send");
+const groupChat_1 = require("../../src/chats/groupChat");
 function requiredString(data, key) {
     const value = data[key];
     if (typeof value !== "string" || value.trim() === "") {
@@ -51,16 +52,59 @@ async function chatNotificationRecipients(recipientIds) {
     }
     return recipients;
 }
+/**
+ * One push per recipient, because a group's label depends on who is reading
+ * it: everyone but the viewer (MOB-54). The sender goes in the body, as
+ * iMessage does, since the title names the group rather than a person.
+ *
+ * `otherUserName` carries the label too. Builds released before group chats
+ * use it as the thread header when a notification is tapped, so it has to be
+ * something sensible to show there.
+ *
+ * The ledger keys a row on event and recipient, so separate sends under one
+ * `eventId` record one row each rather than overwriting one another.
+ */
+async function sendGroupMessageNotifications(params) {
+    const { db, chatId, messageId, senderId, chatData, recipients, msgPreview } = params;
+    let senderName = (0, groupChat_1.memberFirstName)(chatData.participantNames, senderId);
+    if (senderName === "Unknown") {
+        const senderDoc = await db.collection("users").doc(senderId).get();
+        senderName = (0, chat_action_1.chatSenderDisplayName)(senderDoc.data() || {});
+    }
+    const body = (0, chat_action_1.truncateChatMessagePreview)(`${senderName}: ${msgPreview}`);
+    await Promise.all(recipients.map((recipient) => {
+        const label = (0, groupChat_1.groupLabel)({
+            participants: chatData.participants,
+            participantNames: chatData.participantNames,
+            viewerId: recipient.uid,
+        });
+        return (0, send_1.sendAndRecord)({
+            messaging: (0, messaging_1.getMessaging)(),
+            db,
+            recipients: [recipient],
+            title: label,
+            body,
+            data: {
+                type: "chat_message",
+                chatId: String(chatId),
+                messageId: String(messageId),
+                otherUserName: String(label),
+                isGroup: "true",
+            },
+            source: "trigger:onMessageReceived",
+            eventId: `chatMessage:${chatId}:${messageId}`,
+        });
+    }));
+}
 async function sendChatMessageNotification(params) {
-    const { chatId, messageId, senderId, messageData, participants } = params;
+    const { chatId, messageId, senderId, messageData, chatData } = params;
+    const participants = chatData === null || chatData === void 0 ? void 0 : chatData.participants;
     const recipientIds = (0, chat_action_1.chatRecipientIds)(participants, senderId);
     if (!recipientIds.length) {
         console.log("No recipients found for this message");
         return;
     }
     const db = (0, firestore_2.getFirestore)();
-    const senderDoc = await db.collection("users").doc(senderId).get();
-    const otherUserName = (0, chat_action_1.chatSenderDisplayName)(senderDoc.data() || {});
     const recipients = await chatNotificationRecipients(recipientIds);
     if (!recipients.length) {
         console.log("No tokens found for recipients");
@@ -70,6 +114,20 @@ async function sendChatMessageNotification(params) {
         text: messageData.text,
         type: messageData.type,
     });
+    if ((0, groupChat_1.isGroupChat)(chatData)) {
+        await sendGroupMessageNotifications({
+            db,
+            chatId,
+            messageId,
+            senderId,
+            chatData,
+            recipients,
+            msgPreview,
+        });
+        return;
+    }
+    const senderDoc = await db.collection("users").doc(senderId).get();
+    const otherUserName = (0, chat_action_1.chatSenderDisplayName)(senderDoc.data() || {});
     await (0, send_1.sendAndRecord)({
         messaging: (0, messaging_1.getMessaging)(),
         db,
@@ -155,7 +213,7 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
                 // notify, so it has to finish the job rather than no-op.
                 notificationPending: (0, chat_action_1.shouldSuppressChatMessageNotification)(existing.notificationAction),
                 messageData: existing,
-                participants,
+                chatData,
             };
         }
         if (!(0, chat_action_1.canSendChatMessage)(requesterId, participants)) {
@@ -204,7 +262,7 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
         transaction.update(chatRef, chatUpdate);
         return {
             alreadySent: false,
-            participants,
+            chatData,
             messageData,
         };
     });
@@ -221,7 +279,7 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
             messageId: messageRef.id,
             senderId: requesterId,
             messageData: result.messageData,
-            participants: result.participants,
+            chatData: result.chatData,
         });
     }
     catch (error) {
@@ -251,7 +309,7 @@ exports.onMessageReceived = (0, firestore_1.onDocumentCreated)({
     document: "chats/{chatId}/messages/{messageId}",
     memory: "512MiB",
 }, async (event) => {
-    var _a, _b;
+    var _a;
     const messageData = (_a = event.data) === null || _a === void 0 ? void 0 : _a.data();
     if (!messageData) {
         console.error("Message data is undefined");
@@ -277,6 +335,6 @@ exports.onMessageReceived = (0, firestore_1.onDocumentCreated)({
         messageId: msgId,
         senderId,
         messageData,
-        participants: (_b = chatSnap.data()) === null || _b === void 0 ? void 0 : _b.participants,
+        chatData: chatSnap.data(),
     });
 });

@@ -188,11 +188,13 @@ class ChatController with ChangeNotifier {
       Analytics.capture(AppEvent.chatMessageSent, {
         'outcome': 'sent',
         'message_type': messageType,
+        'is_group': chatById(chatId)?.isGroup ?? false,
       });
     } catch (_) {
       Analytics.capture(AppEvent.chatMessageSent, {
         'outcome': 'failed',
         'message_type': messageType,
+        'is_group': chatById(chatId)?.isGroup ?? false,
       });
       rethrow;
     }
@@ -263,7 +265,8 @@ class ChatController with ChangeNotifier {
   /// Creates or returns an existing chat with [recipientId].
   Future<String> createChatWithUser(String recipientId) async {
     for (final chat in _chats) {
-      if (chat.participants.length == 2 &&
+      if (!chat.isGroup &&
+          chat.participants.length == 2 &&
           chat.participants.contains(userId) &&
           chat.participants.contains(recipientId)) {
         return chat.id;
@@ -278,6 +281,20 @@ class ChatController with ChangeNotifier {
     loadChats();
     return chatId;
   }
+
+  /// Starts a group with [participantIds], or opens the one they already
+  /// share with this user. Staff only; the server refuses anyone else.
+  Future<String> createGroupChat(List<String> participantIds) async {
+    final chatId = await _chatService.createGroupChat(participantIds);
+    Analytics.capture(AppEvent.chatGroupStarted, {
+      'member_count': participantIds.length + 1,
+    });
+    return chatId;
+  }
+
+  /// Everyone other than this user who is typing in [chat] as at [now].
+  List<String> typingParticipants(Chat? chat, DateTime now) =>
+      chat?.typingParticipants(userId, now) ?? const [];
 
   List<String>? _cachedParticipantsForChat({
     required String chatId,

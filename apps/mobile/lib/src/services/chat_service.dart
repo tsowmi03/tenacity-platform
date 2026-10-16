@@ -252,6 +252,16 @@ class ChatService {
     final deletedFor = Map<String, Timestamp>.from(data?['deletedFor'] ?? {});
     deletedFor[userId] = Timestamp.now();
 
+    // A group belongs to all its members, so leaving the inbox only ever
+    // stamps this user's own entry. The rules refuse deleting a group outright
+    // even when every member has hidden it, so its history is never lost.
+    if (data?['isGroup'] == true) {
+      await _firestore.collection('chats').doc(chatId).update({
+        'deletedFor.$userId': deletedFor[userId],
+      });
+      return;
+    }
+
     if (deletedFor.length == data?['participants'].length) {
       await _firestore.collection('chats').doc(chatId).delete();
     } else {
@@ -274,8 +284,11 @@ class ChatService {
     for (var doc in querySnapshot.docs) {
       final data = doc.data() as Map<String, dynamic>;
       final participants = List<String>.from(data['participants'] as List);
-      // Check if the other participant is in the chat and ensure it's a one-to-one chat.
-      if (participants.contains(recipientId) && participants.length == 2) {
+      // Check if the other participant is in the chat and ensure it's a
+      // one-to-one chat. A group down to these two people is still a group.
+      if (participants.contains(recipientId) &&
+          participants.length == 2 &&
+          data['isGroup'] != true) {
         return doc.id;
       }
     }
@@ -320,6 +333,24 @@ class ChatService {
 
     await chatRef.set(newChat.toFirestore());
     return chatRef.id;
+  }
+
+  /// Starts a group with [participantIds], or returns the group those people
+  /// already share with the caller (MOB-54).
+  ///
+  /// A callable rather than a write, because only staff may start a group and
+  /// the rules refuse any client-created chat with more than two people.
+  Future<String> createGroupChat(List<String> participantIds) async {
+    final callable =
+        FirebaseFunctions.instance.httpsCallable('createGroupChat');
+    final result = await callable.call<Map<String, dynamic>>({
+      'participantIds': participantIds,
+    });
+    final chatId = result.data['chatId'];
+    if (chatId is! String || chatId.isEmpty) {
+      throw StateError('createGroupChat returned no chat id');
+    }
+    return chatId;
   }
 
   Future<int> fetchUnreadMessagesCount(String userId) async {

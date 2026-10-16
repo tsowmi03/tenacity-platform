@@ -8,6 +8,7 @@
       "adminDeleteClass",
       "cancelStudentForWeek",
       "createAnnouncement",
+      "createGroupChat",
       "createInvoice",
       "createPaymentIntent",
       "deleteUserByUidV2",

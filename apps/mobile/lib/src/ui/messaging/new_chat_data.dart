@@ -11,11 +11,15 @@ class ContactRowData {
   final String roleLabel;
   final String initials;
 
+  /// What a group label calls them before the group's own roster arrives.
+  final String firstName;
+
   const ContactRowData({
     required this.uid,
     required this.name,
     required this.roleLabel,
     required this.initials,
+    this.firstName = '',
   });
 }
 
@@ -100,6 +104,23 @@ List<ContactSection> buildContactSections({
   ];
 }
 
+/// Most people a group creator can pick: iMessage's 32, less the creator.
+///
+/// Mirrors `MAX_GROUP_MEMBERS` in the functions package, which refuses
+/// anything larger; this is only so the picker says so before the server does.
+const maxGroupPicks = 31;
+
+/// Fewest people a creator must pick for a group rather than a one-to-one
+/// thread.
+const minGroupPicks = 2;
+
+/// Whether [role] may start a group (MOB-54): admins and tutors, never parents.
+/// The server enforces this; the picker only decides whether to offer it.
+bool canStartGroupChat(String? role) {
+  final normalized = role?.trim().toLowerCase();
+  return normalized == 'admin' || normalized == 'tutor';
+}
+
 /// Total across every section, for the header count.
 int contactCount(List<ContactSection> sections) =>
     sections.fold(0, (sum, section) => sum + section.contacts.length);
@@ -128,11 +149,13 @@ ContactRowData _rowFor(AppUser user) {
   final name = '${user.firstName} ${user.lastName}'.trim();
   final displayName = name.isEmpty ? 'Unknown' : name;
 
+  final firstName = user.firstName.trim();
   return ContactRowData(
     uid: user.uid,
     name: displayName,
     roleLabel: roleLabelFor(user.role),
     initials: initialsFor(displayName),
+    firstName: firstName.isEmpty ? displayName : firstName,
   );
 }
 

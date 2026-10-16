@@ -97,14 +97,23 @@ Weekly grid of day columns × time slots, backed by `TimetableController`.
   unread badge. Admins can edit, archive/restore, and delete from detail.
 
 ### 2.6 Messaging
-- **Inbox** (`inbox_screen.dart`): all roles — list of 1:1 threads, search by
-  name, swipe-to-delete, unread badges.
+- **Inbox** (`inbox_screen.dart`): all roles — list of 1:1 and group threads,
+  search by name, swipe-to-delete (a group is only hidden for you), unread
+  badges. A group is labelled by its other members' first names
+  ("Sarah, Tom & 2 others") with a group glyph for its avatar.
 - **New chat** (`new_chat_screen.dart`): all roles — contact picker to start
-  a new 1:1 thread. Parents cannot message other parents — filtered out of
-  the picker.
+  a new 1:1 thread. Parents cannot message other parents one-to-one — filtered
+  out of the picker. Staff (admins and tutors) also get **New group**: tick two
+  or more people (up to 32 in the group, including you) and start a group.
+  Parents never see it and the server refuses them. Picking the same people
+  again opens the existing group.
 - **Thread** (`chat_screen.dart`): all roles — text messages, image/file
   attachment (camera, photo library, file picker), typing indicator, read
-  receipts.
+  receipts. In a group, other people's messages carry the sender's name above
+  the first bubble of a run and their initials beside the last; the typing
+  line names who is typing; and receipts say "Delivered" only, never "Read",
+  as in iMessage. Parents in a group see each other's names and can message
+  each other there.
 
 ### 2.7 Users / people management (Admin & Tutor only — not in Parent nav)
 - **List** (`users_list_screen.dart`): searchable list across all roles.

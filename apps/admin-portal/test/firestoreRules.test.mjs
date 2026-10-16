@@ -157,6 +157,13 @@ async function seedFirestore() {
       deletedFor: {},
       updatedAt: 1,
     });
+    await setDoc(doc(db, "chats", "group-1"), {
+      isGroup: true,
+      participants: ["tutor-1", "parent-1", "parent-2"],
+      unreadCounts: { "tutor-1": 0, "parent-1": 0, "parent-2": 0 },
+      deletedFor: {},
+      updatedAt: 1,
+    });
     await setDoc(doc(db, "chats", "chat-1", "messages", "message-1"), {
       senderId: "tutor-1",
       text: "Hello",
@@ -632,6 +639,63 @@ describe("firestore rules", () => {
         { merge: true }
       )
     );
+  });
+
+  it("lets the app create a one-to-one chat but never a group", async () => {
+    // Groups come only from the createGroupChat callable, which is where the
+    // staff-only check lives (MOB-54). A direct write must not get round it.
+    const parentDb = authedDb("parent-1", "parent");
+    const tutorDb = authedDb("tutor-1", "tutor");
+
+    await assertSucceeds(
+      setDoc(doc(parentDb, "chats", "new-direct"), {
+        participants: ["parent-1", "tutor-1"],
+      })
+    );
+    await assertFails(
+      setDoc(doc(parentDb, "chats", "new-group"), {
+        participants: ["parent-1", "tutor-1", "parent-2"],
+      })
+    );
+    await assertFails(
+      setDoc(doc(tutorDb, "chats", "new-group"), {
+        participants: ["tutor-1", "parent-1", "parent-2"],
+      })
+    );
+    await assertFails(
+      setDoc(doc(tutorDb, "chats", "new-flagged"), {
+        participants: ["tutor-1", "parent-1"],
+        isGroup: true,
+      })
+    );
+  });
+
+  it("lets a group member hide the group only from their own inbox", async () => {
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertSucceeds(getDoc(doc(authedDb("parent-2", "parent"), "chats", "group-1")));
+    await assertSucceeds(
+      setDoc(
+        doc(parentDb, "chats", "group-1"),
+        { deletedFor: { "parent-1": 2 } },
+        { merge: true }
+      )
+    );
+    await assertFails(
+      setDoc(
+        doc(parentDb, "chats", "group-1"),
+        { deletedFor: { "parent-2": 2 } },
+        { merge: true }
+      )
+    );
+  });
+
+  it("never lets a member delete a group, but still allows deleting a one-to-one chat", async () => {
+    const parentDb = authedDb("parent-1", "parent");
+
+    await assertFails(deleteDoc(doc(parentDb, "chats", "group-1")));
+    await assertFails(deleteDoc(doc(authedDb("tutor-1", "tutor"), "chats", "group-1")));
+    await assertSucceeds(deleteDoc(doc(parentDb, "chats", "chat-1")));
   });
 
   it("allows admins to manage admin collections but blocks client writes to internal collections", async () => {

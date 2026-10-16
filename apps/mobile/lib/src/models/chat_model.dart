@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 /// How often a client that is still typing re-stamps its heartbeat.
 const typingHeartbeatInterval = Duration(seconds: 3);
@@ -71,6 +72,26 @@ class Chat {
   /// Absent on every chat written before this existed, hence the default.
   final bool inactive;
 
+  /// A group conversation, created by the `createGroupChat` callable (MOB-54).
+  ///
+  /// An explicit flag rather than inferred from the participant count: a group
+  /// that loses members down to two is still a group, and must never be
+  /// mistaken for the one-to-one thread between those two people.
+  ///
+  /// Absent on every chat written before groups existed, hence the default.
+  final bool isGroup;
+
+  /// Each group member's name, as the group stores it.
+  ///
+  /// On the chat rather than looked up, because a parent cannot read another
+  /// parent's user document — and in a group they still need to know who
+  /// said what. Empty for one-to-one threads, which resolve the other person
+  /// the way they always have.
+  final Map<String, ChatMemberName> participantNames;
+
+  /// Who started the group. Null for one-to-one threads.
+  final String? createdBy;
+
   Chat({
     required this.id,
     required this.participants,
@@ -82,6 +103,9 @@ class Chat {
     this.typingHeartbeats = const {},
     this.lastReadAt = const {},
     this.inactive = false,
+    this.isGroup = false,
+    this.participantNames = const {},
+    this.createdBy,
   });
 
   /// Whether [userId] has read everything up to [messageTime].
@@ -101,7 +125,46 @@ class Chat {
   /// backend retired it because the other participant's account was deleted.
   /// Missing the second case is what left parents with "Unknown User" rows
   /// they could open and type into.
-  bool isVisibleTo(String userId) => deletedFor[userId] == null && !inactive;
+  ///
+  /// A group nobody has written in yet stays out of everyone's inbox but its
+  /// creator's, as in iMessage: the others hear about it with its first
+  /// message rather than finding an empty conversation.
+  bool isVisibleTo(String userId) {
+    if (deletedFor[userId] != null || inactive) return false;
+    if (isGroup && lastMessage.isEmpty && createdBy != userId) return false;
+    return true;
+  }
+
+  /// Everyone on the thread except [userId], in the order the thread lists them.
+  List<String> otherParticipants(String userId) =>
+      participants.where((id) => id != userId).toList();
+
+  /// What [uid] is called above their messages and in the typing line.
+  String memberFirstName(String uid) =>
+      participantNames[uid]?.shortName ?? 'Unknown';
+
+  /// [uid]'s full name, for their initials.
+  String memberFullName(String uid) =>
+      participantNames[uid]?.fullName ?? 'Unknown';
+
+  /// The group's label as [viewerId] sees it: everyone else, by first name.
+  ///
+  ///   one other     `Sarah`
+  ///   two others    `Sarah & Tom`
+  ///   three others  `Sarah, Tom & Ana`
+  ///   four or more  `Sarah, Tom & 2 others`
+  ///
+  /// Mirrors `groupLabel` in the functions package (src/chats/groupChat.js),
+  /// which titles the push. The two must agree, or a notification and the
+  /// thread it opens name the same group differently.
+  String groupLabel(String viewerId) => formatGroupLabel(
+        otherParticipants(viewerId).map(memberFirstName).toList(),
+      );
+
+  /// Everyone other than [userId] whose typing heartbeat is live at [now],
+  /// in the order the thread lists them.
+  List<String> typingParticipants(String userId, DateTime now) =>
+      otherParticipants(userId).where((id) => isTypingNow(id, now)).toList();
 
   /// Whether [userId]'s heartbeat is recent enough to still mean anything.
   ///
@@ -124,9 +187,8 @@ class Chat {
 
   /// The other participant, or null when there is nobody else on the thread.
   ///
-  /// Group threads report their first other member, which is what the existing
-  /// one-to-one indicator already did. Naming more than one person is a
-  /// product question this ticket does not answer.
+  /// Only meaningful for a one-to-one thread. Group screens use
+  /// [otherParticipants] and [typingParticipants] instead.
   String? otherParticipant(String userId) {
     for (final id in participants) {
       if (id != userId) return id;
@@ -153,6 +215,10 @@ class Chat {
       typingHeartbeats: parseTypingHeartbeats(data['typingHeartbeats']),
       lastReadAt: parseReadWatermarks(data['lastReadAt']),
       inactive: data['inactive'] == true,
+      isGroup: data['isGroup'] == true,
+      participantNames: parseParticipantNames(data['participantNames']),
+      createdBy:
+          data['createdBy'] is String ? data['createdBy'] as String : null,
     );
   }
 
@@ -168,8 +234,78 @@ class Chat {
       'typingHeartbeats': typingHeartbeats,
       'lastReadAt': lastReadAt,
       'inactive': inactive,
+      // Groups are only ever written by the server. Leaving these off a
+      // one-to-one thread keeps its document exactly the shape it always was,
+      // and the create rule refuses a client-written `isGroup: true` anyway.
+      if (isGroup) ...{
+        'isGroup': true,
+        'participantNames': {
+          for (final entry in participantNames.entries)
+            entry.key: entry.value.toFirestore(),
+        },
+        if (createdBy != null) 'createdBy': createdBy,
+      },
     };
   }
+}
+
+/// A group label from the first names of everyone but the viewer, in order.
+///
+/// Separate from [Chat.groupLabel] so the picker can label a group it has only
+/// just asked the server for, before the chat document has arrived.
+String formatGroupLabel(List<String> others) => switch (others.length) {
+      0 => 'Just you',
+      1 => others[0],
+      2 => '${others[0]} & ${others[1]}',
+      3 => '${others[0]}, ${others[1]} & ${others[2]}',
+      _ => '${others[0]}, ${others[1]} & ${others.length - 2} others',
+    };
+
+/// One member's name as a group stores it.
+@immutable
+class ChatMemberName {
+  final String firstName;
+  final String lastName;
+
+  const ChatMemberName({required this.firstName, required this.lastName});
+
+  /// The first name, or the last when there is no first. Never blank.
+  String get shortName {
+    if (firstName.isNotEmpty) return firstName;
+    if (lastName.isNotEmpty) return lastName;
+    return 'Unknown';
+  }
+
+  String get fullName {
+    final full = '$firstName $lastName'.trim();
+    return full.isEmpty ? 'Unknown' : full;
+  }
+
+  Map<String, String> toFirestore() =>
+      {'firstName': firstName, 'lastName': lastName};
+}
+
+/// Reads a group's roster of names, ignoring anything malformed.
+///
+/// Tolerant for the same reason as the other maps here: this runs inside the
+/// mapping of the whole inbox snapshot, so one bad entry must cost a name, not
+/// every conversation on screen.
+Map<String, ChatMemberName> parseParticipantNames(Object? raw) {
+  if (raw is! Map) return {};
+  final names = <String, ChatMemberName>{};
+  raw.forEach((key, value) {
+    if (key is! String || value is! Map) return;
+    String field(String name) {
+      final v = value[name];
+      return v is String ? v.trim() : '';
+    }
+
+    names[key] = ChatMemberName(
+      firstName: field('firstName'),
+      lastName: field('lastName'),
+    );
+  });
+  return names;
 }
 
 /// Reads the read watermarks, ignoring anything that is not a timestamp.
