@@ -339,7 +339,7 @@ async function repairOneDiagram({
         signal,
       });
     } catch (err) {
-      if (isCancellationError(err)) throw err;
+      if (isCancellationError(err) || err?.resourceControl) throw err;
       reason = errorMessage(err);
       record({ attempt, outcome: "call_failed", reason, reasonCode: reasonCodeFor(err) });
       continue;
@@ -354,7 +354,7 @@ async function repairOneDiagram({
     try {
       await verify(candidate, { label, required });
     } catch (err) {
-      if (isCancellationError(err)) throw err;
+      if (isCancellationError(err) || err?.resourceControl) throw err;
       reason = errorMessage(err);
       record({ attempt, outcome: "invalid", reason, reasonCode: reasonCodeFor(err) });
       continue;
@@ -377,7 +377,7 @@ async function repairOneDiagram({
     try {
       verdict = await judge({ job, type, spec: candidate, question, marks, callAi, model, signal });
     } catch (err) {
-      if (isCancellationError(err)) throw err;
+      if (isCancellationError(err) || err?.resourceControl) throw err;
       // The check was unavailable, which says nothing about this candidate. An
       // unverified diagram is not acceptable, so the candidate is dropped — but
       // the attempt is given back, because the model did its part. `outages` is
@@ -461,7 +461,7 @@ async function repairDiagrams({
       await verify(spec, { label: entry.label, required: entry.required });
       continue;
     } catch (err) {
-      if (isCancellationError(err)) throw err;
+      if (isCancellationError(err) || err?.resourceControl) throw err;
       summary.attempted += 1;
 
       const attemptLog = [];
@@ -522,6 +522,7 @@ async function repairDiagrams({
       try {
         outcome = applyRepairOutcome({ entry, diagramType, result, warnings, summary });
       } catch (fatal) {
+        if (fatal?.resourceControl) throw fatal;
         // A required diagram is about to take the resource down. Carry the
         // record out on the error so the failed job can still say how many
         // attempts it took and what each one hit.

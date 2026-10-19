@@ -492,7 +492,10 @@ describe("attendance fan-out stays one notification per action (firestore + auth
     assert.equal(first.startsAt.getTime(), docs[1].date.getTime());
   });
 
-  it("reports the start instant of a session earlier the same day", async () => {
+  it("reports the start instant of a session earlier the same day", async (t) => {
+    // Fix the clock at Sydney midday: one hour before a real midnight run is
+    // yesterday, which does not exercise this same-day assertion.
+    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-20T01:00:00Z") });
     // The 4:59-choose, 5:10-confirm case. Both the stored session and "now"
     // fall on the same Sydney date, so only the instant separates them — this
     // is what `sessionHasStarted` reads to reject the stale choice.

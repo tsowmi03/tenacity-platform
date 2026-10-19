@@ -1647,6 +1647,26 @@ describe("retryResourceJobImpl", () => {
     assert.deepEqual(result.outcomes, [{ jobId: "job-1", status: "complete" }]);
   });
 
+  it("starts afresh after a content failure but resumes after a timeout or busy provider", async () => {
+    const cases = [
+      [{ errorCode: "DIAGRAM_LAYOUT_ERROR", failureAttempts: [{ reasonCode: "REQUIRED_DIAGRAM" }] }, true],
+      [{ errorCode: null, failureAttempts: [{ reasonCode: "SCHEMA_INVALID" }, { reasonCode: "PROVIDER_BUSY" }] }, true],
+      [{ errorCode: "RESOURCE_STAGE_TIMEOUT", failureAttempts: [{ reasonCode: "MODEL_FAILURE" }] }, false],
+      [{ errorCode: null, failureAttempts: [{ reasonCode: "PROVIDER_BUSY" }, { reasonCode: "PROVIDER_NETWORK" }] }, false],
+    ];
+    for (const [failure, discards] of cases) {
+      const db = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", ...failure }]);
+      const storage = fakeStorage();
+      await retryResourceJobImpl({
+        payload: { jobId: "job-1" },
+        actor: { uid: "tutor-1", role: "tutor" },
+        deps: { db, clock, storage, durableStages: true },
+      });
+      assert.deepEqual(storage.deletedPrefixes, discards ? ["resources/checkpoints/job-1/"] : [], JSON.stringify(failure));
+      assert.equal(db.jobs[0].status, "pending");
+    }
+  });
+
   it("rejects retries by another tutor", async () => {
     const db = fakeQueueDb([
       { id: "job-1", createdBy: "tutor-1", status: "failed" },
@@ -1791,7 +1811,7 @@ describe("deleteResourceJobImpl", () => {
 });
 
 describe("recoverStuckResourceJobsImpl", () => {
-  it("resets old processing jobs and kicks each affected tutor queue", async () => {
+  it("resets old processing jobs without running generation in the scheduler", async () => {
     const db = fakeQueueDb([
       {
         id: "stuck-1",
@@ -1853,7 +1873,7 @@ describe("recoverStuckResourceJobsImpl", () => {
     assert.deepEqual(storage.deletedPrefixes, [
       "resources/output/stuck-1/attempt-stuck_",
     ]);
-    assert.deepEqual(queued, ["tutor-1", "tutor-3"]);
+    assert.deepEqual(queued, []);
   });
 
   it("recovers an abandoned fallback handoff without changing its backup model", async () => {
@@ -1885,7 +1905,7 @@ describe("recoverStuckResourceJobsImpl", () => {
     });
 
     assert.deepEqual(result.recoveredJobIds, ["fallback-stuck"]);
-    assert.deepEqual(queued, ["tutor-1"]);
+    assert.deepEqual(queued, []);
     assert.equal(db.jobs[0].status, "pending");
     assert.equal(db.jobs[0].activeModel, "gpt-6.1-sol");
     assert.equal(db.jobs[0].error, "Fallback handoff recovered after its worker did not start");
@@ -2453,4 +2473,97 @@ describe("diagram repair routing (RES-34)", () => {
       "resources/output/job-5/attempt-stale_worksheet.docx",
     ]);
   });
+});
+
+describe("RES-44 durable stages", () => {
+  it("finishes a slow 180-question worksheet once per batch across recovery runs", async () => {
+    let currentMs = Date.parse("2026-10-20T00:00:00Z");
+    const testClock = () => new Date(currentMs);
+    const db = fakeQueueDb([{ id: "large", jobId: "large", createdBy: "tutor", status: "pending",
+      createdAt: fromDate(testClock()), resourceType: "worksheet", subject: "maths", year: 9,
+      customPrompt: "180 worked questions on indices", answerMode: "worked" }]);
+    const objects = new Map();
+    const storage = { bucket: () => ({
+      file: (path) => ({
+        download: async () => { if (!objects.has(path)) throw Object.assign(new Error("missing"), { code: 404 }); return [Buffer.from(objects.get(path))]; },
+        save: async (data) => { objects.set(path, data); },
+        delete: async () => objects.delete(path),
+      }), deleteFiles: async () => {},
+    }) };
+    let generations = 0;
+    let verifications = 0;
+    let built;
+    const deps = { db, storage, clock: testClock, durableStages: true, enableFailover: false,
+      callAi: async (request) => {
+        currentMs += 350_000;
+        await Promise.all([recoverStuckResourceJobsImpl({ deps: { db, storage, clock: testClock } }),
+          recoverStuckResourceJobsImpl({ deps: { db, storage, clock: testClock } })]);
+        assert.equal(db.jobs[0].status, "processing");
+        if (request.systemPrompt.includes("proof-reading")) {
+          verifications += 1;
+          return { parsed: { corrections: [] } };
+        }
+        generations += 1;
+        const [, first, last] = request.userMessage.match(/ONLY questions (\d+)–(\d+)/);
+        const numbers = Array.from({ length: Number(last) - Number(first) + 1 }, (_, i) => Number(first) + i);
+        const parsed = { title: "Indices", topic: "Indices", subject: "maths", year: 9, totalMarks: numbers.length,
+          questions: numbers.map((number) => ({ number, stem: `Simplify x^${number}`, marks: 1, diagram: null })),
+          answers: numbers.map((questionNumber) => ({ questionNumber, answer: "x", workingOut: "Use the index rule." })) };
+        return { parsed, raw: JSON.stringify(parsed) };
+      },
+      buildDocx: async (_type, parsed) => { built = parsed; return Buffer.from("docx"); },
+    };
+    for (let i = 0; i < 30 && db.jobs[0].status !== "complete"; i += 1) {
+      const before = generations + verifications;
+      await runQueueForTutor("tutor", deps);
+      assert.ok(generations + verifications - before <= 1);
+      assert.notEqual(db.jobs[0].status, "failed", db.jobs[0].error);
+    }
+    assert.equal(db.jobs[0].status, "complete");
+    assert.equal(db.jobs[0].attemptCount, 1);
+    assert.equal(generations, 12);
+    assert.equal(verifications, 12);
+    assert.equal(built.questions.length, 180);
+    assert.equal(built.answers.length, 180);
+    assert.equal(db.jobs[0].recoveryCount, undefined);
+  });
+
+  it("rejects unsupported counts before any generation", () => {
+    assert.throws(() => validateSubmitResourceJobPayload({ studentId: "s", subject: "maths", year: 9,
+      resourceType: "worksheet", customPrompt: "201 worked questions" }), /up to 200 questions/);
+  });
+
+  it("gives a later tutor job a turn after saving a stage", async () => {
+    const db = fakeQueueDb([
+      { id: "large", createdBy: "t", status: "pending", createdAt: 1, queueTurnAt: 3, resourceType: "worksheet" },
+      { id: "small", createdBy: "t", status: "pending", createdAt: 2, resourceType: "worksheet" },
+    ]);
+    const claimed = await claimNextPendingJobForTutor({ db, createdBy: "t", clock });
+    assert.equal(claimed.jobId, "small");
+  });
+});
+
+it("retains schema-repair input when a stage yields before the repair call", async () => {
+  const db = fakeQueueDb([{ id: "repair-stage", createdBy: "t", status: "pending", createdAt: 1,
+    resourceType: "worksheet", subject: "maths", year: 9 }]);
+  let generations = 0;
+  let repairs = 0;
+  const deps = { db, storage: fakeStorage(), durableStages: true, enableFailover: false,
+    generationPipeline: async () => {
+      generations += 1;
+      throw Object.assign(new Error("Invalid resource JSON"), { rawAiText: '{"title":"saved"}' });
+    },
+    repairPipeline: async (job) => {
+      repairs += 1;
+      if (repairs === 1) throw Object.assign(new Error("yield"), { resourceControl: true, code: "RESOURCE_STAGE_YIELD" });
+      assert.equal(job.generatedJson, '{"title":"saved"}');
+      assert.equal(job.lastError, "Invalid resource JSON");
+      return { outputPath: "repaired.docx" };
+    },
+  };
+  await runQueueForTutor("t", deps);
+  assert.equal(db.jobs[0].status, "pending");
+  await runQueueForTutor("t", deps);
+  assert.equal(db.jobs[0].status, "complete");
+  assert.equal(generations, 1);
 });

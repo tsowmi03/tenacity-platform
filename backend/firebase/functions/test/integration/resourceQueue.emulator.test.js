@@ -6,6 +6,7 @@ const assert = require("node:assert/strict");
 const {
   claimNextPendingJobForTutor,
   finalizeResourceJobAttempt,
+  recoverStuckResourceJobsImpl,
 } = require("../../src/resources");
 const { getAdmin, clearCollection } = require("../helpers/emulator");
 
@@ -89,4 +90,20 @@ describe("resource queue concurrency (firestore emulator)", () => {
     assert.equal(job.status, "processing");
     assert.equal(job.attemptId, "attempt-new");
   });
+  it("overlapping recovery schedules preserve a live lease and recover an abandoned stage only once", async () => {
+    const jobs = db.collection("resourceJobs");
+    await jobs.doc("live").set({ createdBy: "tutor-1", status: "processing", attemptId: "live",
+      startedAt: new Date("2026-06-10T23:40:00Z"), leaseExpiresAt: new Date("2026-06-11T00:05:00Z") });
+    await jobs.doc("abandoned").set({ createdBy: "tutor-2", status: "processing", attemptId: "dead",
+      startedAt: new Date("2026-06-10T23:40:00Z"), leaseExpiresAt: new Date("2026-06-10T23:50:00Z") });
+    const deps = { db, clock, runQueueForTutor: () => { throw new Error("Scheduler must not generate"); } };
+    await Promise.all([recoverStuckResourceJobsImpl({ deps }), recoverStuckResourceJobsImpl({ deps })]);
+    const live = (await jobs.doc("live").get()).data();
+    const recovered = (await jobs.doc("abandoned").get()).data();
+    assert.equal(live.attemptId, "live");
+    assert.equal(live.status, "processing");
+    assert.equal(recovered.recoveryCount, 1);
+    assert.equal(recovered.status, "pending");
+  });
+
 });

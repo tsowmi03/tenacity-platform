@@ -39,6 +39,8 @@ function describeResourceFailure(err) {
   const name = String(err?.name || "");
   const detail = clampDetail(raw);
 
+  if (err?.resourceControl) return { message: raw, detail: null };
+
   // A diagram the question depends on could not be rendered.
   if (isDiagramRenderError(err) && err?.diagramRequired !== false) {
     const label = err?.diagramLabel ? `the diagram for ${err.diagramLabel}` : "a required diagram";

@@ -685,6 +685,9 @@ function ResourceJobRow({
             </Badge>
           </div>
         </div>
+        {isActive && job.progress?.message ? (
+          <p className="muted" role="status">{job.progress.message}</p>
+        ) : null}
         {job.status === "failed" && job.error ? (
           job.errorDetail ? (
             <div className="rg-error">

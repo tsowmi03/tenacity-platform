@@ -209,3 +209,11 @@ describe("ResourceQueuePanel cancellation", () => {
     expect(screen.getByText(/24000 token output limit/i)).toBeInTheDocument();
   });
 });
+
+it("shows saved generation progress while a job continues", () => {
+  renderWithToast(<ResourceQueuePanel jobs={[{
+    id: "progress", jobId: "progress", createdBy: "tutor-1", status: "pending",
+    resourceType: "worksheet", progress: { message: "Checking answers 16–30" },
+  }]} loading={false} />);
+  expect(screen.getByText("Checking answers 16–30")).toBeInTheDocument();
+});

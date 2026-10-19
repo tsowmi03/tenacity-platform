@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-20 | [Large resources resume from saved stages instead of restarting (RES-44)](#2026-10-20--large-resources-resume-from-saved-stages-instead-of-restarting-res-44) |
 | 2026-10-16 | [Staff can start group chats (MOB-54)](#2026-10-16--staff-can-start-group-chats-mob-54) |
 | 2026-10-16 | [Mobile 3.3.0 (build 521)](#2026-10-16--mobile-330-build-521) |
 | 2026-10-15 | [A second class's feedback no longer overwrites the first (MOB-61)](#2026-10-15--a-second-classs-feedback-no-longer-overwrites-the-first-mob-61) |
@@ -184,6 +185,37 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-20 — Large resources resume from saved stages instead of restarting (RES-44)
+
+**What changed**
+- Resource generation saves every completed AI response, so a job that runs
+  past one worker's time limit carries on where it stopped. Retry also reuses
+  the finished stages instead of starting again.
+- Maths worksheets asking for more than 15 questions are written in batches of
+  15, and worked answers are checked in batches of 15. Requests for more than
+  200 questions are refused straight away with the limit shown.
+- Each AI call gives up after six minutes and the job fails with a Retry
+  option, rather than showing "Generating" for twenty minutes.
+- The every-minute recovery job only requeues abandoned work; it no longer
+  generates resources itself, so it can't time out or replace a live attempt.
+  It gives up after three automatic attempts.
+- Between stages a long job goes to the back of the tutor's queue, so later
+  jobs get a turn. The queue panel shows progress ("Writing questions 16–30
+  of 180").
+- Retry resumes saved progress after a timeout or a busy provider. After a
+  content failure (bad JSON, a missing diagram) it starts fresh, because a
+  saved response may be what failed.
+- Deleting a resource also deletes its saved progress.
+
+**Why:** A 180-question Year 9 worksheet took 22 minutes and 10 attempts on
+19 Oct 2026. Each attempt restarted from scratch and finished attempts were
+thrown away. Details: `docs/operations/resource-generation-recovery.md`.
+
+**Status:** Live. #269; resource portal deployed on merge, Functions deployed
+2026-10-20.
 
 ---
 
