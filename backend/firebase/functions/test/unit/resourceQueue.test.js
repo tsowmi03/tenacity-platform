@@ -2500,6 +2500,7 @@ describe("RES-44 durable stages", () => {
       assert.notEqual(db.jobs[0].status, "failed", db.jobs[0].error);
     }
     assert.equal(db.jobs[0].status, "complete");
+    assert.equal(db.jobs[0].attemptCount, 1);
     assert.equal(generations, 12);
     assert.equal(verifications, 12);
     assert.equal(built.questions.length, 180);
@@ -2520,4 +2521,29 @@ describe("RES-44 durable stages", () => {
     const claimed = await claimNextPendingJobForTutor({ db, createdBy: "t", clock });
     assert.equal(claimed.jobId, "small");
   });
+});
+
+it("retains schema-repair input when a stage yields before the repair call", async () => {
+  const db = fakeQueueDb([{ id: "repair-stage", createdBy: "t", status: "pending", createdAt: 1,
+    resourceType: "worksheet", subject: "maths", year: 9 }]);
+  let generations = 0;
+  let repairs = 0;
+  const deps = { db, storage: fakeStorage(), durableStages: true, enableFailover: false,
+    generationPipeline: async () => {
+      generations += 1;
+      throw Object.assign(new Error("Invalid resource JSON"), { rawAiText: '{"title":"saved"}' });
+    },
+    repairPipeline: async (job) => {
+      repairs += 1;
+      if (repairs === 1) throw Object.assign(new Error("yield"), { resourceControl: true, code: "RESOURCE_STAGE_YIELD" });
+      assert.equal(job.generatedJson, '{"title":"saved"}');
+      assert.equal(job.lastError, "Invalid resource JSON");
+      return { outputPath: "repaired.docx" };
+    },
+  };
+  await runQueueForTutor("t", deps);
+  assert.equal(db.jobs[0].status, "pending");
+  await runQueueForTutor("t", deps);
+  assert.equal(db.jobs[0].status, "complete");
+  assert.equal(generations, 1);
 });

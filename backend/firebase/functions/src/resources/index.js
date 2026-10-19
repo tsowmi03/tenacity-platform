@@ -292,7 +292,9 @@ function validateSubmitResourceJobPayload(input) {
     uploadedFiles: validateUploadedFilesField,
   });
 
-  try { assertRequestSize(payload); } catch (err) {
+  try {
+    assertRequestSize(payload);
+  } catch (err) {
     throw new HttpsError("invalid-argument", err.message);
   }
 
@@ -1238,7 +1240,7 @@ async function claimNextPendingJobForTutor({
     const queueTime = (doc) => {
       const data = doc.data();
       const value = data.queueTurnAt || data.createdAt;
-      return value?.toMillis?.() ?? Number(value) ?? 0;
+      return value?.toMillis?.() ?? (Number(value) || 0);
     };
     const pendingDoc = [...pendingSnap.docs].sort((a, b) => queueTime(a) - queueTime(b))[0];
     const pendingJob = pendingDoc.data() || {};
@@ -1265,7 +1267,9 @@ async function claimNextPendingJobForTutor({
       activeModel,
       attemptedModels,
       attemptId,
-      attemptCount: (Number(pendingJob.attemptCount) || 0) + 1,
+      attemptCount: (Number(pendingJob.attemptCount) || 0) + (pendingJob.stageContinuation ? 0 : 1),
+      stageCount: (Number(pendingJob.stageCount) || 0) + 1,
+      stageContinuation: false,
       leaseExpiresAt,
       startedAt,
       warnings: [],
@@ -2311,6 +2315,8 @@ async function runGenerationPipeline(job, deps) {
     : Boolean(uploadedContent);
   const answerMode = answerModeForJob(job);
 
+  assertRequestSize(job);
+
   // Optionally source verified public-domain text before generation, so the
   // model builds the resource around real text instead of inventing it. A
   // single-passage type (annotation task) sources one passage; a stimulus-
@@ -2663,6 +2669,7 @@ Return ONLY corrections, as valid JSON, for the entries you actually changed:
       userMessage,
       signal,
       responseSchema: buildVerifiedAnswersSchema(),
+      stageLabel: `Checking ${rows.length} answers`,
     });
 
     const corrections = Array.isArray(verifiedParsed?.corrections)
@@ -3476,7 +3483,17 @@ async function runQueueForTutor(createdBy, deps) {
     } catch (err) {
       if (err?.code === "RESOURCE_STAGE_YIELD") {
         const resumed = await finalizeResourceJobAttempt({ db, jobId: job.jobId, attemptId: job.attemptId,
-          patch: { status: "pending", queueTurnAt: now(clock), startedAt: null, error: null } });
+          patch: {
+            status: "pending", stageContinuation: true, queueTurnAt: now(clock), startedAt: null, error: null,
+            // A parse/schema failure can hand off to repair after consuming this
+            // invocation's call. Preserve that repair input across the yield.
+            ...(job.generatedJson ? {
+              generatedJson: job.generatedJson,
+              lastError: job.error || job.lastError || null,
+              lastErrorCode: job.errorCode || job.lastErrorCode || null,
+              repairMode: job.repairMode || null,
+            } : {}),
+          } });
         return [...outcomes, { jobId: job.jobId, status: resumed ? "pending" : "superseded" }];
       }
       // A tutor stopped the job mid-flight: finalize as cancelled, not failed.
@@ -3825,6 +3842,9 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
     attempted: false,
     deleted: false,
   };
+  // The private journal contains the same student resource content as the
+  // output. Remove it when an administrator deletes the resource.
+  await storage.bucket().deleteFiles({ prefix: `resources/checkpoints/${payload.jobId}/` });
   await jobRef.delete();
 
   await writeAuditLog(
@@ -3877,6 +3897,7 @@ async function recoverStuckResourceJobsImpl({ deps }) {
     .collection("resourceJobs")
     .where("status", "==", "processing")
     .where("startedAt", "<", threshold)
+    .limit(100)
     .get();
 
   const createdBySet = new Set();
@@ -3934,6 +3955,7 @@ async function recoverStuckResourceJobsImpl({ deps }) {
   const fallbackSnap = await db
     .collection("resourceJobs")
     .where("status", "==", "fallback_pending")
+    .limit(100)
     .get();
   for (const doc of fallbackSnap.docs) {
     const queriedJob = doc.data() || {};
@@ -3971,7 +3993,7 @@ async function recoverStuckResourceJobsImpl({ deps }) {
   // Re-deliver an abandoned pending handoff too, including missed create events.
   // The update trigger claims transactionally; overlapping schedules cannot
   // supersede a processing attempt and no model call runs in this scheduler.
-  const pending = await db.collection("resourceJobs").where("status", "==", "pending").get();
+  const pending = await db.collection("resourceJobs").where("status", "==", "pending").limit(100).get();
   for (const doc of pending.docs) {
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(doc.ref);

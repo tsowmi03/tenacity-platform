@@ -44,3 +44,14 @@ it("resumes exact completed responses without sending another provider request",
   assert.equal((await h.make()(request)).parsed.value, "original");
   assert.equal(calls, 1);
 });
+
+it("does not cache an invalid batch, allowing a later retry to regenerate it", async () => {
+  let calls = 0;
+  const h = harness(async () => ({ parsed: { valid: ++calls > 1 } }));
+  const request = { userMessage: "batch", validateStageResult: (result) => {
+    if (!result.parsed.valid) throw Object.assign(new Error("invalid batch"), { resourceControl: true });
+  } };
+  await assert.rejects(h.make()(request), /invalid batch/);
+  assert.equal(h.values.size, 0);
+  assert.equal((await h.make()(request)).parsed.valid, true);
+});
