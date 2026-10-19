@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-20 | [Maths that won't format is repaired, or the resource is held back (RES-45)](#2026-10-20--maths-that-wont-format-is-repaired-or-the-resource-is-held-back-res-45) |
 | 2026-10-20 | [Large resources resume from saved stages instead of restarting (RES-44)](#2026-10-20--large-resources-resume-from-saved-stages-instead-of-restarting-res-44) |
 | 2026-10-16 | [Staff can start group chats (MOB-54)](#2026-10-16--staff-can-start-group-chats-mob-54) |
 | 2026-10-16 | [Mobile 3.3.0 (build 521)](#2026-10-16--mobile-330-build-521) |
@@ -185,6 +186,29 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-20 — Maths that won't format is repaired, or the resource is held back (RES-45)
+
+**What changed**
+- Absolute values with powers now render as maths: `|b|^{9}`, including inside
+  fractions and roots. Q27 of the 19 Oct worksheet had printed as
+  `frac(a^(6))(27|b|^(9))`.
+- Before a maths resource becomes Ready, any expression that would print as
+  plain text is sent back to the AI on its own for a notation-only fix, and
+  the document is rebuilt from the same content. Nothing else is regenerated.
+  Two rounds are allowed.
+- If the maths still won't format, the job fails with the questions and
+  expressions named and the document is never downloadable. Retry keeps the
+  generated content and tries the fix again.
+- The job now stores the exact JSON the document was built from, after the
+  answer check and any fixes, so revisions start from what the tutor saw.
+
+**Why:** A resource with broken maths used to become Ready with only a warning,
+and tutors could print it without noticing (RES-19 made it warning-only).
+
+**Status:** Live. Functions deployed 2026-10-20.
 
 ---
 
