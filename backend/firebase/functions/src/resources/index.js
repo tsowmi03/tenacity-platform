@@ -9,6 +9,7 @@ const { analyticsEnvironment } = require("../shared/posthogClient");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
+const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSHEET_BATCH_SIZE, MAX_RECOVERIES } = require("./durableStages");
 const { callAiForResource } = require("./aiClient");
 const {
   ANSWER_MODES,
@@ -290,6 +291,10 @@ function validateSubmitResourceJobPayload(input) {
       nullableString(value, "uploadedFileName", { max: 240 }),
     uploadedFiles: validateUploadedFilesField,
   });
+
+  try { assertRequestSize(payload); } catch (err) {
+    throw new HttpsError("invalid-argument", err.message);
+  }
 
   if (hasAnswerMode) {
     payload.includeWorking = payload.answerMode === "worked";
@@ -1226,12 +1231,16 @@ async function claimNextPendingJobForTutor({
       .collection("resourceJobs")
       .where("createdBy", "==", createdBy)
       .where("status", "==", "pending")
-      .orderBy("createdAt", "asc")
-      .limit(1);
+      .orderBy("createdAt", "asc");
     const pendingSnap = await tx.get(pendingQuery);
     if (pendingSnap.empty) return null;
 
-    const pendingDoc = pendingSnap.docs[0];
+    const queueTime = (doc) => {
+      const data = doc.data();
+      const value = data.queueTurnAt || data.createdAt;
+      return value?.toMillis?.() ?? Number(value) ?? 0;
+    };
+    const pendingDoc = [...pendingSnap.docs].sort((a, b) => queueTime(a) - queueTime(b))[0];
     const pendingJob = pendingDoc.data() || {};
     const modelChoice = inferModelChoice(pendingJob);
     // currentModelFor carries a retired model ID (a job queued before a model
@@ -1645,7 +1654,7 @@ async function maybeSourcePassage({
       warning: "No verified public-domain text found; used model-written passage.",
     };
   } catch (err) {
-    if (isCancellationError(err)) throw err;
+    if (isCancellationError(err) || err?.resourceControl) throw err;
     return { used: false, sourced: null, warning: `Public-domain sourcing failed: ${err.message}` };
   }
 }
@@ -1756,7 +1765,7 @@ async function maybeSourceStimulusSet({
         callAi,
       });
     } catch (err) {
-      if (isCancellationError(err)) throw err;
+      if (isCancellationError(err) || err?.resourceControl) throw err;
       return {
         used: false,
         texts: [],
@@ -1820,7 +1829,7 @@ async function maybeSourceStimulusSet({
       };
       if (sourced?.ok && sourced.passage) texts.push(sourced);
     } catch (err) {
-      if (isCancellationError(err)) throw err;
+      if (isCancellationError(err) || err?.resourceControl) throw err;
       // best-effort: a single failed text must not sink the whole booklet
     }
   }
@@ -1840,7 +1849,7 @@ async function maybeSourceStimulusSet({
         visuals.push(sourced);
       }
     } catch (err) {
-      if (isCancellationError(err)) throw err;
+      if (isCancellationError(err) || err?.resourceControl) throw err;
       // best-effort, exactly as for texts: a failed image must not sink the job
     }
   }
@@ -2190,7 +2199,7 @@ async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
         if (target && entry.diagram) target.diagram = entry.diagram;
       }
     } catch (err) {
-      if (isCancellationError(err)) throw err;
+      if (isCancellationError(err) || err?.resourceControl) throw err;
       if (group.some((target) => target.diagramRequired !== false)) {
         err.modelFailure = true;
         err.diagramRequired = true;
@@ -2420,7 +2429,16 @@ async function runGenerationPipeline(job, deps) {
     hasStimulus,
   });
 
-  let { parsed, raw } = splitSchemas
+  const generationRequest = {
+    model: generationModel, maxTokens, effort: RESOURCE_GENERATION_EFFORT,
+    systemPrompt, userMessage, signal: deps.signal,
+    responseSchema: buildResponseSchema(job.resourceType, { subject: job.subject, answerMode, hasStimulus }),
+    mathBearing: !isEnglishSubject(job.subject),
+  };
+  const questionCount = assertRequestSize(job);
+  let { parsed, raw } = job.resourceType === "worksheet" && job.subject === "maths" && questionCount > WORKSHEET_BATCH_SIZE
+    ? await generateWorksheetBatches({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, count: questionCount })
+    : splitSchemas
     ? await generateSplitResource({
         job,
         schemas: splitSchemas,
@@ -2604,6 +2622,14 @@ async function runGenerationPipeline(job, deps) {
  */
 async function verifyMathsAnswers({ job, parsed, apiKey, signal, callAi = callAiForResource }) {
   const rows = parsed.answers;
+  if (rows.length > WORKSHEET_BATCH_SIZE) {
+    const answers = [];
+    for (let offset = 0; offset < rows.length; offset += WORKSHEET_BATCH_SIZE) {
+      const verified = await verifyMathsAnswers({ job, parsed: { ...parsed, answers: rows.slice(offset, offset + WORKSHEET_BATCH_SIZE) }, apiKey, signal, callAi });
+      answers.push(...verified.answers);
+    }
+    return { ...parsed, answers };
+  }
   const answersJson = rows
     .map((row, index) => `${index + 1}. ${JSON.stringify(row)}`)
     .join("\n");
@@ -2670,7 +2696,7 @@ Return ONLY corrections, as valid JSON, for the entries you actually changed:
     return { ...parsed, answers: verifiedAnswers };
   } catch (err) {
     // A cancellation must abort the whole job, not be swallowed as a soft failure.
-    if (isCancellationError(err)) throw err;
+    if (isCancellationError(err) || err?.resourceControl) throw err;
     err.modelFailure = true;
     throw err;
   }
@@ -3313,6 +3339,7 @@ async function runQueueForTutor(createdBy, deps) {
 
   const outcomes = [];
   while (true) {
+    if (deps.durableStages && outcomes.length) return outcomes;
     const job = await claimNextPendingJobForTutor({
       db,
       createdBy,
@@ -3334,6 +3361,10 @@ async function runQueueForTutor(createdBy, deps) {
       isCancelled: watcher.isCancelled,
     };
 
+    if (deps.durableStages) {
+      jobDeps.callAi = createDurableCaller({ job, db, storage, clock, callAi: deps.callAi || callAiForResource });
+    }
+
     const attemptRepair = async () => {
       try {
         return {
@@ -3341,7 +3372,7 @@ async function runQueueForTutor(createdBy, deps) {
           error: null,
         };
       } catch (err) {
-        if (isCancellationError(err)) throw err;
+        if (isCancellationError(err) || err?.resourceControl) throw err;
         if (err?.rawAiText) job.generatedJson = err.rawAiText;
         return {
           result: null,
@@ -3370,7 +3401,7 @@ async function runQueueForTutor(createdBy, deps) {
         try {
           result = await buildPipeline(job, jobDeps);
         } catch (err) {
-          if (isCancellationError(err)) throw err;
+          if (isCancellationError(err) || err?.resourceControl) throw err;
           if (err?.rawAiText) {
             const generationError = errorMessage(err);
             job.generatedJson = err.rawAiText;
@@ -3443,6 +3474,11 @@ async function runQueueForTutor(createdBy, deps) {
         ...(repairError ? { repairError } : {}),
       });
     } catch (err) {
+      if (err?.code === "RESOURCE_STAGE_YIELD") {
+        const resumed = await finalizeResourceJobAttempt({ db, jobId: job.jobId, attemptId: job.attemptId,
+          patch: { status: "pending", queueTurnAt: now(clock), startedAt: null, error: null } });
+        return [...outcomes, { jobId: job.jobId, status: resumed ? "pending" : "superseded" }];
+      }
       // A tutor stopped the job mid-flight: finalize as cancelled, not failed.
       if (isCancellationError(err) || watcher.isCancelled()) {
         const finalized = await finalizeResourceJobAttempt({
@@ -3470,7 +3506,7 @@ async function runQueueForTutor(createdBy, deps) {
         continue;
       }
 
-      if (deps.enableFailover !== false) {
+      if (deps.enableFailover !== false && !err?.resourceControl) {
         const queued = await queueResourceFallback({
           db,
           storage,
@@ -3514,7 +3550,7 @@ async function runQueueForTutor(createdBy, deps) {
           failureAttempt,
         ],
       };
-      if (err?.rawAiText) {
+      if (err?.rawAiText && !err?.resourceControl) {
         patch.generatedJson = err.rawAiText;
       }
       // Always written, never only set: these describe the generatedJson this
@@ -3561,6 +3597,12 @@ async function processResourceFallbackImpl({ event, deps }) {
   if (!db) throw new TypeError("processResourceFallbackImpl requires db");
   const before = event?.data?.before?.data?.();
   const after = event?.data?.after?.data?.();
+  if (after?.createdBy && (
+    (after.status === "pending" && (before?.status !== "pending" || before?.queueWakeId !== after.queueWakeId)) ||
+    (["complete", "failed", "cancelled"].includes(after.status) && before?.status !== after.status)
+  )) {
+    return (deps.runQueueForTutor || runQueueForTutor)(after.createdBy, deps);
+  }
   if (!shouldProcessResourceFallback(before, after)) return null;
 
   const jobId = event?.params?.jobId || after?.jobId;
@@ -3633,6 +3675,7 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     fallbackUsed: false,
     failover: null,
     failureAttempts: [],
+    recoveryCount: 0,
     usageByProvider: {},
     warnings: [],
     error: null,
@@ -3648,7 +3691,7 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     completedAt: null,
   });
 
-  const outcomes = await (deps.runQueueForTutor || runQueueForTutor)(
+  const outcomes = deps.durableStages ? [] : await (deps.runQueueForTutor || runQueueForTutor)(
     job.createdBy,
     deps
   );
@@ -3865,12 +3908,15 @@ async function recoverStuckResourceJobsImpl({ deps }) {
       }
 
       tx.update(doc.ref, {
-        status: "pending",
+        status: currentJob.cancelRequested ? "cancelled" : (Number(currentJob.recoveryCount) || 0) >= MAX_RECOVERIES ? "failed" : "pending",
+        recoveryCount: (Number(currentJob.recoveryCount) || 0) + 1,
         attemptId: null,
         lastAttemptId: queriedAttemptId || currentJob.lastAttemptId || null,
         leaseExpiresAt: null,
         startedAt: null,
-        error: "Job recovered after worker lease expired",
+        error: (Number(currentJob.recoveryCount) || 0) >= MAX_RECOVERIES
+          ? "Generation repeatedly stopped unexpectedly. Saved progress is retained. Retry or split the request into smaller resources."
+          : "Job recovered after worker lease expired",
       });
       return true;
     });
@@ -3922,8 +3968,16 @@ async function recoverStuckResourceJobsImpl({ deps }) {
   }
 
   const tutorsQueued = [...createdBySet];
-  for (const createdBy of tutorsQueued) {
-    await (deps.runQueueForTutor || runQueueForTutor)(createdBy, deps);
+  // Re-deliver an abandoned pending handoff too, including missed create events.
+  // The update trigger claims transactionally; overlapping schedules cannot
+  // supersede a processing attempt and no model call runs in this scheduler.
+  const pending = await db.collection("resourceJobs").where("status", "==", "pending").get();
+  for (const doc of pending.docs) {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(doc.ref);
+      const current = snap.data() || {};
+      if (current.status === "pending") tx.update(doc.ref, { queueWakeId: randomUUID() });
+    });
   }
 
   return { recoveredJobIds, tutorsQueued };
@@ -3988,6 +4042,7 @@ const processResourceJob = onDocumentCreated(
           openaiApiKey: openaiApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
           enableFailover: llmFailoverEnabled.value(),
+          durableStages: true,
         },
       });
     } catch (err) {
@@ -4017,6 +4072,7 @@ const processResourceFallback = onDocumentUpdated(
           openaiApiKey: openaiApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
           enableFailover: llmFailoverEnabled.value(),
+          durableStages: true,
         },
       });
     } catch (err) {
@@ -4108,6 +4164,7 @@ const retryResourceJob = onCall(
           openaiApiKey: openaiApiKey.value(),
           enablePdTextSourcing: pdTextSourcing.value(),
           enableFailover: llmFailoverEnabled.value(),
+          durableStages: true,
         },
       });
     } catch (err) {
@@ -4182,20 +4239,17 @@ const cancelResourceJob = onCall(
 
 const recoverStuckResourceJobs = onSchedule(
   {
-    schedule: "every 10 minutes",
-    ...RESOURCE_WORKER_OPTIONS,
+    schedule: "every 1 minutes",
+    region: "us-central1",
+    memory: "512MiB",
+    timeoutSeconds: 120,
   },
   async () => {
-    await refreshModelConfig(admin.firestore());
     try {
       return await recoverStuckResourceJobsImpl({
         deps: {
           db: admin.firestore(),
           storage: admin.storage(),
-          anthropicApiKey: anthropicApiKey.value(),
-          openaiApiKey: openaiApiKey.value(),
-          enablePdTextSourcing: pdTextSourcing.value(),
-          enableFailover: llmFailoverEnabled.value(),
         },
       });
     } catch (err) {
