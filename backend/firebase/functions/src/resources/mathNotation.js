@@ -65,14 +65,16 @@ const SCRIPTED = String.raw`(?:${SCRIPT}${WORD_TAIL})*`;
 const PRESCRIPT_TERM = String.raw`(?:\{\})?(?:[\^_]\{[^{}]*\})+[A-Za-z](?:${SCRIPT}${WORD_TAIL})*`;
 // A whole LaTeX environment (cases, pmatrix ...) is one term.
 const ENV_TERM = String.raw`\\begin\{[A-Za-z]+\*?\}(?:(?!\\end\{)[\s\S])*\\end\{[A-Za-z]+\*?\}`;
-const SCRIPT_TERM = String.raw`(?:${PRESCRIPT_TERM}|(?:${PAREN}|[${LETTER}]${WORD_TAIL}|[${BIG_OPS}]|${NUM})(?:${SCRIPT}${WORD_TAIL})+)`;
+// |b|^{9}: an absolute value is a base like a bracket group.
+const ABS_VALUE = String.raw`\|[^|\n]{1,40}?\|`;
+const SCRIPT_TERM = String.raw`(?:${PRESCRIPT_TERM}|(?:${PAREN}|${ABS_VALUE}|[${LETTER}]${WORD_TAIL}|[${BIG_OPS}]|${NUM})(?:${SCRIPT}${WORD_TAIL})+)`;
 
 // Anything that should have become maths but is still raw: a script between
 // two tokens, a dangling script with nothing after it ("x^", "x_ ="), or a
 // LaTeX command. Blanks ("x = ____", "x____") are not matched: a dangling
 // underscore must touch its base and not be followed by another underscore.
 // The readable fallback form x^(n+1) is not matched either.
-const RAW_MATH_MARKER = /\\[A-Za-z]+|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]\s*[\^_](?:\s*[{\d]|\s*[-−+]\d|[A-Za-zα-ωΑ-Ω\-−+\\])|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]\s*\^(?=\s*(?:$|[\s.,;:!?=<>)\]]))|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]_(?=$|[\s.,;:!?=<>)\]])/;
+const RAW_MATH_MARKER = /\\[A-Za-z]+|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}|]\s*[\^_](?:\s*[{\d]|\s*[-−+]\d|[A-Za-zα-ωΑ-Ω\-−+\\])|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]\s*\^(?=\s*(?:$|[\s.,;:!?=<>)\]]))|[A-Za-z0-9α-ωΑ-Ω∫∬∭∮∑∏∐⋃⋂⋀⋁⨁⨂⨀⨄⨆)\]}]_(?=$|[\s.,;:!?=<>)\]])/;
 
 // Identifiers such as file_name are prose, not a subscript.
 const SNAKE_CASE_IDENTIFIER = /\b[A-Za-z]{3,}(?:_[A-Za-z0-9]+)+\b/g;
@@ -372,6 +374,26 @@ function parseMath(source) {
     return false;
   }
 
+  // An absolute value carrying a script (|b|^{9}, |x − 3|^2) is one base,
+  // like a bracket group. Returns the index of the closing bar at this
+  // nesting level when one follows with a script after it, else -1. Bars
+  // without a script stay ordinary text, so P(A|B) and |a| + |b| are
+  // untouched.
+  function absoluteValueEnd(start) {
+    let depth = 0;
+    for (let i = start + 1; i < text.length; i += 1) {
+      const ch = text[i];
+      if (ch === "{" || ch === "(" || ch === "[") depth += 1;
+      else if (ch === "}" || ch === ")" || ch === "]") {
+        depth -= 1;
+        if (depth < 0) return -1;
+      } else if (ch === "|" && depth === 0) {
+        return i > start + 1 && /^\s*[\^_]/.test(text.slice(i + 1)) ? i : -1;
+      }
+    }
+    return -1;
+  }
+
   function parseBraced() {
     pos += 1; // {
     const children = parseRow("}");
@@ -652,6 +674,11 @@ function parseMath(source) {
         nodes.push({ type: "group", children: parseBraced() });
       } else if ((ch === "(" || ch === "[") && hasMatchingClose(pos, ch, ch === "(" ? ")" : "]")) {
         nodes.push(parseBracketed(ch, ch === "(" ? ")" : "]"));
+      } else if (ch === "|" && absoluteValueEnd(pos) > 0) {
+        pos += 1;
+        const children = parseRow("|");
+        pos += 1;
+        nodes.push({ type: "paren", open: "|", close: "|", children });
       } else if (ch === "_" && text[pos + 1] === "_") {
         // A run of underscores is a fill-in blank, not a subscript.
         const run = /^_+/.exec(text.slice(pos))[0];

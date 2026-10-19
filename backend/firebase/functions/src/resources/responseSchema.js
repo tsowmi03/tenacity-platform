@@ -700,6 +700,7 @@ module.exports = {
   buildSplitResponseSchemas,
   buildVerifiedAnswersSchema,
   enumOf,
+  int,
   nullable,
   obj,
   questionSchema,
