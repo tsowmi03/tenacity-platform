@@ -13,8 +13,15 @@ function controlError(code, message) {
   return Object.assign(new Error(message), { code, resourceControl: true });
 }
 
+// "180 worked questions", "250 algebra questions", "30 index-law problems":
+// up to three words may sit between the number and the noun. A number that
+// labels something else ("Year 9 questions", "Chapter 16 problems") is not a
+// count.
+const COUNT_LABELS = "year|yr|stage|chapter|section|page|level|grade|part|unit|week|lesson|module|question|q";
+const QUESTION_COUNT = new RegExp(String.raw`(?<!\b(?:${COUNT_LABELS})\.?\s*)\b(\d+)(?:[\s-]+[A-Za-z][\w'-]*){0,3}?[\s-]+(?:questions?|problems?)\b`, "gi");
+
 function requestedQuestionCount(prompt = "") {
-  const matches = [...String(prompt).matchAll(/\b(\d+)[\s-]*(?:worked\s+|practice\s+|maths?\s+|revision\s+)*(?:questions?|problems?)\b/gi)];
+  const matches = [...String(prompt).matchAll(QUESTION_COUNT)];
   return matches.length ? Math.max(...matches.map((m) => Number(m[1]))) : null;
 }
 
@@ -31,6 +38,7 @@ function assertRequestSize(job) {
 // them; an attempt fence protects both the journal and the progress display.
 function createDurableCaller({ job, db, storage, callAi, clock = () => new Date(), timeoutMs = STAGE_TIMEOUT_MS }) {
   let freshCalls = 0;
+  let inFlight = null;
   let completed = 0;
   const invocationStarted = Date.now();
   const progress = async (message) => db.runTransaction(async (tx) => {
@@ -55,12 +63,23 @@ function createDurableCaller({ job, db, storage, callAi, clock = () => new Date(
     } catch (err) {
       if (Number(err.code) !== 404) throw err;
     }
-    if (freshCalls) throw controlError("RESOURCE_STAGE_YIELD", "Continuing from saved progress");
+    // Concurrent stages (diagram fills run under Promise.all) reach here
+    // together. The slot is taken before any await, so only one provider call
+    // starts per invocation; the others wait for it to be saved, then yield.
+    if (freshCalls) {
+      await inFlight?.catch(() => {});
+      throw controlError("RESOURCE_STAGE_YIELD", "Continuing from saved progress");
+    }
     if (completed >= MAX_STAGE_COUNT) {
       throw controlError("RESOURCE_STAGE_LIMIT", "This request needs too many generation stages. Split it into smaller resources.");
     }
-    await progress(stageLabel || `Generating · ${completed} steps saved`);
     freshCalls += 1;
+    inFlight = runFreshStage({ request, signal, stageLabel, file });
+    return inFlight;
+  };
+
+  async function runFreshStage({ request, signal, stageLabel, file }) {
+    await progress(stageLabel || `Generating · ${completed} steps saved`);
     const controller = new AbortController();
     const cancel = () => controller.abort(signal.reason);
     if (signal?.aborted) cancel();
@@ -87,7 +106,7 @@ function createDurableCaller({ job, db, storage, callAi, clock = () => new Date(
       clearTimeout(timer);
       signal?.removeEventListener("abort", cancel);
     }
-  };
+  }
 }
 
 async function generateWorksheetBatches({ job, request, callAi, count }) {

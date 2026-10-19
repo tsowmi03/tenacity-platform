@@ -55,3 +55,26 @@ it("does not cache an invalid batch, allowing a later retry to regenerate it", a
   assert.equal(h.values.size, 0);
   assert.equal((await h.make()(request)).parsed.valid, true);
 });
+
+it("starts one provider call when stages arrive together, saving it before yielding", async () => {
+  let calls = 0;
+  const h = harness(async (request) => {
+    calls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return { parsed: { diagram: request.userMessage } };
+  });
+  const caller = h.make();
+  const results = await Promise.allSettled(["a", "b", "c"].map((userMessage) => caller({ userMessage })));
+  assert.equal(calls, 1);
+  assert.equal(results[0].status, "fulfilled");
+  assert.deepEqual(results.slice(1).map((r) => r.reason.code), ["RESOURCE_STAGE_YIELD", "RESOURCE_STAGE_YIELD"]);
+  assert.equal(h.values.size, 1, "the started call was saved before the others yielded");
+});
+
+it("reads explicit question counts that name a topic", () => {
+  const { requestedQuestionCount } = require("../../src/resources/durableStages");
+  assert.equal(requestedQuestionCount("250 algebra questions"), 250);
+  assert.equal(requestedQuestionCount("30 geometry problems"), 30);
+  assert.equal(requestedQuestionCount("Year 9, 180 worked maths questions"), 180);
+  assert.equal(requestedQuestionCount("Year 9 questions on Chapter 16 problems"), null);
+});

@@ -1647,6 +1647,26 @@ describe("retryResourceJobImpl", () => {
     assert.deepEqual(result.outcomes, [{ jobId: "job-1", status: "complete" }]);
   });
 
+  it("starts afresh after a content failure but resumes after a timeout or busy provider", async () => {
+    const cases = [
+      [{ errorCode: "DIAGRAM_LAYOUT_ERROR", failureAttempts: [{ reasonCode: "REQUIRED_DIAGRAM" }] }, true],
+      [{ errorCode: null, failureAttempts: [{ reasonCode: "SCHEMA_INVALID" }, { reasonCode: "PROVIDER_BUSY" }] }, true],
+      [{ errorCode: "RESOURCE_STAGE_TIMEOUT", failureAttempts: [{ reasonCode: "MODEL_FAILURE" }] }, false],
+      [{ errorCode: null, failureAttempts: [{ reasonCode: "PROVIDER_BUSY" }, { reasonCode: "PROVIDER_NETWORK" }] }, false],
+    ];
+    for (const [failure, discards] of cases) {
+      const db = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", ...failure }]);
+      const storage = fakeStorage();
+      await retryResourceJobImpl({
+        payload: { jobId: "job-1" },
+        actor: { uid: "tutor-1", role: "tutor" },
+        deps: { db, clock, storage, durableStages: true },
+      });
+      assert.deepEqual(storage.deletedPrefixes, discards ? ["resources/checkpoints/job-1/"] : [], JSON.stringify(failure));
+      assert.equal(db.jobs[0].status, "pending");
+    }
+  });
+
   it("rejects retries by another tutor", async () => {
     const db = fakeQueueDb([
       { id: "job-1", createdBy: "tutor-1", status: "failed" },

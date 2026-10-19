@@ -3656,6 +3656,15 @@ async function processResourceFallbackImpl({ event, deps }) {
   return { ...result, outcomes };
 }
 
+const RESUMABLE_REASON_CODES = new Set(["PROVIDER_BUSY", "PROVIDER_ACCESS", "PROVIDER_SERVER", "PROVIDER_NETWORK"]);
+
+function resumableFailure(job) {
+  if (job.status === "cancelled") return true;
+  if (String(job.errorCode || "").startsWith("RESOURCE_")) return true;
+  const attempts = Array.isArray(job.failureAttempts) ? job.failureAttempts : [];
+  return attempts.length > 0 && attempts.every((attempt) => RESUMABLE_REASON_CODES.has(attempt?.reasonCode));
+}
+
 async function retryResourceJobImpl({ payload, actor, deps }) {
   const { db, clock } = deps;
   if (!db) throw new TypeError("retryResourceJobImpl requires db");
@@ -3676,6 +3685,14 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
       "failed-precondition",
       "Only failed or cancelled resource jobs can be retried"
     );
+  }
+
+  // Saved stages let Retry resume after a timeout, a stage limit or a busy
+  // provider. After a content failure (invalid JSON, a missing required
+  // diagram, a model error) a saved response may itself be the cause, and
+  // replaying it would fail the same way every time, so Retry starts fresh.
+  if (deps.storage && !resumableFailure(job)) {
+    await deps.storage.bucket().deleteFiles({ prefix: `resources/checkpoints/${payload.jobId}/` });
   }
 
   const modelChoice = inferModelChoice(job);

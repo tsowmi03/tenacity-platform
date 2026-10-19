@@ -205,6 +205,9 @@ omitted, and open follow-ups are tracked at the bottom.
 - Between stages a long job goes to the back of the tutor's queue, so later
   jobs get a turn. The queue panel shows progress ("Writing questions 16–30
   of 180").
+- Retry resumes saved progress after a timeout or a busy provider. After a
+  content failure (bad JSON, a missing diagram) it starts fresh, because a
+  saved response may be what failed.
 - Deleting a resource also deletes its saved progress.
 
 **Why:** A 180-question Year 9 worksheet took 22 minutes and 10 attempts on
