@@ -1,6 +1,6 @@
 # Repository-wide generated files
 .DS_Store
-node_modules/
+node_modules
 
 # Local Claude Code tooling config (permissions, launch config, scheduler state)
 .claude/
