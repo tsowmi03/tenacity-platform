@@ -21,6 +21,7 @@ const { isDiagramRenderError } = require("./builder/diagrams");
 const { classifyResourceFailure, describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { mathFallbackWarning } = require("./mathNotation");
+const { MATH_REPAIR_ROUNDS, repairMathFallbacks, unresolvedMathError } = require("./mathRepair");
 const {
   buildResponseSchema,
   buildSplitResponseSchemas,
@@ -1361,22 +1362,52 @@ function diagramWarning(err) {
   };
 }
 
+/**
+ * Builds the DOCX, omitting optional diagrams that fail and repairing maths
+ * the renderer falls back on. Returns the buffer together with the exact
+ * resource it was built from, which becomes the job's generatedJson.
+ *
+ * With `repairMath`, a build that reports maths fallbacks sends only the
+ * affected fields for a bounded repair and rebuilds; fallbacks that survive
+ * MATH_REPAIR_ROUNDS fail the job instead of shipping (RES-45). Without it
+ * (fixtures, tooling) fallbacks are only reported as a warning.
+ */
 async function buildDocxWithDiagramReliability({
   resourceType,
   parsed,
   options,
   buildDocx,
+  repairMath = null,
 }) {
   const resource = cloneGeneratedResource(parsed);
   const warnings = [];
+  let mathRepairRounds = 0;
+  let mathFieldsRepaired = 0;
 
   while (true) {
     // Fresh per attempt: a retry after omitting a diagram rebuilds everything.
     const mathIssues = [];
     try {
       const buffer = await buildDocx(resourceType, resource, { ...options, mathIssues });
+      if (mathIssues.length && repairMath) {
+        if (mathRepairRounds < MATH_REPAIR_ROUNDS) {
+          mathRepairRounds += 1;
+          const changed = await repairMath({ resource, issues: mathIssues, round: mathRepairRounds });
+          if (changed) {
+            mathFieldsRepaired += changed;
+            continue;
+          }
+        }
+        throw unresolvedMathError(mathIssues);
+      }
       if (mathIssues.length) warnings.push(mathFallbackWarning(mathIssues));
-      return { buffer, warnings };
+      if (mathFieldsRepaired) {
+        logger.info("Maths formatting repaired before completion", {
+          rounds: mathRepairRounds,
+          fields: mathFieldsRepaired,
+        });
+      }
+      return { buffer, warnings, resource };
     } catch (err) {
       if (!isDiagramRenderError(err)) throw err;
       if (err.diagramRequired !== false) {
@@ -1415,7 +1446,7 @@ function extractJobTopics(parsed) {
   return [];
 }
 
-async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clock, model }) {
+async function saveGeneratedResource({ job, parsed, storage, buildDocx, clock, model, callAi, signal }) {
   const answerMode = answerModeForJob(job);
   const outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
@@ -1431,6 +1462,17 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
       resourceType: job.resourceType,
       parsed,
       buildDocx,
+      repairMath: callAi
+        ? ({ resource, issues, round }) => repairMathFallbacks({
+          resource,
+          issues,
+          round,
+          callAi,
+          model,
+          signal,
+          attempt: Number(job.attemptCount) || 1,
+        })
+        : null,
       options: {
         studentName: job.studentName,
         subject: job.subject,
@@ -1442,12 +1484,13 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
       },
     });
   } catch (err) {
-    if (!isDiagramRenderError(err) && err?.name !== "ResourceValidationError") {
+    if (!isDiagramRenderError(err) && err?.name !== "ResourceValidationError" && !err?.resourceControl &&
+        !err?.modelFailure && !isCancellationError(err)) {
       err.resourceInfrastructure = "docx";
     }
     throw err;
   }
-  const { buffer: docxBuffer, warnings } = built;
+  const { buffer: docxBuffer, warnings, resource: builtResource } = built;
   const outputPath = outputPathForJob(job.jobId, outputFileName, job.attemptId);
 
   try {
@@ -1482,7 +1525,10 @@ async function saveGeneratedResource({ job, parsed, raw, storage, buildDocx, clo
     outputPath,
     outputFileName,
     previewPath: null,
-    generatedJson: raw,
+    // The exact JSON the DOCX was built from: after answer verification,
+    // omitted diagrams and maths repairs. Revisions and repairs re-read it,
+    // so it must match what the tutor downloaded.
+    generatedJson: JSON.stringify(builtResource),
     extractedTopics: extractJobTopics(parsed),
     warnings,
     model,
@@ -2584,11 +2630,12 @@ async function runGenerationPipeline(job, deps) {
     const saved = await saveGeneratedResource({
       job,
       parsed,
-      raw,
       storage,
       buildDocx,
       clock,
       model: generationModel,
+      callAi: trackedCallAi,
+      signal: deps.signal,
     });
     const sourceWarnings = [passageSourcing.warning, stimulusSourcing.warning]
       .filter(Boolean)
@@ -2822,7 +2869,6 @@ async function runRepairPipeline(job, deps) {
   });
   throwIfCancelled(deps);
 
-  let repairedRaw = raw;
   let diagramRepair;
   try {
     diagramRepair = await runDiagramRepairPass({
@@ -2837,18 +2883,18 @@ async function runRepairPipeline(job, deps) {
     err.usageByProvider = { ...usageByProvider };
     throw err;
   }
-  if (diagramRepair.changed) repairedRaw = JSON.stringify(parsed, null, 2);
   throwIfCancelled(deps);
 
   try {
     const saved = await saveGeneratedResource({
       job,
       parsed,
-      raw: repairedRaw,
       storage,
       buildDocx,
       clock,
       model: repairModel,
+      callAi: trackedCallAi,
+      signal: deps.signal,
     });
     return {
       ...saved,
@@ -3125,7 +3171,6 @@ async function runRevisionPipeline(job, deps) {
   // tutor as the revision having rewritten a question it never touched.
   const revisionChanges = detectRevisionChanges(sourceJob.generatedJson, parsed);
 
-  let revisedRaw = raw;
   let diagramRepair;
   try {
     diagramRepair = await runDiagramRepairPass({
@@ -3140,18 +3185,18 @@ async function runRevisionPipeline(job, deps) {
     err.usageByProvider = { ...usageByProvider };
     throw err;
   }
-  if (diagramRepair.changed) revisedRaw = JSON.stringify(parsed, null, 2);
   throwIfCancelled(deps);
 
   try {
     const saved = await saveGeneratedResource({
       job,
       parsed,
-      raw: revisedRaw,
       storage,
       buildDocx,
       clock,
       model: revisionModel,
+      callAi: trackedCallAi,
+      signal: deps.signal,
     });
     return {
       ...saved,

@@ -36,3 +36,18 @@ Retry deletes the journal and starts fresh. Deleting a resource also deletes its
 Regression coverage includes a slow 180-question worksheet, hung providers,
 late/superseded responses, invalid batches, queue fairness, and concurrent
 recovery transactions in the Firestore emulator.
+
+## Maths formatting repair (RES-45)
+
+A maths resource is never marked Ready while the renderer falls back to plain
+text for any expression. After the build reports fallbacks, only the fields
+holding the broken notation are sent back to the model for a notation-only
+rewrite (`src/resources/mathRepair.js`); a rewrite that changes the wording or
+length substantially is ignored. The DOCX is then rebuilt from the same
+content. Two repair rounds are allowed. If fallbacks remain, the job fails with
+`RESOURCE_MATH_UNRESOLVED`, naming the expressions, and no DOCX is uploaded.
+Retry keeps saved stages and asks for a fresh repair, because the attempt
+number is part of the repair prompt.
+
+`generatedJson` is the exact JSON the DOCX was built from: after answer
+verification, omitted optional diagrams and maths repairs.
