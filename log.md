@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-21 | [Booking a one-off no longer keeps families waiting (MOB-55)](#2026-10-21--booking-a-one-off-no-longer-keeps-families-waiting-mob-55) |
 | 2026-10-20 | [Maths that won't format is repaired, or the resource is held back (RES-45)](#2026-10-20--maths-that-wont-format-is-repaired-or-the-resource-is-held-back-res-45) |
 | 2026-10-20 | [Large resources resume from saved stages instead of restarting (RES-44)](#2026-10-20--large-resources-resume-from-saved-stages-instead-of-restarting-res-44) |
 | 2026-10-16 | [Staff can start group chats (MOB-54)](#2026-10-16--staff-can-start-group-chats-mob-54) |
@@ -186,6 +187,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-21 — Booking a one-off no longer keeps families waiting (MOB-55)
+
+**What changed**
+- Each Cloud Function server now loads only the code for the one function it
+  serves, instead of all 103. Measured in staging over six alternating
+  deploys, server start-up fell from a median 3.95s to 2.3s, and the time
+  spent loading our code from 3.4s to 1.7s. This speeds up the first request
+  after a quiet spell for every function, not only booking.
+  `lib/functionModules.json` maps each function to its file; it is generated
+  (`npm run generate:function-modules`) and a unit test fails if it drifts or
+  if any function deploys differently when loaded alone.
+- The one-off booking function keeps one warm server in production, so a
+  booking never waits for one to start. About A$8 a month. Staging keeps none.
+- The booking function answers as soon as the seat is written. The admin
+  "student added" push now comes from the attendance trigger that already
+  sends it for other bookings, rather than inside the call. The payment
+  webhook's bookings still send no such push, as before.
+- The app books all selected children in one call instead of one after
+  another, and no longer reads the roll before booking; the server already
+  reports a child who is booked.
+- Each function logs `functions_bundle_loaded` with its load time at start-up,
+  which is how the change above was measured.
+
+**Why:** Production logs showed 8 of 9 one-off bookings in the week to 19 Oct
+waited 5.4–15.3s, almost all of it a server starting up. A warm booking took
+1.3s. Paid bookings hit the same start-up on three functions in a row.
+
+**Status:** Live. Functions deployed; the app's single-call booking ships with
+the next mobile release.
 
 ---
 

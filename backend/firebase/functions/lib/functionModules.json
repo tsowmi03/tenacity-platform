@@ -1,0 +1,414 @@
+{
+  "adminAcceptEnrolment": [
+    "../src/enrolments/acceptEnrolment",
+    "adminAcceptEnrolment"
+  ],
+  "adminAdjustLessonTokens": [
+    "../src/users/adjustLessonTokens",
+    "adminAdjustLessonTokens"
+  ],
+  "adminArchiveEnrolment": [
+    "../src/enrolments/archiveEnrolment",
+    "adminArchiveEnrolment"
+  ],
+  "adminAttendanceReport": [
+    "../src/reports/attendanceReport",
+    "adminAttendanceReport"
+  ],
+  "adminClassUtilisationReport": [
+    "../src/reports/classUtilisationReport",
+    "adminClassUtilisationReport"
+  ],
+  "adminCreateClass": [
+    "../src/classes/createClass",
+    "adminCreateClass"
+  ],
+  "adminCreateInvoice": [
+    "../src/invoices/createInvoice",
+    "adminCreateInvoice"
+  ],
+  "adminCreateInvoiceDraft": [
+    "../src/invoices/createInvoice",
+    "adminCreateInvoiceDraft"
+  ],
+  "adminCreateParent": [
+    "../src/users/createParent",
+    "adminCreateParent"
+  ],
+  "adminCreateStudent": [
+    "../src/students/createStudent",
+    "adminCreateStudent"
+  ],
+  "adminCreateTermsForYear": [
+    "../src/terms/manageTerms",
+    "adminCreateTermsForYear"
+  ],
+  "adminCreateUser": [
+    "../src/users/createUser",
+    "adminCreateUser"
+  ],
+  "adminDeleteClass": [
+    "../src/classes/deleteClass",
+    "adminDeleteClass"
+  ],
+  "adminDeleteEnrolment": [
+    "../src/enrolments/deleteEnrolment",
+    "adminDeleteEnrolment"
+  ],
+  "adminDeleteInvoice": [
+    "../src/invoices/deleteInvoice",
+    "adminDeleteInvoice"
+  ],
+  "adminDeleteStudent": [
+    "../src/students/deleteStudent",
+    "adminDeleteStudent"
+  ],
+  "adminDeleteUser": [
+    "../src/users/deleteUser",
+    "adminDeleteUser"
+  ],
+  "adminExportReport": [
+    "../src/reports/exportReport",
+    "adminExportReport"
+  ],
+  "adminGenerateAttendanceForClass": [
+    "../src/classes/attendanceGeneration",
+    "adminGenerateAttendanceForClass"
+  ],
+  "adminGetInvoicePdf": [
+    "../src/invoices/getInvoicePdf",
+    "adminGetInvoicePdf"
+  ],
+  "adminIncomeReport": [
+    "../src/reports/incomeReport",
+    "adminIncomeReport"
+  ],
+  "adminInvoiceAgingReport": [
+    "../src/reports/invoiceAgingReport",
+    "adminInvoiceAgingReport"
+  ],
+  "adminLinkStudentToParent": [
+    "../src/users/linkStudent",
+    "adminLinkStudentToParent"
+  ],
+  "adminPurgeEnrolment": [
+    "../src/enrolments/deleteEnrolment",
+    "adminPurgeEnrolment"
+  ],
+  "adminRegenerateAttendanceForTerm": [
+    "../src/classes/attendanceGeneration",
+    "adminRegenerateAttendanceForTerm"
+  ],
+  "adminStudentEnrolmentReport": [
+    "../src/reports/studentEnrolmentReport",
+    "adminStudentEnrolmentReport"
+  ],
+  "adminUnarchiveEnrolment": [
+    "../src/enrolments/archiveEnrolment",
+    "adminUnarchiveEnrolment"
+  ],
+  "adminUnlinkStudentFromParent": [
+    "../src/users/linkStudent",
+    "adminUnlinkStudentFromParent"
+  ],
+  "adminUpdateClass": [
+    "../src/classes/updateClass",
+    "adminUpdateClass"
+  ],
+  "adminUpdateEnrolment": [
+    "../src/enrolments/updateEnrolment",
+    "adminUpdateEnrolment"
+  ],
+  "adminUpdateInvoice": [
+    "../src/invoices/updateInvoice",
+    "adminUpdateInvoice"
+  ],
+  "adminUpdateReferral": [
+    "../src/referrals/updateReferral",
+    "adminUpdateReferral"
+  ],
+  "adminUpdateStudent": [
+    "../src/students/updateStudent",
+    "adminUpdateStudent"
+  ],
+  "adminUpdateTerm": [
+    "../src/terms/manageTerms",
+    "adminUpdateTerm"
+  ],
+  "adminUpdateUser": [
+    "../src/users/updateUser",
+    "adminUpdateUser"
+  ],
+  "cancelResourceJob": [
+    "../src/resources/index",
+    "cancelResourceJob"
+  ],
+  "cancelStudentForWeek": [
+    "./notifications/attendance",
+    "cancelStudentForWeek"
+  ],
+  "chatAboutResource": [
+    "../src/resources/index",
+    "chatAboutResource"
+  ],
+  "createAnnouncement": [
+    "./notifications/announcements",
+    "createAnnouncement"
+  ],
+  "createFeedback": [
+    "./notifications/feedback",
+    "createFeedback"
+  ],
+  "createGroupChat": [
+    "../src/chats/createGroupChat",
+    "createGroupChat"
+  ],
+  "createInvoice": [
+    "./notifications/invoices",
+    "createInvoice"
+  ],
+  "createPaymentIntent": [
+    "./payment_functions",
+    "createPaymentIntent"
+  ],
+  "createStripeCustomerEphemeralKey": [
+    "./payment_functions",
+    "createStripeCustomerEphemeralKey"
+  ],
+  "dailyLessonAndShiftReminder": [
+    "./notifications/reminders",
+    "dailyLessonAndShiftReminder"
+  ],
+  "dailyTutorShiftReminder": [
+    "./notifications/reminders",
+    "dailyTutorShiftReminder"
+  ],
+  "debugXeroAccountsAndTaxTypes": [
+    "./xero_functions",
+    "debugXeroAccountsAndTaxTypes"
+  ],
+  "deleteResourceJob": [
+    "../src/resources/index",
+    "deleteResourceJob"
+  ],
+  "deleteUserByUidV2": [
+    "./timetable_functions",
+    "deleteUserByUidV2"
+  ],
+  "dryRunCurrentTermInvoices": [
+    "./timetable_functions",
+    "dryRunCurrentTermInvoices"
+  ],
+  "enrollStudentOneOff": [
+    "./notifications/attendance",
+    "enrollStudentOneOff"
+  ],
+  "enrollStudentPermanent": [
+    "./notifications/classes",
+    "enrollStudentPermanent"
+  ],
+  "enrollStudentPermanentForParent": [
+    "./notifications/classes",
+    "enrollStudentPermanentForParent"
+  ],
+  "generateResourcePreviewOnComplete": [
+    "../src/resources/index",
+    "generateResourcePreviewOnComplete"
+  ],
+  "getInvoicePdf": [
+    "./xero_functions",
+    "getInvoicePdf"
+  ],
+  "getReferralLink": [
+    "../src/referrals/getReferralLink",
+    "getReferralLink"
+  ],
+  "invoiceCreatedNotif": [
+    "./notifications/invoices",
+    "invoiceCreatedNotif"
+  ],
+  "invoiceReminderScheduler": [
+    "./notifications/invoices",
+    "invoiceReminderScheduler"
+  ],
+  "joinWaitlist": [
+    "./notifications/waitlist",
+    "joinWaitlist"
+  ],
+  "linkUsers": [
+    "./uidLink",
+    "linkUsers"
+  ],
+  "markInvoicePaidInXero": [
+    "./xero_functions",
+    "markInvoicePaidInXero"
+  ],
+  "notifyStudentAbsence": [
+    "./notifications/attendance",
+    "notifyStudentAbsence"
+  ],
+  "onAnnouncementCreated": [
+    "./notifications/announcements",
+    "onAnnouncementCreated"
+  ],
+  "onAttendanceChangeNotifyAdmins": [
+    "./notifications/attendance",
+    "onAttendanceChangeNotifyAdmins"
+  ],
+  "onAuditLogAnalytics": [
+    "../src/analytics/triggers",
+    "onAuditLogAnalytics"
+  ],
+  "onFeedbackCreated": [
+    "./notifications/feedback",
+    "onFeedbackCreated"
+  ],
+  "onInvoiceCreated": [
+    "./xero_functions",
+    "onInvoiceCreated"
+  ],
+  "onInvoicePaidAnalytics": [
+    "../src/analytics/triggers",
+    "onInvoicePaidAnalytics"
+  ],
+  "onInvoicePaidNotifyAdmins": [
+    "./notifications/invoices",
+    "onInvoicePaidNotifyAdmins"
+  ],
+  "onInvoiceStatusChanged": [
+    "./xero_functions",
+    "onInvoiceStatusChanged"
+  ],
+  "onMessageReceived": [
+    "./notifications/chat",
+    "onMessageReceived"
+  ],
+  "onPaymentLogAnalytics": [
+    "../src/analytics/triggers",
+    "onPaymentLogAnalytics"
+  ],
+  "onPermanentEnrolmentNotifyAdmins": [
+    "./notifications/classes",
+    "onPermanentEnrolmentNotifyAdmins"
+  ],
+  "onPermanentSpotOpened": [
+    "./notifications/classes",
+    "onPermanentSpotOpened"
+  ],
+  "onUserAnalytics": [
+    "../src/analytics/triggers",
+    "onUserAnalytics"
+  ],
+  "onWaitlistEntryCreatedNotifyAdmins": [
+    "./notifications/waitlist",
+    "onWaitlistEntryCreatedNotifyAdmins"
+  ],
+  "onWaitlistEntryReactivatedNotifyAdmins": [
+    "./notifications/waitlist",
+    "onWaitlistEntryReactivatedNotifyAdmins"
+  ],
+  "previewParentEmailBlast": [
+    "../src/email/previewParentEmailBlast",
+    "previewParentEmailBlast"
+  ],
+  "processResourceFallback": [
+    "../src/resources/index",
+    "processResourceFallback"
+  ],
+  "processResourceJob": [
+    "../src/resources/index",
+    "processResourceJob"
+  ],
+  "promoteWaitlistEntry": [
+    "./notifications/waitlist",
+    "promoteWaitlistEntry"
+  ],
+  "reconcileOneOffPayments": [
+    "../src/payments/reconcileOneOffPayments",
+    "reconcileOneOffPayments"
+  ],
+  "recordAuditEvent": [
+    "../src/audit/recordAuditEvent",
+    "recordAuditEvent"
+  ],
+  "recoverStuckResourceJobs": [
+    "../src/resources/index",
+    "recoverStuckResourceJobs"
+  ],
+  "rescheduleStudentToDifferentClass": [
+    "./notifications/attendance",
+    "rescheduleStudentToDifferentClass"
+  ],
+  "retryResourceJob": [
+    "../src/resources/index",
+    "retryResourceJob"
+  ],
+  "rolloverTermData": [
+    "./timetable_functions",
+    "rolloverTermData"
+  ],
+  "sendAdminEnrolmentEmail": [
+    "./portal/overrides",
+    "sendAdminEnrolmentEmail"
+  ],
+  "sendChatMessage": [
+    "./notifications/chat",
+    "sendChatMessage"
+  ],
+  "sendCustomPasswordResetEmail": [
+    "./portal/overrides",
+    "sendCustomPasswordResetEmail"
+  ],
+  "sendParentEmailBlast": [
+    "../src/email/parentEmailBlast",
+    "sendParentEmailBlast"
+  ],
+  "sendParentEnrolmentAcceptedEmail": [
+    "./email_functions",
+    "sendParentEnrolmentAcceptedEmail"
+  ],
+  "sendParentWelcomeEmail": [
+    "./email_functions",
+    "sendParentWelcomeEmail"
+  ],
+  "stripeWebhook": [
+    "./payment_functions",
+    "stripeWebhook"
+  ],
+  "submitResourceJob": [
+    "../src/resources/index",
+    "submitResourceJob"
+  ],
+  "submitResourceRevision": [
+    "../src/resources/index",
+    "submitResourceRevision"
+  ],
+  "syncGoogleCalendar": [
+    "../src/calendar/syncGoogleCalendar",
+    "syncGoogleCalendar"
+  ],
+  "syncUserRoleClaim": [
+    "./portal/overrides",
+    "syncUserRoleClaim"
+  ],
+  "unenrollStudentPermanent": [
+    "./notifications/classes",
+    "unenrollStudentPermanent"
+  ],
+  "updateWaitlistEntryStatus": [
+    "./notifications/waitlist",
+    "updateWaitlistEntryStatus"
+  ],
+  "verifyPaymentStatus": [
+    "./payment_functions",
+    "verifyPaymentStatus"
+  ],
+  "xeroAuthCallback": [
+    "./xero_functions",
+    "xeroAuthCallback"
+  ],
+  "xeroAuthStart": [
+    "./xero_functions",
+    "xeroAuthStart"
+  ]
+}

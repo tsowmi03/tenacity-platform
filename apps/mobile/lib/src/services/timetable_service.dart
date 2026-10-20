@@ -1141,11 +1141,15 @@ class TimetableService {
     }
   }
 
-  /// Book a one-off class for a single attendance doc.
-  /// This also checks capacity before enrolling.
-  Future<OneOffEnrollmentResult> enrollStudentOneOff({
+  /// Book one or more children into a single session, in one call.
+  /// The server checks capacity and reports each child's outcome.
+  ///
+  /// One child goes as `studentId`, the contract every server version accepts;
+  /// several go as `studentIds` (MOB-55). A server too old to send the lists
+  /// back is read through its `added` / `alreadyEnrolled` answer.
+  Future<OneOffBatchEnrollmentResult> enrollStudentsOneOff({
     required String classId,
-    required String studentId,
+    required List<String> studentIds,
     required String attendanceDocId,
   }) async {
     try {
@@ -1153,13 +1157,27 @@ class TimetableService {
           FirebaseFunctions.instance.httpsCallable('enrollStudentOneOff');
       final response = await callable.call<Map<String, dynamic>>({
         'classId': classId,
-        'studentId': studentId,
         'attendanceDocId': attendanceDocId,
+        if (studentIds.length == 1)
+          'studentId': studentIds.single
+        else
+          'studentIds': studentIds,
       });
       final data = response.data;
-      return OneOffEnrollmentResult(
-        added: data['added'] == true,
-        alreadyEnrolled: data['alreadyEnrolled'] == true,
+      List<String> ids(dynamic value) =>
+          value is List ? value.whereType<String>().toList() : const [];
+      if (data['enrolled'] is List) {
+        return OneOffBatchEnrollmentResult(
+          enrolled: ids(data['enrolled']),
+          alreadyEnrolled: ids(data['alreadyEnrolledStudentIds']),
+          noCapacity: ids(data['noCapacity']),
+        );
+      }
+      final only = studentIds.first;
+      return OneOffBatchEnrollmentResult(
+        enrolled: data['added'] == true ? [only] : const [],
+        alreadyEnrolled: data['alreadyEnrolled'] == true ? [only] : const [],
+        noCapacity: const [],
       );
     } catch (e) {
       debugPrint(

@@ -58,6 +58,10 @@ export const globalTriggerPaths = [
   `${functionsRoot}package-lock.json`,
   `${functionsRoot}index.js`,
   `${functionsRoot}lib/index.js`,
+  // A cold instance loads its one function through these (MOB-55), so a
+  // change to either changes how every Function starts.
+  `${functionsRoot}lib/allFunctions.js`,
+  `${functionsRoot}lib/functionModules.json`,
 ];
 
 // Paths under functions/ that are never part of a deployed Function: unit
@@ -248,6 +252,21 @@ function resolveLocalSpecifier(fromFile, specifier) {
   return null;
 }
 
+// Computed requires that are known to add no edge the runtime graph lacks.
+// `lib/index.js` loads one function's defining file by name from
+// `lib/functionModules.json` (MOB-55). Every file that manifest can name is
+// already loaded through `lib/allFunctions.js`, and
+// `functions/test/unit/functionModules.test.js` fails if the manifest names
+// anything else, so scoping still sees each edge.
+export const verifiedDynamicRequires = [
+  { file: `${functionsRoot}lib/index.js`, text: "modulePath" },
+];
+
+const isVerifiedDynamicRequire = (entry) =>
+  verifiedDynamicRequires.some(
+    (allowed) => allowed.file === entry.file && allowed.text === entry.text
+  );
+
 /**
  * Reads every relative require literal out of the source, without executing it.
  *
@@ -271,7 +290,8 @@ export function staticRequireEdges({ files, root = repositoryRoot }) {
     for (const match of source.matchAll(requireCallPattern)) {
       const argument = classifyRequireArgument(match[1]);
       if (argument.kind === "dynamic") {
-        dynamic.push({ file: rel(file), text: argument.text });
+        const entry = { file: rel(file), text: argument.text };
+        if (!isVerifiedDynamicRequire(entry)) dynamic.push(entry);
         continue;
       }
       if (!argument.specifier.startsWith(".")) continue;
