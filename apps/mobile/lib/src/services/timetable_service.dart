@@ -1262,42 +1262,18 @@ class TimetableService {
   /// --------------------------------------
   ///        TOKEN-RELATED LOGIC
   /// --------------------------------------
-
-  Future<void> incrementLessonTokens(String parentId, int count) async {
-    final parentRef =
-        FirebaseFirestore.instance.collection('users').doc(parentId);
-
-    await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final snap = await transaction.get(parentRef);
-      if (!snap.exists) {
-        throw Exception('Parent $parentId does not exist!');
-      }
-      transaction.update(parentRef, {
-        'lessonTokens': FieldValue.increment(count),
-      });
-    });
-  }
-
-  Future<void> decrementLessonTokens(String parentId, int count) async {
-    final parentRef =
-        FirebaseFirestore.instance.collection('users').doc(parentId);
-
-    await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final snap = await transaction.get(parentRef);
-      if (!snap.exists) {
-        throw Exception('Parent $parentId does not exist!');
-      }
-      transaction.update(parentRef, {
-        'lessonTokens': FieldValue.increment(count * -1),
-      });
-    });
-  }
+  ///
+  /// The app never writes `lessonTokens` itself (MOB-64). A one-off booking
+  /// takes its token inside `enrollStudentOneOff`; an admin edit goes through
+  /// `adminAdjustLessonTokens`, which writes the audit entry.
 
   Future<void> setLessonTokens(String parentId, int count) async {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(parentId)
-        .update({'lessonTokens': count});
+    await FirebaseFunctions.instance
+        .httpsCallable('adminAdjustLessonTokens')
+        .call<Map<String, dynamic>>({
+      'uid': parentId,
+      'set': count,
+    });
   }
 
   Future<int> getLessonTokenCount(String parentId) async {

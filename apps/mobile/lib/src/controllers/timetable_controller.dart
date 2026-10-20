@@ -1233,72 +1233,11 @@ class TimetableController extends ChangeNotifier {
     return tokenAwarded;
   }
 
-  Future<void> incrementTokens(String parentId, int count,
-      {BuildContext? context, AuthController? authController}) async {
-    final controller = authController ??
-        (context == null
-            ? null
-            : Provider.of<AuthController>(context, listen: false));
-    _startLoading();
-    try {
-      final beforeCount = await _service.getLessonTokenCount(parentId);
-      await _service.incrementLessonTokens(parentId, count);
-      _recordTokenAdjustment(
-        parentId: parentId,
-        delta: count,
-        beforeCount: beforeCount,
-        reason: 'increment',
-      );
-      if (controller != null) {
-        if (controller.currentUser?.uid == parentId) {
-          await controller.refreshCurrentUser();
-        }
-      }
-      _stopLoading();
-    } catch (e) {
-      _reportFailure(e, action: 'add a lesson token');
-    }
-  }
-
-  Future<void> decrementTokens(String parentId, int count,
-      {BuildContext? context, AuthController? authController}) async {
-    final controller = authController ??
-        (context == null
-            ? null
-            : Provider.of<AuthController>(context, listen: false));
-    _startLoading();
-    try {
-      final beforeCount = await _service.getLessonTokenCount(parentId);
-      await _service.decrementLessonTokens(parentId, count);
-      _recordTokenAdjustment(
-        parentId: parentId,
-        delta: count * -1,
-        beforeCount: beforeCount,
-        reason: 'decrement',
-      );
-      // Refresh current user if context is provided and parentId matches
-      if (controller != null) {
-        if (controller.currentUser?.uid == parentId) {
-          await controller.refreshCurrentUser();
-        }
-      }
-      _stopLoading();
-    } catch (e) {
-      _reportFailure(e, action: 'use a lesson token');
-    }
-  }
-
+  /// Admin override. The callable writes the balance and its audit entry.
   Future<void> setLessonTokens(String parentId, int count) async {
     _startLoading();
     try {
-      final beforeCount = await _service.getLessonTokenCount(parentId);
       await _service.setLessonTokens(parentId, count);
-      _recordTokenAdjustment(
-        parentId: parentId,
-        delta: count - beforeCount,
-        beforeCount: beforeCount,
-        reason: 'manual_set',
-      );
       _stopLoading();
     } catch (e) {
       _reportFailure(e, action: 'update lesson tokens');
@@ -1479,27 +1418,6 @@ class TimetableController extends ChangeNotifier {
       if (sortedA[i] != sortedB[i]) return false;
     }
     return true;
-  }
-
-  void _recordTokenAdjustment({
-    required String parentId,
-    required int delta,
-    required int beforeCount,
-    required String reason,
-  }) async {
-    _auditService.record(
-      action: 'user.adjust_lesson_tokens',
-      targetType: 'user',
-      targetId: parentId,
-      targetName: parentId,
-      payloadSummary: {
-        'mode': reason == 'manual_set' ? 'set' : 'delta',
-        'value': delta,
-        'reason': reason,
-      },
-      before: {'lessonTokens': beforeCount},
-      after: {'lessonTokens': beforeCount + delta},
-    );
   }
 
   void _stopLoading() {

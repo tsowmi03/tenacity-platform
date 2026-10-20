@@ -25,6 +25,14 @@ const { HOLD_COLLECTION, capacityAfterHolds } = require("./oneOffSeatHolds");
  * cancelled cannot book into it (MOB-58). For the webhook that means a
  * payment taken moments before the cancellation lands with an admin rather
  * than buying a class that is not running.
+ *
+ * `chargeTokensTo` is the parent who pays with lesson tokens: one token per
+ * student actually added, taken in this same transaction (MOB-64). The app
+ * used to take it afterwards, from the device, and Firestore rules refused
+ * every one of those writes, so families booked and kept their tokens. Too
+ * few tokens is refused as `insufficient_tokens` before anything is written.
+ * A student already in the session costs nothing, so a retried call cannot
+ * charge twice.
  */
 async function enrolOneOffStudentsImpl({
   db,
@@ -33,6 +41,7 @@ async function enrolOneOffStudentsImpl({
   studentIds,
   actor,
   canEnrol,
+  chargeTokensTo = null,
   respectHolds = false,
   paymentIntentId = null,
   now = new Date(),
@@ -48,11 +57,15 @@ async function enrolOneOffStudentsImpl({
 
   const classRef = db.collection("classes").doc(classId);
   const attendanceRef = classRef.collection("attendance").doc(attendanceDocId);
+  const payerRef = chargeTokensTo
+    ? db.collection("users").doc(chargeTokensTo)
+    : null;
 
   return db.runTransaction(async (transaction) => {
-    const [classSnap, attendanceSnap] = await Promise.all([
+    const [classSnap, attendanceSnap, payerSnap] = await Promise.all([
       transaction.get(classRef),
       transaction.get(attendanceRef),
+      payerRef ? transaction.get(payerRef) : Promise.resolve(null),
     ]);
 
     if (!classSnap.exists) {
@@ -112,6 +125,29 @@ async function enrolOneOffStudentsImpl({
       studentIds,
     });
 
+    let tokens = null;
+    if (payerRef) {
+      if (!payerSnap.exists) {
+        return { ok: false, reason: "payer_not_found" };
+      }
+      const payerData = payerSnap.data() || {};
+      const before =
+        typeof payerData.lessonTokens === "number" ? payerData.lessonTokens : 0;
+      const cost = plan.toEnrol.length;
+      if (cost > before) {
+        return {
+          ok: false,
+          reason: "insufficient_tokens",
+          tokensAvailable: before,
+          tokensNeeded: cost,
+        };
+      }
+      tokens = { charged: cost, before, after: before - cost };
+      if (cost > 0) {
+        transaction.update(payerRef, { lessonTokens: tokens.after });
+      }
+    }
+
     if (!plan.isNoOp) {
       transaction.update(attendanceRef, {
         attendance: FieldValue.arrayUnion(...plan.toEnrol),
@@ -131,6 +167,7 @@ async function enrolOneOffStudentsImpl({
       enrolled: plan.toEnrol,
       alreadyEnrolled: plan.alreadyEnrolled,
       noCapacity: plan.noCapacity,
+      tokens,
       classData,
       attendanceData,
     };
