@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-21 | [Booking a one-off with a lesson token now uses the token (MOB-64)](#2026-10-21--booking-a-one-off-with-a-lesson-token-now-uses-the-token-mob-64) |
 | 2026-10-20 | [Maths that won't format is repaired, or the resource is held back (RES-45)](#2026-10-20--maths-that-wont-format-is-repaired-or-the-resource-is-held-back-res-45) |
 | 2026-10-20 | [Large resources resume from saved stages instead of restarting (RES-44)](#2026-10-20--large-resources-resume-from-saved-stages-instead-of-restarting-res-44) |
 | 2026-10-16 | [Staff can start group chats (MOB-54)](#2026-10-16--staff-can-start-group-chats-mob-54) |
@@ -186,6 +187,42 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-21 — Booking a one-off with a lesson token now uses the token (MOB-64)
+
+**What changed**
+- `enrollStudentOneOff` takes the parent's lesson token in the same
+  transaction as the seat. With too few tokens the booking is refused before
+  anything is written. A student already booked costs nothing, so a retry
+  can't charge twice. Admin bookings stay free. Each token taken is recorded
+  in the audit log (`user.adjust_lesson_tokens`, reason `one_off_booking`).
+- The app no longer writes `lessonTokens`. The one-off path just refreshes
+  the balance after booking. The admin token editor goes through
+  `adminAdjustLessonTokens`, which writes the audit entry. The permanent
+  enrolment path's deduction is removed (see MOB-65).
+- `createPaymentIntent` refuses a one-off payment that has no booking
+  attached. Only app builds before 3.0.1 send those. They enrol through the
+  callable after paying, so they could otherwise be charged and then refused
+  a seat for lack of a token.
+- New one-off script `scripts/correctOneOffTokenBalances.js` (dry run by
+  default) takes back the tokens that bookings kept. It never takes a balance
+  below zero. Each correction goes in the audit log, and a parent already
+  corrected is skipped.
+
+**Why:** From 22 May 2026, when production Firestore rules stopped parents
+writing their own `lessonTokens`, the app's deduction after every token
+booking was refused. The booking still went through, so families booked and
+kept the token. Before 22 May the rules were fully open and deductions
+worked. The production dry run found 30 uncharged token bookings across 11
+families. Correcting them removes 22 tokens, and 8 are written off because
+the balance can't go below zero (Tom approved this).
+
+**Status:** Live. Functions deployed, and balances corrected with
+`npm run correct-one-off-tokens:once -- --projectId=tenacity-tutoring-b8eb2`.
+The app changes ship with the next mobile release. Older builds keep
+attempting their own deduction, which Firestore rules refuse harmlessly.
 
 ---
 
