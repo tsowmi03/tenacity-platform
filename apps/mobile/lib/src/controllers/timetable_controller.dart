@@ -1047,10 +1047,12 @@ class TimetableController extends ChangeNotifier {
           attendance != null) {
         // The read may land either side of the write, so the roll before is
         // derived rather than taken as read.
-        final before = attendance.attendance
+        var roll = attendance.attendance
             .where((id) => !result.enrolled.contains(id))
             .toList();
+        // One event per child, each showing only its own addition.
         for (final studentId in result.enrolled) {
+          final next = [...roll, studentId];
           _auditService.record(
             action: 'class.book_one_off',
             targetType: 'attendance',
@@ -1065,11 +1067,10 @@ class TimetableController extends ChangeNotifier {
               'attendanceDate': AuditService.dateOnly(attendance.date),
               'studentId': studentId,
             },
-            before: {'attendance': before},
-            after: {
-              'attendance': [...before, ...result.enrolled],
-            },
+            before: {'attendance': roll},
+            after: {'attendance': next},
           );
+          roll = next;
         }
       }
       _stopLoading();
