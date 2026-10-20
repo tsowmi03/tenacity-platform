@@ -1,6 +1,7 @@
 "use strict";
 
-const { displayName, writeAuditLog } = require("../shared/auditLog");
+const { auditLogIdForRequest, displayName } = require("../shared/auditLog");
+const { now } = require("../shared/timestamps");
 
 /**
  * MOB-64 remediation: give back the lesson tokens one-off bookings never took.
@@ -139,32 +140,41 @@ function planTokenCorrections({ auditLogs, invoices, fulfilments, parents }) {
 }
 
 /**
- * Apply one parent's correction. Re-reads the balance in a transaction, so a
- * booking or admin edit made since the plan was printed is respected: the
- * same number of tokens is taken from whatever the balance is now.
+ * Apply one parent's correction, once.
+ *
+ * The balance change and its audit entry are written in the same transaction,
+ * and the entry has a fixed ID per parent. A run that dies part-way has
+ * either done both or neither, and a rerun finds the entry and does nothing,
+ * so a parent can never be corrected twice.
+ *
+ * Re-reads the balance inside the transaction, so a booking or admin edit
+ * made since the plan was printed is respected: the same number of tokens is
+ * taken from whatever the balance is now.
  */
-async function applyTokenCorrection({ db, correction, logger }) {
+async function applyTokenCorrection({ db, correction, clock }) {
   const ref = db.collection("users").doc(correction.parentId);
-  let before = 0;
-  let after = 0;
-  let userData = {};
-  await db.runTransaction(async (txn) => {
-    const snap = await txn.get(ref);
-    userData = snap.data() || {};
-    before = typeof userData.lessonTokens === "number" ? userData.lessonTokens : 0;
-    after = Math.max(0, before - correction.tokenBookings);
-    if (after !== before) txn.update(ref, { lessonTokens: after });
-  });
+  const auditRef = db
+    .collection("adminAuditLogs")
+    .doc(auditLogIdForRequest(`${CORRECTION_REASON}:${correction.parentId}`));
 
-  await writeAuditLog(
-    db,
-    {
+  return db.runTransaction(async (txn) => {
+    const [snap, auditSnap] = await Promise.all([txn.get(ref), txn.get(auditRef)]);
+    if (auditSnap.exists) return { skipped: true };
+
+    const userData = snap.data() || {};
+    const before = typeof userData.lessonTokens === "number" ? userData.lessonTokens : 0;
+    const after = Math.max(0, before - correction.tokenBookings);
+    if (after !== before) txn.update(ref, { lessonTokens: after });
+
+    txn.create(auditRef, {
       actorUid: "system:mob-64",
+      actorEmail: null,
       actorRole: "system",
       action: "user.adjust_lesson_tokens",
       targetType: "user",
       targetId: correction.parentId,
       targetName: displayName(userData, correction.parentId),
+      createdAt: now(clock),
       payloadSummary: {
         mode: "delta",
         value: after - before,
@@ -174,11 +184,9 @@ async function applyTokenCorrection({ db, correction, logger }) {
       },
       before: { lessonTokens: before },
       after: { lessonTokens: after },
-    },
-    { logger, throwOnError: true }
-  );
-
-  return { before, after };
+    });
+    return { skipped: false, before, after };
+  });
 }
 
 async function loadCorrectionInputs(db) {

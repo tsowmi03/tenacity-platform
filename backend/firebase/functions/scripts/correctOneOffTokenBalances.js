@@ -76,12 +76,12 @@ async function main() {
     return;
   }
   for (const correction of pending) {
-    const { before, after } = await applyTokenCorrection({
-      db,
-      correction,
-      logger: console,
-    });
-    console.log(`${correction.name}: ${before} -> ${after}`);
+    const result = await applyTokenCorrection({ db, correction });
+    console.log(
+      result.skipped
+        ? `${correction.name}: already corrected, skipped`
+        : `${correction.name}: ${result.before} -> ${result.after}`
+    );
   }
 }
 
