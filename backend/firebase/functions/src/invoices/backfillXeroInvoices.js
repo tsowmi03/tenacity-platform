@@ -24,8 +24,11 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 30;
 // A claim older than this is treated as abandoned (the callable timed out).
 const CLAIM_TTL_MS = 10 * 60 * 1000;
-// Xero allows 60 calls a minute and each invoice costs several.
-const PAUSE_BETWEEN_INVOICES_MS = 2000;
+// Xero allows 60 calls a minute. One invoice can cost six: the number lookup,
+// two contact lookups, a contact create, the invoice create and the email. At
+// seven seconds apiece a batch stays under the limit, and 30 invoices still
+// finish inside the callable's nine-minute timeout.
+const PAUSE_BETWEEN_INVOICES_MS = 7000;
 
 /**
  * Recreates, in Xero, the unpaid invoices `onInvoiceCreated` never managed to
@@ -68,11 +71,24 @@ function describeError(err) {
   return String(err?.message || err || "unknown error").slice(0, 200);
 }
 
-async function claimInvoice({ db, ref, nowMs, FieldValue }) {
+/**
+ * An invoice this backfill created in Xero whose email has not gone out, so a
+ * run with `sendEmail` can finish the job after a failed or skipped email.
+ */
+function needsEmail(invoice) {
+  return Boolean(
+    invoice.xeroInvoiceId &&
+      invoice.xeroBackfillCreated &&
+      !invoice.xeroBackfillEmailedAt
+  );
+}
+
+async function claimInvoice({ db, ref, nowMs, FieldValue, mode }) {
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const data = snap.data() || {};
-    if (data.xeroInvoiceId) return "already-synced";
+    if (mode === "create" && data.xeroInvoiceId) return "already-synced";
+    if (mode === "email" && !needsEmail(data)) return "already-emailed";
     if (data.status !== "unpaid") return "not-unpaid";
     const claimedAt = data.xeroBackfillClaimedAt?.toMillis?.() ?? 0;
     if (claimedAt && nowMs - claimedAt < CLAIM_TTL_MS) return "claimed";
@@ -100,7 +116,16 @@ async function backfillXeroInvoicesImpl({ payload, actor, deps }) {
   const snapshot = await db.collection("invoices").where("status", "==", "unpaid").get();
   let candidates = snapshot.docs
     .map((doc) => ({ id: doc.id, ref: doc.ref, data: doc.data() || {} }))
-    .filter((invoice) => !invoice.data.xeroInvoiceId);
+    .map((invoice) => ({
+      ...invoice,
+      // Either never reached Xero, or reached it but still owes its email.
+      mode: !invoice.data.xeroInvoiceId
+        ? "create"
+        : sendEmail && needsEmail(invoice.data)
+          ? "email"
+          : null,
+    }))
+    .filter((invoice) => invoice.mode);
   if (invoiceIds) {
     const wanted = new Set(invoiceIds);
     candidates = candidates.filter((invoice) => wanted.has(invoice.id));
@@ -118,7 +143,11 @@ async function backfillXeroInvoicesImpl({ payload, actor, deps }) {
     };
 
     if (dryRun) {
-      results.push({ ...base, outcome: "would-create", wouldEmail: sendEmail });
+      results.push(
+        invoice.mode === "email"
+          ? { ...base, outcome: "would-email" }
+          : { ...base, outcome: "would-create", wouldEmail: sendEmail }
+      );
       continue;
     }
 
@@ -126,13 +155,38 @@ async function backfillXeroInvoicesImpl({ payload, actor, deps }) {
 
     let claim;
     try {
-      claim = await claimInvoice({ db, ref: invoice.ref, nowMs: clock(), FieldValue });
+      claim = await claimInvoice({
+        db,
+        ref: invoice.ref,
+        nowMs: clock(),
+        FieldValue,
+        mode: invoice.mode,
+      });
     } catch (err) {
       results.push({ ...base, outcome: "failed", error: describeError(err) });
       continue;
     }
     if (claim !== "claimed-by-us") {
       results.push({ ...base, outcome: "skipped", reason: claim });
+      continue;
+    }
+
+    if (invoice.mode === "email") {
+      try {
+        await xero.emailXeroInvoice(invoice.data.xeroInvoiceId);
+        await invoice.ref.update({
+          xeroBackfillEmailedAt: FieldValue.serverTimestamp(),
+          xeroBackfillClaimedAt: FieldValue.delete(),
+        });
+        results.push({ ...base, outcome: "emailed", emailed: true });
+      } catch (err) {
+        try {
+          await invoice.ref.update({ xeroBackfillClaimedAt: FieldValue.delete() });
+        } catch (_) {
+          // The claim expires on its own.
+        }
+        results.push({ ...base, outcome: "failed", emailError: describeError(err) });
+      }
       continue;
     }
 
@@ -144,6 +198,9 @@ async function backfillXeroInvoicesImpl({ payload, actor, deps }) {
         xeroInvoiceId,
         xeroBackfilledAt: FieldValue.serverTimestamp(),
         xeroBackfillClaimedAt: FieldValue.delete(),
+        // Marks an invoice this run created, so a later run can still send
+        // its email if that failed. One that already existed is left alone.
+        ...(linkedExisting ? {} : { xeroBackfillCreated: true }),
       });
 
       const result = {
@@ -180,6 +237,7 @@ async function backfillXeroInvoicesImpl({ payload, actor, deps }) {
     processed: batch.length,
     remaining: candidates.length - batch.length,
     created: results.filter((r) => r.outcome === "created").length,
+    emailRetried: results.filter((r) => r.outcome === "emailed").length,
     linkedExisting: results.filter((r) => r.outcome === "linked-existing").length,
     skipped: results.filter((r) => r.outcome === "skipped").length,
     failed: results.filter((r) => r.outcome === "failed").length,
@@ -202,6 +260,7 @@ async function backfillXeroInvoicesImpl({ payload, actor, deps }) {
           sendEmail,
           processed: summary.processed,
           created: summary.created,
+          emailRetried: summary.emailRetried,
           linkedExisting: summary.linkedExisting,
           failed: summary.failed,
           emailed: summary.emailed,

@@ -190,6 +190,54 @@ describe("backfillXeroInvoicesImpl", () => {
     assert.equal(db.store.get("older").xeroInvoiceId, "xero-older");
   });
 
+  it("sends an email that failed on an earlier run, once", async () => {
+    const db = fakeDb(invoices());
+
+    await run(db, fakeXero({ failEmail: true }), { dryRun: false, sendEmail: true });
+    assert.equal(db.store.get("older").xeroBackfillEmailedAt, undefined);
+
+    const retry = fakeXero();
+    const second = await run(db, retry, { dryRun: false, sendEmail: true });
+
+    assert.equal(second.emailRetried, 2);
+    assert.equal(second.created, 0);
+    assert.deepEqual(retry.calls.created, []);
+    assert.deepEqual(retry.calls.emailed.sort(), ["xero-newer", "xero-older"]);
+    assert.equal(db.store.get("older").xeroBackfillEmailedAt, "SERVER_TIME");
+
+    const third = fakeXero();
+    const last = await run(db, third, { dryRun: false, sendEmail: true });
+    assert.equal(last.processed, 0);
+    assert.deepEqual(third.calls.emailed, []);
+  });
+
+  it("emails invoices created earlier without email when asked later", async () => {
+    const db = fakeDb(invoices());
+    await run(db, fakeXero(), { dryRun: false });
+
+    const dry = await run(db, fakeXero(), { sendEmail: true });
+    assert.deepEqual(
+      dry.results.map((r) => r.outcome),
+      ["would-email", "would-email"]
+    );
+
+    const xero = fakeXero();
+    const summary = await run(db, xero, { dryRun: false, sendEmail: true });
+    assert.equal(summary.emailRetried, 2);
+    assert.equal(xero.calls.emailed.length, 2);
+  });
+
+  it("never emails an invoice that already existed in Xero", async () => {
+    const db = fakeDb(invoices());
+    await run(db, fakeXero({ existing: { "INV-N1": "xero-already" } }), { dryRun: false });
+    assert.equal(db.store.get("older").xeroBackfillCreated, undefined);
+
+    const xero = fakeXero();
+    await run(db, xero, { dryRun: false, sendEmail: true });
+
+    assert.deepEqual(xero.calls.emailed, ["xero-newer"]);
+  });
+
   it("leaves an invoice another run has claimed alone", async () => {
     const data = invoices();
     data.older.xeroBackfillClaimedAt = millis(1_000_000_000 - 60_000);
