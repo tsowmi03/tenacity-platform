@@ -76,10 +76,10 @@ port 8080. Their package scripts use isolated `demo-*` project IDs so emulator
 validation cannot fall through to the production project. These commands are
 validation only; they do not authorize a production deployment.
 
-The Function policy contains exactly 87 managed endpoints, three local helper
+The Function policy contains exactly 88 managed endpoints, three local helper
 exports, two protected legacy Xero Functions, and two extension-managed
 Functions. The workflow reports endpoints that are not yet live during the
-batches and requires the exact 91-resource inventory after the final batch.
+batches and requires the exact 92-resource inventory after the final batch.
 
 A Function deploying for the first time needs no special handling: the
 pre-deploy comparison reports it as not-yet-live and the strict post-batch
