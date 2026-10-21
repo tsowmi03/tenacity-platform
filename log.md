@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-21 | [Parents are offered "Book a class", not just a one-off (MOB-56)](#2026-10-21--parents-are-offered-book-a-class-not-just-a-one-off-mob-56) |
 | 2026-10-21 | [Booking a one-off with a lesson token now uses the token (MOB-64)](#2026-10-21--booking-a-one-off-with-a-lesson-token-now-uses-the-token-mob-64) |
 | 2026-10-20 | [Maths that won't format is repaired, or the resource is held back (RES-45)](#2026-10-20--maths-that-wont-format-is-repaired-or-the-resource-is-held-back-res-45) |
 | 2026-10-20 | [Large resources resume from saved stages instead of restarting (RES-44)](#2026-10-20--large-resources-resume-from-saved-stages-instead-of-restarting-res-44) |
@@ -187,6 +188,25 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-21 — Parents are offered "Book a class", not just a one-off (MOB-56)
+
+**What changed**
+- The parent dashboard tile and the Timetable tab button now read
+  "Book a class" (they said "Book one-off class"), and the empty-timetable
+  message says "You can book a class below."
+- The browse screen ("Available classes") has a line under its title:
+  "Tap a class to enrol for the term or book a single session."
+- Booking rules, the class options dialog and its order are unchanged.
+- Tests that asserted the old wording are updated, and the browse subtitle is
+  covered.
+
+**Why:** Both entry points called the screen a one-off booking, so parents
+didn't realise it was also the way to enrol for the rest of the term.
+
+**Status:** Merged. Ships with the next mobile release.
 
 ---
 

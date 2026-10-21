@@ -313,7 +313,7 @@ void main() {
               tiles: [
                 QuickActionTile(
                   icon: Icons.calendar_today,
-                  label: 'Book one-off class',
+                  label: 'Book a class',
                   onTap: () {},
                 ),
                 QuickActionTile(
@@ -327,7 +327,7 @@ void main() {
         ),
       );
 
-      expect(find.text('Book one-off class'), findsOneWidget);
+      expect(find.text('Book a class'), findsOneWidget);
       expect(find.text('Message a tutor'), findsOneWidget);
     });
 

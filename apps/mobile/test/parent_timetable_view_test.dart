@@ -140,7 +140,7 @@ void main() {
       expect(find.text('CONFIRMED'), findsOneWidget);
       expect(find.text('ONE-OFF'), findsOneWidget);
 
-      expect(find.text('Book a one-off class'), findsOneWidget);
+      expect(find.text('Book a class'), findsOneWidget);
     });
 
     testWidgets('renders every day of the week strip', (tester) async {
@@ -283,7 +283,7 @@ void main() {
       await pumpTimetable(tester, _data(days: const []));
 
       expect(find.text('No classes this week'), findsOneWidget);
-      expect(find.text('Book a one-off class'), findsOneWidget);
+      expect(find.text('Book a class'), findsOneWidget);
     });
 
     testWidgets('an empty day offers a way back to the whole week',

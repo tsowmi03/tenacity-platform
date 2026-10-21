@@ -133,6 +133,12 @@ void main() {
       await pumpBrowse(tester, _data());
 
       expect(find.text('Available classes'), findsOneWidget);
+      expect(
+        find.text(
+          'Tap a class to enrol for the term or book a single session.',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Week 1 · 13 – 19 Jul'), findsOneWidget);
       expect(find.text('Term 3 · 2 classes available'), findsOneWidget);
 

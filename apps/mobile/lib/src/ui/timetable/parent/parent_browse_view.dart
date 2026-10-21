@@ -135,6 +135,20 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
+          Padding(
+            padding: const EdgeInsets.only(
+              left: AppSpacing.labelGap,
+              top: AppSpacing.xs,
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Tap a class to enrol for the term or book a single session.',
+                key: const Key('parent-browse-subtitle'),
+                style: AppText.body(fontSize: 13, color: Colors.white70),
+              ),
+            ),
+          ),
           const SizedBox(height: AppSpacing.md),
           Padding(
             // The title row is inset by the icon button's own padding; the
