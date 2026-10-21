@@ -103,6 +103,7 @@ describe("XeroBackfillPage", () => {
       dryRun: false,
       sendEmail: false,
       limit: 1,
+      invoiceIds: ["a"],
     });
     expect(await screen.findByText("1 left to send")).toBeInTheDocument();
     expect(screen.getByText("Created in Xero")).toBeInTheDocument();
@@ -125,5 +126,92 @@ describe("XeroBackfillPage", () => {
     await user.click(screen.getByRole("button", { name: "Send 1 to Xero" }));
 
     expect(screen.getByText(/Xero emails each one to the parent/)).toBeInTheDocument();
+  });
+
+  it("only sends the invoices that were previewed, even if the batch size is larger", async () => {
+    api.backfillXeroInvoices
+      .mockResolvedValueOnce(summary())
+      .mockResolvedValueOnce(summary({ dryRun: false, results: [] }))
+      .mockResolvedValueOnce(summary({ matching: 0, results: [] }));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Check what is left" }));
+    await screen.findByText("2 left to send");
+    await user.selectOptions(screen.getByLabelText("Batch size"), "20");
+    await user.click(screen.getByRole("button", { name: "Send 2 to Xero" }));
+    await user.click(screen.getByRole("button", { name: "Send 2" }));
+
+    await waitFor(() => expect(api.backfillXeroInvoices).toHaveBeenCalledTimes(3));
+    expect(api.backfillXeroInvoices).toHaveBeenNthCalledWith(2, {
+      dryRun: false,
+      sendEmail: false,
+      limit: 2,
+      invoiceIds: ["a", "b"],
+    });
+  });
+
+  it("does not report success when an invoice was created but its email failed", async () => {
+    api.backfillXeroInvoices
+      .mockResolvedValueOnce(summary())
+      .mockResolvedValueOnce(
+        summary({
+          dryRun: false,
+          created: 1,
+          emailed: 0,
+          results: [
+            {
+              invoiceId: "a",
+              xeroInvoiceNumber: "INV-1",
+              amountDue: 560,
+              outcome: "created",
+              emailed: false,
+              emailError: "mail down",
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(summary({ matching: 1 }));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Check what is left" }));
+    await screen.findByText("2 left to send");
+    await user.click(screen.getByRole("button", { name: "Send 1 to Xero" }));
+    await user.click(screen.getByRole("button", { name: "Send 1" }));
+
+    expect(await screen.findByText(/1 email\(s\) did not send/)).toBeInTheDocument();
+    expect(screen.queryByText("Batch finished.")).not.toBeInTheDocument();
+  });
+
+  it("counts a retried email once", async () => {
+    api.backfillXeroInvoices
+      .mockResolvedValueOnce(summary())
+      .mockResolvedValueOnce(
+        summary({
+          dryRun: false,
+          emailed: 1,
+          emailRetried: 1,
+          results: [
+            {
+              invoiceId: "a",
+              xeroInvoiceNumber: "INV-1",
+              amountDue: 560,
+              outcome: "emailed",
+              emailed: true,
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(summary({ matching: 1 }));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Check what is left" }));
+    await screen.findByText("2 left to send");
+    await user.click(screen.getByRole("button", { name: "Send 1 to Xero" }));
+    await user.click(screen.getByRole("button", { name: "Send 1" }));
+
+    expect(await screen.findByText(/1 emailed,/)).toBeInTheDocument();
   });
 });

@@ -78,14 +78,24 @@ export default function XeroBackfillPage() {
     setConfirming(false);
     setBusy("apply");
     try {
+      // Name the invoices that were previewed and confirmed, so one that became
+      // eligible since the check cannot ride along in the batch.
+      const confirmedIds = preview.results.slice(0, batchCount).map((row) => row.invoiceId);
       const result = await backfillXeroInvoices({
         dryRun: false,
         sendEmail,
-        limit: batchSize,
+        limit: confirmedIds.length,
+        invoiceIds: confirmedIds,
       });
       setLastRun(result);
-      if (result.failed) toast.error(`${result.failed} invoice(s) failed. See the results below.`);
-      else toast.success("Batch finished.");
+      const emailFailures = result.results.filter((row) => row.emailError).length;
+      if (result.failed || emailFailures) {
+        toast.error(
+          `${result.failed} invoice(s) failed and ${emailFailures} email(s) did not send. See the results below.`
+        );
+      } else {
+        toast.success("Batch finished.");
+      }
     } catch (error) {
       toast.error(error?.userMessage || error?.message || "The batch did not finish.");
     } finally {
@@ -171,7 +181,7 @@ export default function XeroBackfillPage() {
             <h2>Last batch</h2>
             <p>
               {lastRun.created} created, {lastRun.linkedExisting} already in Xero,{" "}
-              {lastRun.emailed + lastRun.emailRetried} emailed, {lastRun.skipped} skipped,{" "}
+              {lastRun.emailed} emailed, {lastRun.skipped} skipped,{" "}
               {lastRun.failed} failed.
             </p>
             <Table columns={columns} getRowKey={(row) => row.invoiceId} rows={lastRun.results} />
