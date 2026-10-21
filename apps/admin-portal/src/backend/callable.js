@@ -120,10 +120,14 @@ export function assertFunctionsConfigured() {
   }
 }
 
-export async function callFunction(name, payload = {}) {
+// `timeoutMs` is for the rare call that legitimately runs longer than the
+// client's 70-second default (a Xero backfill batch). Left unset, nothing changes.
+export async function callFunction(name, payload = {}, { timeoutMs } = {}) {
   assertFunctionsConfigured();
   try {
-    const fn = httpsCallable(functions, name);
+    const fn = timeoutMs
+      ? httpsCallable(functions, name, { timeout: timeoutMs })
+      : httpsCallable(functions, name);
     const result = await fn(payload);
     return result?.data;
   } catch (error) {

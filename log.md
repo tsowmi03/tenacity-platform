@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-21 | [Admins can send unsynced invoices to Xero from the portal (AWP-27)](#2026-10-21--admins-can-send-unsynced-invoices-to-xero-from-the-portal-awp-27) |
 | 2026-10-21 | [Xero calls work again after the memory fix broke them (TP-39)](#2026-10-21--xero-calls-work-again-after-the-memory-fix-broke-them-tp-39) |
 | 2026-10-21 | [Parents are offered "Book a class", not just a one-off (MOB-56)](#2026-10-21--parents-are-offered-book-a-class-not-just-a-one-off-mob-56) |
 | 2026-10-21 | [Booking a one-off with a lesson token now uses the token (MOB-64)](#2026-10-21--booking-a-one-off-with-a-lesson-token-now-uses-the-token-mob-64) |
@@ -189,6 +190,24 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-21 — Admins can send unsynced invoices to Xero from the portal (AWP-27)
+
+**What changed**
+- A new admin-only page, `/xero-backfill` ("Send invoices to Xero"), runs the TP-39 backfill. "Check what is left" lists the unpaid invoices that never reached Xero without changing anything.
+- A batch (1, 5, 10 or 20) is sent only after a check and a confirmation that says whether Xero will email the parents. Emailing is off unless ticked.
+- The page shows the result of each invoice, including failures.
+- The portal's call helper accepts a longer timeout for this one call, since a batch can run for minutes.
+
+**Why:** The backfill function needs an admin sign-in, and the portal had no screen for it.
+
+**Status:** Live once merged (merging deploys the portal). The page is not in the navigation; open it by its address.
+
+**Next steps**
+- Send one invoice first to confirm the Xero connection, then the rest in batches.
+- Remove the page once the backlog is cleared.
 
 ---
 
