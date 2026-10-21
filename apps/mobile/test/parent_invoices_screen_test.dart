@@ -234,6 +234,64 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('says the invoice is not ready when the PDF callable refuses',
+      (tester) async {
+    final controller = _FakeInvoiceController(
+      currentInvoices: [_invoice(id: '1001')],
+    )..pdfCompleter = Completer<String>();
+
+    await _pumpInvoices(
+      tester,
+      controller: controller,
+      paymentSheet: _FakePaymentSheet(),
+    );
+    controller.pdfCompleter!.completeError(
+      FirebaseException(plugin: 'firebase_functions', code: 'internal'),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('parent-invoice-pdf-1001')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invoice PDF unavailable'), findsOneWidget);
+    expect(find.textContaining('not ready to view yet'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('stops saying "Opening payment…" once the sheet is up',
+      (tester) async {
+    final controller = _FakeInvoiceController(
+      currentInvoices: [_invoice(id: '1001')],
+    );
+    final paymentSheet = _FakePaymentSheet()
+      ..presentCompleter = Completer<void>();
+
+    await _pumpInvoices(
+      tester,
+      controller: controller,
+      paymentSheet: paymentSheet,
+    );
+    await tester.tap(find.byKey(const Key('parent-invoice-pay-1001')));
+    await tester.pump();
+
+    expect(paymentSheet.presentCalls, 1);
+    expect(find.text('Opening payment…'), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const Key('parent-invoice-pay-1001')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(tester.takeException(), isNull);
+
+    paymentSheet.presentCompleter!.complete();
+    await tester.pump();
+    await tester.pump();
+  });
+
   testWidgets('shows pending verification and prevents a duplicate payment',
       (tester) async {
     final invoice = _invoice(id: '1001');

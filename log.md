@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-21 | [Invoice PDF failures are recorded, and "Opening payment…" no longer lingers (MOB-66)](#2026-10-21--invoice-pdf-failures-are-recorded-and-opening-payment-no-longer-lingers-mob-66) |
 | 2026-10-21 | [Parents are offered "Book a class", not just a one-off (MOB-56)](#2026-10-21--parents-are-offered-book-a-class-not-just-a-one-off-mob-56) |
 | 2026-10-21 | [Booking a one-off with a lesson token now uses the token (MOB-64)](#2026-10-21--booking-a-one-off-with-a-lesson-token-now-uses-the-token-mob-64) |
 | 2026-10-20 | [Maths that won't format is repaired, or the resource is held back (RES-45)](#2026-10-20--maths-that-wont-format-is-repaired-or-the-resource-is-held-back-res-45) |
@@ -188,6 +189,19 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-21 — Invoice PDF failures are recorded, and "Opening payment…" no longer lingers (MOB-66)
+
+**What changed**
+- A failed invoice PDF open now records which step failed (and the error code) instead of vanishing, and shows "This invoice is not ready to view yet" when the server refused to produce the PDF.
+- "Opening payment…" now clears as soon as Stripe's payment sheet appears, rather than staying on behind it.
+- A new event records how long the payment sheet took to appear, so a slow start can be told apart from a parent taking their time.
+
+**Why:** A parent's session looked like a 25-second payment stall. The logs showed the payment sheet was open and she closed it; the label and the missing timing made it look like a hang. The PDF error itself was caused by a backend fault (TP-39).
+
+**Status:** Ready on the branch; ships with the next mobile release.
 
 ---
 
