@@ -189,7 +189,7 @@ void main() {
         scrollable: find.byType(Scrollable).last,
       );
       expect(find.text('QUICK ACTIONS'), findsOneWidget);
-      expect(find.text('Book one-off class'), findsOneWidget);
+      expect(find.text('Book a class'), findsOneWidget);
       expect(find.text('Message a tutor'), findsOneWidget);
     });
 

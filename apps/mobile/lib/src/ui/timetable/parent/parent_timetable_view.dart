@@ -72,7 +72,7 @@ class ParentTimetableView extends StatelessWidget {
                     ],
                   DashedActionButton(
                     key: const Key('parent-timetable-book-one-off'),
-                    label: 'Book a one-off class',
+                    label: 'Book a class',
                     onPressed: onBookOneOff,
                   ),
                 ],
@@ -277,7 +277,7 @@ class _EmptyWeek extends StatelessWidget {
       key: Key('parent-timetable-empty-week'),
       icon: Icons.event_available_outlined,
       title: 'No classes this week',
-      message: 'Booked classes appear here. You can book a one-off below.',
+      message: 'Booked classes appear here. You can book a class below.',
     );
   }
 }

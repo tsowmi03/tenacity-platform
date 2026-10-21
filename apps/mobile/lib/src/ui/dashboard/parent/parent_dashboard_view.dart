@@ -313,7 +313,7 @@ class _QuickActions extends StatelessWidget {
             QuickActionTile(
               key: const Key('parent-dashboard-book-one-off'),
               icon: Icons.calendar_today_outlined,
-              label: 'Book one-off class',
+              label: 'Book a class',
               onTap: onBookOneOff,
             ),
             QuickActionTile(
