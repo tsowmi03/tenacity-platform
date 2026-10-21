@@ -17,6 +17,7 @@ import InvoiceDetailPage from "./pages/InvoiceDetailPage";
 import ReportsPage from "./pages/ReportsPage";
 import TermsPage from "./pages/TermsPage";
 import AuditPage from "./pages/AuditPage";
+import XeroBackfillPage from "./pages/XeroBackfillPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import Year11InterestPage from "./pages/Year11InterestPage";
 import ReferralsPage from "./pages/ReferralsPage";
@@ -219,6 +220,17 @@ export default function App() {
                   <ReportsPage />
                 </AppShell>
               </StaffRoute>
+            }
+          />
+
+          <Route
+            path="/xero-backfill"
+            element={
+              <RoleRoute allowedRoles={["admin"]}>
+                <AppShell>
+                  <XeroBackfillPage />
+                </AppShell>
+              </RoleRoute>
             }
           />
 

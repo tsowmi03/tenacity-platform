@@ -57,3 +57,20 @@ export async function getInvoicePdf(invoiceId) {
   const downloadUrl = await getDownloadUrlForPath(pdfPath);
   return { ...result, pdfPath, downloadUrl };
 }
+
+// A batch pauses between invoices to stay inside Xero's rate limit, so it can
+// run for minutes. The function's own timeout is nine minutes.
+const BACKFILL_TIMEOUT_MS = 9 * 60 * 1000 + 30 * 1000;
+
+export function backfillXeroInvoices({
+  dryRun = true,
+  sendEmail = false,
+  limit = 10,
+  invoiceIds,
+} = {}) {
+  return callFunction(
+    "adminBackfillXeroInvoices",
+    { dryRun, sendEmail, limit, ...(invoiceIds ? { invoiceIds } : {}) },
+    { timeoutMs: BACKFILL_TIMEOUT_MS }
+  );
+}

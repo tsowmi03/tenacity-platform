@@ -71,3 +71,17 @@ describe("normalizeBackendError", () => {
     expect(out.warnings).toEqual([{ code: "X" }]);
   });
 });
+
+describe("callFunction timeout", () => {
+  it("passes a longer client timeout only when asked", async () => {
+    const { httpsCallable } = await import("firebase/functions");
+    const { callFunction } = await import("./callable");
+    httpsCallable.mockReturnValue(async () => ({ data: { ok: true } }));
+
+    await callFunction("slowThing", {}, { timeoutMs: 570000 });
+    expect(httpsCallable).toHaveBeenLastCalledWith({}, "slowThing", { timeout: 570000 });
+
+    await callFunction("quickThing", {});
+    expect(httpsCallable).toHaveBeenLastCalledWith({}, "quickThing");
+  });
+});
