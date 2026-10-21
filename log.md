@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-10-21 | [Invoice PDF failures are recorded, and "Opening payment…" no longer lingers (MOB-66)](#2026-10-21--invoice-pdf-failures-are-recorded-and-opening-payment-no-longer-lingers-mob-66) |
+| 2026-10-21 | [Xero calls work again after the memory fix broke them (TP-39)](#2026-10-21--xero-calls-work-again-after-the-memory-fix-broke-them-tp-39) |
 | 2026-10-21 | [Parents are offered "Book a class", not just a one-off (MOB-56)](#2026-10-21--parents-are-offered-book-a-class-not-just-a-one-off-mob-56) |
 | 2026-10-21 | [Booking a one-off with a lesson token now uses the token (MOB-64)](#2026-10-21--booking-a-one-off-with-a-lesson-token-now-uses-the-token-mob-64) |
 | 2026-10-20 | [Maths that won't format is repaired, or the resource is held back (RES-45)](#2026-10-20--maths-that-wont-format-is-repaired-or-the-resource-is-held-back-res-45) |
@@ -202,6 +203,23 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** A parent's session looked like a 25-second payment stall. The logs showed the payment sheet was open and she closed it; the label and the missing timing made it look like a hang. The PDF error itself was caused by a backend fault (TP-39).
 
 **Status:** Ready on the branch; ships with the next mobile release.
+
+---
+
+## 2026-10-21 — Xero calls work again after the memory fix broke them (TP-39)
+
+**What changed**
+- The memory fix (TP-37) loaded the Xero library on first use, but two lines still treated that loader as the Xero client itself, so every Xero call failed with "loadXeroNode is not a constructor". Both lines now build the client correctly.
+- A new test fails if any lazily loaded library is used as a constructor in this way again.
+- A new admin-only function, `adminBackfillXeroInvoices`, recreates in Xero the unpaid invoices that never got a Xero copy. It only reports by default (dry run); Xero emailing the invoice to the parent is a separate option; it skips any invoice that already exists in Xero under the same number.
+
+**Why:** From 17 Oct no new invoice reached Xero, so 27 unpaid invoices had no Xero copy, were never emailed from Xero, and parents saw "Invoice PDF unavailable" when they tried to open them (MOB-66).
+
+**Status:** Fix and test ready on the branch. Functions deploy is a manual dispatch, and the 27 invoices still need backfilling once it is live.
+
+**Next steps**
+- Deploy Functions, then confirm the Xero token refreshes (re-authorise through `xeroAuthStart` if it does not).
+- Run the backfill: dry run first, then apply in batches (needs approval, and a decision on whether Xero emails the 27 parents).
 
 ---
 

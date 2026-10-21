@@ -21,7 +21,7 @@ if (!admin.apps.length) {
     });
 }
 function getXeroClient() {
-    return new loadXeroNode().XeroClient({
+    return new (loadXeroNode().XeroClient)({
         clientId: XERO_CLIENT_ID.value(),
         clientSecret: XERO_CLIENT_SECRET.value(),
         grantType: "authorization_code",
@@ -91,7 +91,7 @@ async function refreshXeroToken() {
         throw new Error("No Xero tokens found in Firestore.");
     }
     logger.info("Existing token data:", tokenData);
-    const xero = new loadXeroNode().XeroClient({
+    const xero = new (loadXeroNode().XeroClient)({
         clientId: XERO_CLIENT_ID.value(),
         clientSecret: XERO_CLIENT_SECRET.value(),
         grantType: "authorization_code",
@@ -305,7 +305,7 @@ async function createXeroInvoice(invoiceId) {
         lineItems: xeroLineItems,
         date: dateString,
         dueDate: dueDateString,
-        invoiceNumber: `INV-${invoiceData.invoiceNumber || invoiceId}`,
+        invoiceNumber: xeroInvoiceNumber(invoiceId, invoiceData),
         status: loadXeroNode().Invoice.StatusEnum.AUTHORISED,
     };
     logger.info("About to create invoice in Xero...", xeroInvoice);
@@ -325,6 +325,35 @@ async function createXeroInvoice(invoiceId) {
         logger.error("Error in xero.accountingApi.createInvoices:", err);
         throw err;
     }
+}
+/**
+ * The pieces below let `adminBackfillXeroInvoices` re-run what `onInvoiceCreated`
+ * does for an invoice that never reached Xero (TP-39). They are plain functions,
+ * not Cloud Functions, so Firebase does not deploy them.
+ */
+async function xeroTenantId() {
+    const tokenDoc = await admin.firestore().collection("xeroTokens").doc("demoCompany").get();
+    const tenantId = tokenDoc.data()?.tenantId;
+    if (!tenantId) throw new Error("Tenant ID not found in Firestore.");
+    return tenantId;
+}
+/** The Xero invoice already created under this number, or null. */
+async function findXeroInvoiceByNumber(invoiceNumber) {
+    const xero = await refreshXeroToken();
+    const tenantId = await xeroTenantId();
+    const response = await xero.accountingApi.getInvoices(tenantId, undefined, undefined, undefined, undefined, [invoiceNumber]);
+    const found = (response.body.invoices ?? []).find((invoice) => invoice.invoiceNumber === invoiceNumber);
+    return found?.invoiceID ?? null;
+}
+/** The Xero invoice number `createXeroInvoice` gives a Firestore invoice. */
+function xeroInvoiceNumber(invoiceId, invoiceData) {
+    return `INV-${invoiceData.invoiceNumber || invoiceId}`;
+}
+/** Emails an existing Xero invoice to its contact, as `onInvoiceCreated` does. */
+async function emailXeroInvoice(xeroInvoiceId) {
+    const xero = await refreshXeroToken();
+    const tenantId = await xeroTenantId();
+    await xero.accountingApi.emailInvoice(tenantId, xeroInvoiceId, {});
 }
 exports.onInvoiceCreated = (0, firestore_1.onDocumentCreated)({
     document: "/invoices/{invoiceId}",
@@ -587,4 +616,12 @@ exports.debugXeroAccountsAndTaxTypes = (0, https_1.onRequest)({ secrets: [XERO_C
     catch (err) {
         res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
+});
+
+// For `adminBackfillXeroInvoices`. Non-enumerable, so `lib/index.js` (which
+// copies this module's exports) does not re-export them and the deployed
+// function set stays exactly the Cloud Functions above.
+Object.defineProperty(exports, "xeroInvoiceSync", {
+    enumerable: false,
+    value: { createXeroInvoice, findXeroInvoiceByNumber, xeroInvoiceNumber, emailXeroInvoice },
 });
