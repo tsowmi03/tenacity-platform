@@ -197,7 +197,7 @@ omitted, and open follow-ups are tracked at the bottom.
 **What changed**
 - A failed invoice PDF open now records which step failed (and the error code) instead of vanishing, and shows "This invoice is not ready to view yet" when the server refused to produce the PDF.
 - "Opening payment…" now clears as soon as Stripe's payment sheet appears, rather than staying on behind it.
-- A new event records how long the payment sheet took to appear, so a slow start can be told apart from a parent taking their time.
+- A new event records how long the payment sheet took to get ready, so a slow start can be told apart from a parent taking their time.
 
 **Why:** A parent's session looked like a 25-second payment stall. The logs showed the payment sheet was open and she closed it; the label and the missing timing made it look like a hang. The PDF error itself was caused by a backend fault (TP-39).
 

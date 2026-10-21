@@ -21,7 +21,7 @@ enum AppEvent {
   chatGroupStarted('chat_group_started'),
   announcementOpened('announcement_opened'),
   invoicePaymentStarted('invoice_payment_started'),
-  invoicePaymentSheetShown('invoice_payment_sheet_shown'),
+  invoicePaymentSheetReady('invoice_payment_sheet_ready'),
   invoicePdfFailed('invoice_pdf_failed'),
   invoicePaymentSubmitted('invoice_payment_submitted'),
   invoicePaymentCancelled('invoice_payment_cancelled'),

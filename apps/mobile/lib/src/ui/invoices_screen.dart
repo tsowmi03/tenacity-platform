@@ -338,10 +338,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       if (!_isCurrentScope(generation)) return;
       // Stripe's sheet takes over the screen from here, and session replay
       // cannot see it. Leaving "Opening payment…" up for the whole time the
-      // parent spends in the sheet made it look like a stall (MOB-66), and the
-      // time to reach this point is what tells a slow intent from a slow
-      // parent.
-      Analytics.capture(AppEvent.invoicePaymentSheetShown, {
+      // parent spends in the sheet made it look like a stall (MOB-66). The
+      // time to reach this point tells a slow intent from a slow parent. It is
+      // "ready", not "shown": present() can still fail before any UI appears,
+      // and that is reported as invoice_payment_failed.
+      Analytics.capture(AppEvent.invoicePaymentSheetReady, {
         ...paymentProperties,
         'ready_ms': startedAt.elapsedMilliseconds,
       });
