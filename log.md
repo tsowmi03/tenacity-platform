@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-22 | [A failed generation step no longer loops a resource forever (RES-47)](#2026-10-22--a-failed-generation-step-no-longer-loops-a-resource-forever-res-47) |
 | 2026-10-21 | [Admins can send unsynced invoices to Xero from the portal (AWP-27)](#2026-10-21--admins-can-send-unsynced-invoices-to-xero-from-the-portal-awp-27) |
 | 2026-10-21 | [Invoice PDF failures are recorded, and "Opening payment…" no longer lingers (MOB-66)](#2026-10-21--invoice-pdf-failures-are-recorded-and-opening-payment-no-longer-lingers-mob-66) |
 | 2026-10-21 | [Xero calls work again after the memory fix broke them (TP-39)](#2026-10-21--xero-calls-work-again-after-the-memory-fix-broke-them-tp-39) |
@@ -191,6 +192,21 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-22 — A failed generation step no longer loops a resource forever (RES-47)
+
+**What changed**
+- When a generation step fails and the resource carries on without it (for example a reading passage that couldn't be sourced), the next step now runs in the same turn. Before, the job handed off to "continue from saved progress" with nothing saved, replayed the same failure, and looped.
+- A Stop that lands while a step is handing off now cancels the job. Before, the hand-off put the job back in the queue and the next claim cleared the stop.
+- The public-domain source planner's request no longer uses `maxItems` or `minimum`, which Anthropic's structured output rejects. Since 2026-09-23 every planner call to Anthropic had failed with a 400 and only worked because it fell back to OpenAI. The text and visual caps were already applied in code.
+- The schema test that checks generation schemas for unsupported keywords now covers the planner schemas too.
+- Regression tests cover all of the above.
+
+**Why:** A Year 8 topic booklet showed as pending for a day. Its planner call was rejected, the OpenAI fallback handed off instead of running, and the job looped: about 132,000 claims and 130,000 rejected Anthropic calls, firing the fallback and preview functions each time. Stop couldn't end it. It was cancelled by hand on prod on 2026-10-22.
+
+**Status:** Live. Deployed to Functions.
 
 ---
 

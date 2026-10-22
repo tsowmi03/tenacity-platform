@@ -78,3 +78,43 @@ it("reads explicit question counts that name a topic", () => {
   assert.equal(requestedQuestionCount("Year 9, 180 worked maths questions"), 180);
   assert.equal(requestedQuestionCount("Year 9 questions on Chapter 16 problems"), null);
 });
+
+it("lets the next stage run after a failed call, and still yields once one is saved", async () => {
+  const calls = [];
+  const h = harness(async (request) => {
+    calls.push(request.userMessage);
+    if (request.userMessage === "text-1") throw new Error("provider rejected");
+    return { parsed: { text: request.userMessage } };
+  });
+  const caller = h.make();
+  await assert.rejects(caller({ userMessage: "text-1" }), /provider rejected/);
+  assert.equal((await caller({ userMessage: "text-2" })).parsed.text, "text-2");
+  await assert.rejects(caller({ userMessage: "text-3" }), { code: "RESOURCE_STAGE_YIELD" });
+  assert.deepEqual(calls, ["text-1", "text-2"]);
+  assert.equal(h.values.size, 1, "only the successful stage is saved");
+
+  // The next invocation replays text-2 and reaches text-3; it never loops on text-1's failure alone.
+  const next = h.make();
+  await assert.rejects(next({ userMessage: "text-1" }), /provider rejected/);
+  assert.equal((await next({ userMessage: "text-2" })).parsed.text, "text-2");
+  assert.equal((await next({ userMessage: "text-3" })).parsed.text, "text-3");
+});
+
+it("starts one call at a time when concurrent stages wait on a failed one", async () => {
+  let running = 0;
+  let maxRunning = 0;
+  const h = harness(async (request) => {
+    running += 1;
+    maxRunning = Math.max(maxRunning, running);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    running -= 1;
+    if (request.userMessage === "a") throw new Error("provider rejected");
+    return { parsed: { diagram: request.userMessage } };
+  });
+  const caller = h.make();
+  const results = await Promise.allSettled(["a", "b", "c"].map((userMessage) => caller({ userMessage })));
+  assert.equal(maxRunning, 1);
+  assert.equal(results[0].reason.message, "provider rejected");
+  assert.equal(results[1].status, "fulfilled");
+  assert.equal(results[2].reason.code, "RESOURCE_STAGE_YIELD");
+});

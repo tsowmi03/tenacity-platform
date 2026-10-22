@@ -37,7 +37,6 @@ function assertRequestSize(job) {
 // a large response can exceed Firestore's document limit. Only the worker writes
 // them; an attempt fence protects both the journal and the progress display.
 function createDurableCaller({ job, db, storage, callAi, clock = () => new Date(), timeoutMs = STAGE_TIMEOUT_MS }) {
-  let freshCalls = 0;
   let inFlight = null;
   let completed = 0;
   const invocationStarted = Date.now();
@@ -66,14 +65,18 @@ function createDurableCaller({ job, db, storage, callAi, clock = () => new Date(
     // Concurrent stages (diagram fills run under Promise.all) reach here
     // together. The slot is taken before any await, so only one provider call
     // starts per invocation; the others wait for it to be saved, then yield.
-    if (freshCalls) {
-      await inFlight?.catch(() => {});
-      throw controlError("RESOURCE_STAGE_YIELD", "Continuing from saved progress");
+    // A failed call saved nothing, so yielding after it would replay the same
+    // failure every invocation (a best-effort caller swallows it): the slot
+    // passes to the next stage instead.
+    while (inFlight) {
+      const current = inFlight;
+      const saved = await current.then(() => true, () => false);
+      if (saved) throw controlError("RESOURCE_STAGE_YIELD", "Continuing from saved progress");
+      if (inFlight === current) break;
     }
     if (completed >= MAX_STAGE_COUNT) {
       throw controlError("RESOURCE_STAGE_LIMIT", "This request needs too many generation stages. Split it into smaller resources.");
     }
-    freshCalls += 1;
     inFlight = runFreshStage({ request, signal, stageLabel, file });
     return inFlight;
   };

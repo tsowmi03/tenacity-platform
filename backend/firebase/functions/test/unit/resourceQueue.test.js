@@ -2567,3 +2567,24 @@ it("retains schema-repair input when a stage yields before the repair call", asy
   assert.equal(db.jobs[0].status, "complete");
   assert.equal(generations, 1);
 });
+
+it("keeps a cancel requested mid-attempt when the stage yields", async () => {
+  const db = fakeQueueDb([{ id: "cancel-yield", createdBy: "t", status: "pending", createdAt: 1,
+    resourceType: "worksheet", subject: "maths", year: 9 }]);
+  let generations = 0;
+  const deps = { db, storage: fakeStorage(), durableStages: true, enableFailover: false,
+    // The watcher has not seen the flag yet: only the job document has it.
+    startCancelWatcher: () => ({ signal: new AbortController().signal, isCancelled: () => false, stop: () => {} }),
+    generationPipeline: async () => {
+      generations += 1;
+      db.jobs[0].cancelRequested = true;
+      throw Object.assign(new Error("yield"), { resourceControl: true, code: "RESOURCE_STAGE_YIELD" });
+    },
+  };
+  const outcomes = await runQueueForTutor("t", deps);
+  assert.equal(db.jobs[0].status, "cancelled");
+  assert.equal(db.jobs[0].cancelRequested, false);
+  assert.deepEqual(outcomes.map((o) => o.status), ["cancelled"]);
+  await runQueueForTutor("t", deps);
+  assert.equal(generations, 1, "a cancelled job is never claimed again");
+});
