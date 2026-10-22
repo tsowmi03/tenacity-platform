@@ -54,7 +54,7 @@ const SELECTION_SCHEMA = Object.freeze({
     standaloneOnGutenberg: { type: "boolean" },
     collectionHint: { anyOf: [{ type: "string" }, { type: "null" }] },
     pieceTitle: { type: "string" },
-    approxWordCount: { type: "integer", minimum: 1 },
+    approxWordCount: { type: "integer" },
     themes: { type: "array", items: { type: "string" } },
     yearLevelFit: { type: "string" },
     rationale: { type: "string" },
@@ -83,7 +83,7 @@ const STIMULUS_TEXT_SCHEMA = Object.freeze({
     standaloneOnGutenberg: { type: "boolean" },
     collectionHint: { anyOf: [{ type: "string" }, { type: "null" }] },
     pieceTitle: { type: "string" },
-    approxWordCount: { type: "integer", minimum: 1 },
+    approxWordCount: { type: "integer" },
     themes: { type: "array", items: { type: "string" } },
     rationale: { type: "string" },
   },
@@ -126,16 +126,10 @@ const STIMULUS_PLAN_SCHEMA = Object.freeze({
   required: ["needed", "texts", "visuals"],
   properties: {
     needed: { type: "boolean" },
-    texts: {
-      type: "array",
-      maxItems: 6,
-      items: STIMULUS_TEXT_SCHEMA,
-    },
-    visuals: {
-      type: "array",
-      maxItems: 2,
-      items: STIMULUS_VISUAL_SCHEMA,
-    },
+    // No maxItems: structured outputs rejects it (a 400 on every Anthropic
+    // call, RES-47). planStimulusSelections caps both arrays in code.
+    texts: { type: "array", items: STIMULUS_TEXT_SCHEMA },
+    visuals: { type: "array", items: STIMULUS_VISUAL_SCHEMA },
   },
 });
 
