@@ -22,6 +22,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | --- | --- |
 | 2026-10-22 | [A failed generation step no longer loops a resource forever (RES-47)](#2026-10-22--a-failed-generation-step-no-longer-loops-a-resource-forever-res-47) |
 | 2026-10-21 | [Admins can send unsynced invoices to Xero from the portal (AWP-27)](#2026-10-21--admins-can-send-unsynced-invoices-to-xero-from-the-portal-awp-27) |
+| 2026-10-21 | [Invoice PDF failures are recorded, and "Opening payment…" no longer lingers (MOB-66)](#2026-10-21--invoice-pdf-failures-are-recorded-and-opening-payment-no-longer-lingers-mob-66) |
 | 2026-10-21 | [Xero calls work again after the memory fix broke them (TP-39)](#2026-10-21--xero-calls-work-again-after-the-memory-fix-broke-them-tp-39) |
 | 2026-10-21 | [Parents are offered "Book a class", not just a one-off (MOB-56)](#2026-10-21--parents-are-offered-book-a-class-not-just-a-one-off-mob-56) |
 | 2026-10-21 | [Booking a one-off with a lesson token now uses the token (MOB-64)](#2026-10-21--booking-a-one-off-with-a-lesson-token-now-uses-the-token-mob-64) |
@@ -224,6 +225,19 @@ omitted, and open follow-ups are tracked at the bottom.
 **Next steps**
 - Send one invoice first to confirm the Xero connection, then the rest in batches.
 - Remove the page once the backlog is cleared.
+
+---
+
+## 2026-10-21 — Invoice PDF failures are recorded, and "Opening payment…" no longer lingers (MOB-66)
+
+**What changed**
+- A failed invoice PDF open now records which step failed (and the error code) instead of vanishing, and shows "This invoice is not ready to view yet" when the server refused to produce the PDF.
+- "Opening payment…" now clears as soon as Stripe's payment sheet appears, rather than staying on behind it.
+- A new event records how long the payment sheet took to get ready, so a slow start can be told apart from a parent taking their time.
+
+**Why:** A parent's session looked like a 25-second payment stall. The logs showed the payment sheet was open and she closed it; the label and the missing timing made it look like a hang. The PDF error itself was caused by a backend fault (TP-39).
+
+**Status:** Ready on the branch; ships with the next mobile release.
 
 ---
 

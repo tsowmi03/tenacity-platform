@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
@@ -55,6 +56,34 @@ typedef ParentInvoiceUriLauncher = Future<bool> Function(Uri uri);
 
 Future<bool> _launchParentInvoiceUri(Uri uri) {
   return launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+/// Which step of opening an invoice PDF failed, from what was thrown.
+///
+/// [properties] go to analytics, so they hold the step and the Firebase error
+/// code only, never the message. [notReady] is true when the backend refused
+/// to produce the PDF (the invoice has no Xero copy yet, or Xero is
+/// unreachable), which a parent should wait out rather than retry at once.
+({Map<String, Object> properties, bool notReady}) _describePdfFailure(
+  Object error,
+  String stage,
+) {
+  if (error is! FirebaseException) {
+    return (properties: {'stage': stage}, notReady: false);
+  }
+  final plugin = error.plugin;
+  final failedStage = plugin.contains('functions')
+      ? 'callable'
+      : plugin.contains('storage')
+          ? 'download_url'
+          : plugin.contains('firestore')
+              ? 'invoice_lookup'
+              : stage;
+  const notReadyCodes = {'internal', 'failed-precondition', 'not-found'};
+  return (
+    properties: {'stage': failedStage, 'code': error.code},
+    notReady: failedStage == 'callable' && notReadyCodes.contains(error.code),
+  );
 }
 
 /// A parent's billing screen: what is owed, how to settle it, and what has
@@ -300,12 +329,24 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     });
     final paymentProperties = {'invoice_count': invoiceIds.length};
     Analytics.capture(AppEvent.invoicePaymentStarted, paymentProperties);
+    final startedAt = Stopwatch()..start();
 
     try {
       final clientSecret = await getClientSecret();
       if (!_isCurrentScope(generation)) return;
       await widget.paymentSheet.prepare(clientSecret);
       if (!_isCurrentScope(generation)) return;
+      // Stripe's sheet takes over the screen from here, and session replay
+      // cannot see it. Leaving "Opening payment…" up for the whole time the
+      // parent spends in the sheet made it look like a stall (MOB-66). The
+      // time to reach this point tells a slow intent from a slow parent. It is
+      // "ready", not "shown": present() can still fail before any UI appears,
+      // and that is reported as invoice_payment_failed.
+      Analytics.capture(AppEvent.invoicePaymentSheetReady, {
+        ...paymentProperties,
+        'ready_ms': startedAt.elapsedMilliseconds,
+      });
+      setState(() => _activePaymentInvoiceIds = const {});
       await widget.paymentSheet.present();
       Analytics.capture(AppEvent.invoicePaymentSubmitted, paymentProperties);
 
@@ -504,6 +545,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   Future<void> _openPdf(String invoiceId) async {
     if (_openingPdfInvoiceId != null) return;
     final generation = _scopeGeneration;
+    var stage = 'fetch_url';
 
     try {
       if (!await OfflineActionGuard.ensureOnline(
@@ -521,14 +563,27 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
       final pdfUrl = await _getPdfUrl(invoiceId);
       if (!_isCurrentScope(generation)) return;
+      stage = 'launch';
       final pdfUri = Uri.tryParse(pdfUrl);
       final opened = pdfUri != null &&
           (pdfUri.scheme == 'https' || pdfUri.scheme == 'http') &&
           await widget.openExternalUri(pdfUri);
-      if (!opened && _isCurrentScope(generation)) _showPdfError();
-    } catch (error) {
+      if (!opened) {
+        Analytics.capture(AppEvent.invoicePdfFailed, {'stage': stage});
+        if (_isCurrentScope(generation)) _showPdfError();
+      }
+    } catch (error, stackTrace) {
+      // Every failure used to land on one message with nothing recorded, so a
+      // parent's "PDF unavailable" could not be traced to a step (MOB-66).
+      final failure = _describePdfFailure(error, stage);
+      Analytics.capture(AppEvent.invoicePdfFailed, failure.properties);
+      logHandledError(
+        error,
+        whileTryingTo: 'open an invoice PDF',
+        stackTrace: stackTrace,
+      );
       if (!_isCurrentScope(generation)) return;
-      _showPdfError();
+      _showPdfError(notReady: failure.notReady);
     } finally {
       if (_isCurrentScope(generation) && _openingPdfInvoiceId == invoiceId) {
         setState(() => _openingPdfInvoiceId = null);
@@ -536,12 +591,15 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     }
   }
 
-  void _showPdfError() {
+  void _showPdfError({bool notReady = false}) {
     setState(() {
-      _feedback = const _InvoiceFeedback(
+      _feedback = _InvoiceFeedback(
         tone: _InvoiceFeedbackTone.error,
         title: 'Invoice PDF unavailable',
-        message: 'The document could not be opened. Please try again.',
+        message: notReady
+            ? 'This invoice is not ready to view yet. Please try again later, '
+                'or contact Tenacity if it keeps happening.'
+            : 'The document could not be opened. Please try again.',
       );
     });
   }
