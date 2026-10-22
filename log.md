@@ -20,7 +20,12 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
-| 2026-10-21 | [Booking a one-off no longer keeps families waiting (MOB-55)](#2026-10-21--booking-a-one-off-no-longer-keeps-families-waiting-mob-55) |
+| 2026-10-23 | [Booking a one-off no longer keeps families waiting (MOB-55)](#2026-10-23--booking-a-one-off-no-longer-keeps-families-waiting-mob-55) |
+| 2026-10-22 | [A failed generation step no longer loops a resource forever (RES-47)](#2026-10-22--a-failed-generation-step-no-longer-loops-a-resource-forever-res-47) |
+| 2026-10-21 | [Admins can send unsynced invoices to Xero from the portal (AWP-27)](#2026-10-21--admins-can-send-unsynced-invoices-to-xero-from-the-portal-awp-27) |
+| 2026-10-21 | [Xero calls work again after the memory fix broke them (TP-39)](#2026-10-21--xero-calls-work-again-after-the-memory-fix-broke-them-tp-39) |
+| 2026-10-21 | [Parents are offered "Book a class", not just a one-off (MOB-56)](#2026-10-21--parents-are-offered-book-a-class-not-just-a-one-off-mob-56) |
+| 2026-10-21 | [Booking a one-off with a lesson token now uses the token (MOB-64)](#2026-10-21--booking-a-one-off-with-a-lesson-token-now-uses-the-token-mob-64) |
 | 2026-10-20 | [Maths that won't format is repaired, or the resource is held back (RES-45)](#2026-10-20--maths-that-wont-format-is-repaired-or-the-resource-is-held-back-res-45) |
 | 2026-10-20 | [Large resources resume from saved stages instead of restarting (RES-44)](#2026-10-20--large-resources-resume-from-saved-stages-instead-of-restarting-res-44) |
 | 2026-10-16 | [Staff can start group chats (MOB-54)](#2026-10-16--staff-can-start-group-chats-mob-54) |
@@ -190,7 +195,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
-## 2026-10-21 — Booking a one-off no longer keeps families waiting (MOB-55)
+## 2026-10-23 — Booking a one-off no longer keeps families waiting (MOB-55)
 
 **What changed**
 - Each Cloud Function server now loads only the code for the one function it
@@ -212,6 +217,10 @@ omitted, and open follow-ups are tracked at the bottom.
   reports a child who is booked.
 - Each function logs `functions_bundle_loaded` with its load time at start-up,
   which is how the change above was measured.
+- Booking several children with lesson tokens takes one token per child
+  actually added, in the same step as the seats (MOB-64), and records one
+  token audit entry listing them. A child already booked or left out because
+  the session is full costs nothing.
 
 **Why:** Production logs showed 8 of 9 one-off bookings in the week to 19 Oct
 waited 5.4–15.3s, almost all of it a server starting up. A warm booking took
@@ -219,6 +228,111 @@ waited 5.4–15.3s, almost all of it a server starting up. A warm booking took
 
 **Status:** Live. Functions deployed; the app's single-call booking ships with
 the next mobile release.
+
+---
+
+## 2026-10-22 — A failed generation step no longer loops a resource forever (RES-47)
+
+**What changed**
+- When a generation step fails and the resource carries on without it (for example a reading passage that couldn't be sourced), the next step now runs in the same turn. Before, the job handed off to "continue from saved progress" with nothing saved, replayed the same failure, and looped.
+- A Stop that lands while a step is handing off now cancels the job. Before, the hand-off put the job back in the queue and the next claim cleared the stop.
+- The public-domain source planner's request no longer uses `maxItems` or `minimum`, which Anthropic's structured output rejects. Since 2026-09-23 every planner call to Anthropic had failed with a 400 and only worked because it fell back to OpenAI. The text and visual caps were already applied in code.
+- The schema test that checks generation schemas for unsupported keywords now covers the planner schemas too.
+- Regression tests cover all of the above.
+
+**Why:** A Year 8 topic booklet showed as pending for a day. Its planner call was rejected, the OpenAI fallback handed off instead of running, and the job looped: about 132,000 claims and 130,000 rejected Anthropic calls, firing the fallback and preview functions each time. Stop couldn't end it. It was cancelled by hand on prod on 2026-10-22.
+
+**Status:** Live. Deployed to Functions.
+
+---
+
+## 2026-10-21 — Admins can send unsynced invoices to Xero from the portal (AWP-27)
+
+**What changed**
+- A new admin-only page, `/xero-backfill` ("Send invoices to Xero"), runs the TP-39 backfill. "Check what is left" lists the unpaid invoices that never reached Xero without changing anything.
+- A batch (1, 5, 10 or 20) is sent only after a check and a confirmation that says whether Xero will email the parents. Emailing is off unless ticked.
+- The page shows the result of each invoice, including failures.
+- The portal's call helper accepts a longer timeout for this one call, since a batch can run for minutes.
+
+**Why:** The backfill function needs an admin sign-in, and the portal had no screen for it.
+
+**Status:** Live once merged (merging deploys the portal). The page is not in the navigation; open it by its address.
+
+**Next steps**
+- Send one invoice first to confirm the Xero connection, then the rest in batches.
+- Remove the page once the backlog is cleared.
+
+---
+
+## 2026-10-21 — Xero calls work again after the memory fix broke them (TP-39)
+
+**What changed**
+- The memory fix (TP-37) loaded the Xero library on first use, but two lines still treated that loader as the Xero client itself, so every Xero call failed with "loadXeroNode is not a constructor". Both lines now build the client correctly.
+- A new test fails if any lazily loaded library is used as a constructor in this way again.
+- A new admin-only function, `adminBackfillXeroInvoices`, recreates in Xero the unpaid invoices that never got a Xero copy. It only reports by default (dry run); Xero emailing the invoice to the parent is a separate option; it skips any invoice that already exists in Xero under the same number.
+
+**Why:** From 17 Oct no new invoice reached Xero, so 27 unpaid invoices had no Xero copy, were never emailed from Xero, and parents saw "Invoice PDF unavailable" when they tried to open them (MOB-66).
+
+**Status:** Fix and test ready on the branch. Functions deploy is a manual dispatch, and the 27 invoices still need backfilling once it is live.
+
+**Next steps**
+- Deploy Functions, then confirm the Xero token refreshes (re-authorise through `xeroAuthStart` if it does not).
+- Run the backfill: dry run first, then apply in batches (needs approval, and a decision on whether Xero emails the 27 parents).
+
+---
+
+## 2026-10-21 — Parents are offered "Book a class", not just a one-off (MOB-56)
+
+**What changed**
+- The parent dashboard tile and the Timetable tab button now read
+  "Book a class" (they said "Book one-off class"), and the empty-timetable
+  message says "You can book a class below."
+- The browse screen ("Available classes") has a line under its title:
+  "Tap a class to enrol for the term or book a single session."
+- Booking rules, the class options dialog and its order are unchanged.
+- Tests that asserted the old wording are updated, and the browse subtitle is
+  covered.
+
+**Why:** Both entry points called the screen a one-off booking, so parents
+didn't realise it was also the way to enrol for the rest of the term.
+
+**Status:** Merged. Ships with the next mobile release.
+
+---
+
+## 2026-10-21 — Booking a one-off with a lesson token now uses the token (MOB-64)
+
+**What changed**
+- `enrollStudentOneOff` takes the parent's lesson token in the same
+  transaction as the seat. With too few tokens the booking is refused before
+  anything is written. A student already booked costs nothing, so a retry
+  can't charge twice. Admin bookings stay free. Each token taken is recorded
+  in the audit log (`user.adjust_lesson_tokens`, reason `one_off_booking`).
+- The app no longer writes `lessonTokens`. The one-off path just refreshes
+  the balance after booking. The admin token editor goes through
+  `adminAdjustLessonTokens`, which writes the audit entry. The permanent
+  enrolment path's deduction is removed (see MOB-65).
+- `createPaymentIntent` refuses a one-off payment that has no booking
+  attached. Only app builds before 3.0.1 send those. They enrol through the
+  callable after paying, so they could otherwise be charged and then refused
+  a seat for lack of a token.
+- New one-off script `scripts/correctOneOffTokenBalances.js` (dry run by
+  default) takes back the tokens that bookings kept. It never takes a balance
+  below zero. Each correction goes in the audit log, and a parent already
+  corrected is skipped.
+
+**Why:** From 22 May 2026, when production Firestore rules stopped parents
+writing their own `lessonTokens`, the app's deduction after every token
+booking was refused. The booking still went through, so families booked and
+kept the token. Before 22 May the rules were fully open and deductions
+worked. The production dry run found 30 uncharged token bookings across 11
+families. Correcting them removes 22 tokens, and 8 are written off because
+the balance can't go below zero (Tom approved this).
+
+**Status:** Live. Functions deployed, and balances corrected with
+`npm run correct-one-off-tokens:once -- --projectId=tenacity-tutoring-b8eb2`.
+The app changes ship with the next mobile release. Older builds keep
+attempting their own deduction, which Firestore rules refuse harmlessly.
 
 ---
 

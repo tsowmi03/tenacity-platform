@@ -15,6 +15,10 @@
     "../src/reports/attendanceReport",
     "adminAttendanceReport"
   ],
+  "adminBackfillXeroInvoices": [
+    "../src/invoices/backfillXeroInvoices",
+    "adminBackfillXeroInvoices"
+  ],
   "adminClassUtilisationReport": [
     "../src/reports/classUtilisationReport",
     "adminClassUtilisationReport"

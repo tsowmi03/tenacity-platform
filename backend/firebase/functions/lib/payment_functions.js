@@ -188,6 +188,13 @@ exports.createPaymentIntent = (0, https_1.onCall)({ secrets: [stripeSecretKey], 
     if (hasBooking && hasInvoiceIds) {
         throw new https_1.HttpsError('invalid-argument', 'A payment cannot be both a booking and an invoice payment');
     }
+    // App builds before 3.0.1 pay for a one-off with no booking attached, then
+    // enrol through `enrollStudentOneOff`. That callable now treats a parent's
+    // booking as paid with a lesson token (MOB-64), so such a family could be
+    // charged and then refused a seat. Stop them here, before money moves.
+    if (!hasBooking && !hasInvoiceIds) {
+        throw new https_1.HttpsError('failed-precondition', 'Please update the Tenacity app to book a one-off class.');
+    }
     const db = admin.firestore();
     const actor = await requireParentOrAdmin(request, parentIdString, db);
     let invoiceIdsNormalized = [];

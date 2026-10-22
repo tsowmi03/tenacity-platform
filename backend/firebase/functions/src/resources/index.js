@@ -3237,6 +3237,24 @@ async function finalizeResourceJobAttempt({ db, jobId, attemptId, patch }) {
       return false;
     }
 
+    // A cancel that lands mid-attempt must survive a requeue: the next claim
+    // clears cancelRequested, so a looping job could never be stopped.
+    if (patch.status === "pending" && current.cancelRequested) {
+      tx.update(jobRef, {
+        status: "cancelled",
+        cancelRequested: false,
+        error: null,
+        errorCode: null,
+        errorDetail: null,
+        startedAt: null,
+        completedAt: now(),
+        attemptId: null,
+        lastAttemptId: attemptId,
+        leaseExpiresAt: null,
+      });
+      return "cancelled";
+    }
+
     const nextPatch = { ...patch };
     if (patch.usageByProvider) {
       nextPatch.usageByProvider = mergeUsageByProvider(
@@ -3539,7 +3557,7 @@ async function runQueueForTutor(createdBy, deps) {
               repairMode: job.repairMode || null,
             } : {}),
           } });
-        return [...outcomes, { jobId: job.jobId, status: resumed ? "pending" : "superseded" }];
+        return [...outcomes, { jobId: job.jobId, status: resumed === "cancelled" ? "cancelled" : resumed ? "pending" : "superseded" }];
       }
       // A tutor stopped the job mid-flight: finalize as cancelled, not failed.
       if (isCancellationError(err) || watcher.isCancelled()) {

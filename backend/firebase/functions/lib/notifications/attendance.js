@@ -14,6 +14,8 @@ const sameDayBookingCutoff_1 = require("../../src/attendance/sameDayBookingCutof
 const cancelledSession_1 = require("../../src/attendance/cancelledSession");
 const send_1 = require("../../src/notifications/send");
 const params_1 = require("firebase-functions/params");
+const auditLog_1 = require("../../src/shared/auditLog");
+const NO_LESSON_TOKENS_MESSAGE = "You don't have a lesson token for this booking. Pay for the class instead.";
 function requiredString(data, key) {
     const value = data[key];
     if (typeof value !== "string" || value.trim() === "") {
@@ -138,6 +140,11 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB", minInstanc
     // Admins hear about the booking from `onAttendanceChangeNotifyAdmins`,
     // which fires on this write. Sending the push from here instead made the
     // family wait for it before their booking was confirmed (MOB-55).
+    //
+    // A parent reaching this callable is paying with a lesson token: paid
+    // one-offs are enrolled by the payment webhook instead. The token is taken
+    // in the same transaction as the seat (MOB-64). Admins book for free.
+    const chargesTokens = actorData.role !== "admin";
     const result = await (0, enrolOneOffStudents_1.enrolOneOffStudentsImpl)({
         db,
         classId,
@@ -146,9 +153,12 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB", minInstanc
         actor: { uid: requesterId },
         canEnrol: (studentData) => (0, permanent_enrollment_action_1.canPerformPermanentEnrollmentAction)(requesterId, actorData, studentData),
         notifyAdminsViaTrigger: true,
+        chargeTokensTo: chargesTokens ? requesterId : null,
     });
     if (!result.ok) {
         switch (result.reason) {
+            case "insufficient_tokens":
+                throw new https_1.HttpsError("failed-precondition", NO_LESSON_TOKENS_MESSAGE);
             case "class_not_found":
                 throw new https_1.HttpsError("not-found", "Class not found.");
             case "attendance_not_found":
@@ -167,12 +177,35 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB", minInstanc
     if (studentIds.length === 1 && result.noCapacity.length > 0) {
         throw new https_1.HttpsError("failed-precondition", "Class is full for this date/week.");
     }
+    if (result.tokens && result.tokens.charged > 0) {
+        await (0, auditLog_1.writeAuditLog)(db, {
+            actorUid: requesterId,
+            actorEmail: actorData.email || null,
+            actorRole: actorData.role || null,
+            action: "user.adjust_lesson_tokens",
+            targetType: "user",
+            targetId: requesterId,
+            targetName: (0, auditLog_1.displayName)(actorData, requesterId),
+            payloadSummary: {
+                mode: "delta",
+                value: -result.tokens.charged,
+                reason: "one_off_booking",
+                classId,
+                attendanceDocId,
+                studentIds: result.enrolled,
+            },
+            before: { lessonTokens: result.tokens.before },
+            after: { lessonTokens: result.tokens.after },
+        }, { logger: console });
+    }
     return {
         added: result.enrolled.includes(studentIds[0]),
         alreadyEnrolled: result.alreadyEnrolled.includes(studentIds[0]),
         enrolled: result.enrolled,
         alreadyEnrolledStudentIds: result.alreadyEnrolled,
         noCapacity: result.noCapacity,
+        tokensCharged: result.tokens ? result.tokens.charged : 0,
+        lessonTokens: result.tokens ? result.tokens.after : null,
     };
 });
 exports.cancelStudentForWeek = (0, https_1.onCall)(async (request) => {

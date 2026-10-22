@@ -12,6 +12,7 @@ const {
   buildVerifiedAnswersSchema,
 } = require("../../src/resources/responseSchema");
 const { RESOURCE_TYPES } = require("../../src/resources/modelMap");
+const { SELECTION_SCHEMA, STIMULUS_PLAN_SCHEMA } = require("../../src/resources/publicDomainText");
 const { FIXTURES } = require("../../../functions/scripts/renderResourceFixtures");
 const {
   RESOURCE_BUILDERS,
@@ -200,6 +201,13 @@ describe("resource response schemas", () => {
       assertSchemaIsApiLegal(build({ subject: "english", answerMode: "answers" }), resourceType);
     }
     assertSchemaIsApiLegal(buildVerifiedAnswersSchema(), "verifiedAnswers");
+  });
+
+  it("keeps the public-domain planner schemas inside the accepted subset (RES-47)", () => {
+    // These go to Anthropic first; an unsupported keyword is a 400 on every
+    // call, hidden only by the OpenAI fallback.
+    assertSchemaIsApiLegal(SELECTION_SCHEMA, "selection");
+    assertSchemaIsApiLegal(STIMULUS_PLAN_SCHEMA, "stimulusPlan");
   });
 
   it("has no single-call schema for types generated in two calls", () => {

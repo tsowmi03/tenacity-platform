@@ -56,8 +56,10 @@ describe("one-off booking notifications (emulator)", () => {
   const pushBodies = () =>
     spy.sent.map((message) => message.notification && message.notification.body);
 
-  async function seed({ capacity = 6, attendance = ["other-1"] } = {}) {
-    await db.collection("users").doc(PARENT_ID).set({ role: "parent" });
+  // A parent books with lesson tokens: the callable takes one per child
+  // added, with the seat (MOB-64).
+  async function seed({ capacity = 6, attendance = ["other-1"], lessonTokens = 5 } = {}) {
+    await db.collection("users").doc(PARENT_ID).set({ role: "parent", lessonTokens });
     await db.collection("users").doc("admin-1").set({ role: "admin" });
     await db
       .collection("userTokens")
@@ -138,6 +140,20 @@ describe("one-off booking notifications (emulator)", () => {
       "kid-2",
     ]);
     assert.equal(spy.sent.length, 2);
+    assert.equal(result.tokensCharged, 2);
+    assert.equal(result.lessonTokens, 3);
+    assert.equal((await db.collection("users").doc(PARENT_ID).get()).data().lessonTokens, 3);
+  });
+
+  it("refuses several children when there are not enough tokens for all", async () => {
+    await seed({ lessonTokens: 1 });
+
+    await assert.rejects(
+      book({ studentIds: ["kid-1", "kid-2"] }),
+      (error) => error.code === "failed-precondition"
+    );
+    assert.deepEqual((await attendanceRef().get()).data().attendance, ["other-1"]);
+    assert.equal((await db.collection("users").doc(PARENT_ID).get()).data().lessonTokens, 1);
   });
 
   it("reports which children missed out when only some fit", async () => {
@@ -147,6 +163,7 @@ describe("one-off booking notifications (emulator)", () => {
 
     assert.deepEqual(result.enrolled, ["kid-1"]);
     assert.deepEqual(result.noCapacity, ["kid-2"]);
+    assert.equal(result.tokensCharged, 1, "only the child who got a seat pays");
   });
 
   it("keeps a single-child call's error for a full session", async () => {

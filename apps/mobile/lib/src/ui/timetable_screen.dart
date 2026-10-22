@@ -879,12 +879,10 @@ class TimetableScreenState extends State<TimetableScreen>
         failedChildIds: failedChildIds,
       );
 
+      // The server took each token with its seat (MOB-64); this only picks
+      // up the new balance.
       if (tokenBookedChildIds.isNotEmpty) {
-        await timetableController.decrementTokens(
-          parentId,
-          tokenBookedChildIds.length,
-          authController: authController,
-        );
+        await authController.refreshCurrentUser();
       }
     }
 
@@ -1086,21 +1084,9 @@ class TimetableScreenState extends State<TimetableScreen>
           : enrolledResults
               .map((result) => result.attendanceSessionsAdded)
               .reduce((a, b) => a > b ? a : b);
-      final totalSessions = enrolledResults.fold<int>(
-        0,
-        (sum, result) => sum + result.attendanceSessionsAdded,
-      );
-      final tokensAvailable = parentUser.lessonTokens;
-      final tokensToUse =
-          tokensAvailable >= totalSessions ? totalSessions : tokensAvailable;
-
-      if (tokensToUse > 0) {
-        await timetableController.decrementTokens(
-          parentId,
-          tokensToUse,
-        );
-        await authController.refreshCurrentUser();
-      }
+      // No lesson tokens are redeemed here. The app used to take them itself,
+      // which Firestore rules refuse (MOB-64); redeeming them belongs in the
+      // server's enrolment, alongside the invoice (MOB-65).
 
       final enrolledStudents = <Student>[];
       for (final id in enrolledChildIds) {
@@ -1119,7 +1105,6 @@ class TimetableScreenState extends State<TimetableScreen>
             students: enrolledStudents,
             sessionsPerStudent: List.filled(enrolledStudents.length, 1),
             weeks: weeks,
-            tokensUsed: tokensToUse,
             dueDate: DateTime.now().add(const Duration(days: 21)),
           );
         } catch (error, stackTrace) {

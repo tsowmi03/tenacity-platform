@@ -72,7 +72,8 @@ describe("bookings into a cancelled session (emulator)", () => {
       await clearCollection(db, name);
     }
 
-    await db.collection("users").doc(PARENT_ID).set({ role: "parent" });
+    // A parent's one-off is paid with a lesson token (MOB-64).
+    await db.collection("users").doc(PARENT_ID).set({ role: "parent", lessonTokens: 5 });
     await db.collection("users").doc(ADMIN_ID).set({ role: "admin" });
     await db.collection("students").doc(STUDENT_ID).set({
       firstName: "Sam",

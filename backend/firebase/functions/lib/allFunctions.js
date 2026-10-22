@@ -68,6 +68,9 @@ const {
 const { adminUpdateInvoice } = require("../src/invoices/updateInvoice");
 const { adminDeleteInvoice } = require("../src/invoices/deleteInvoice");
 const { adminGetInvoicePdf } = require("../src/invoices/getInvoicePdf");
+const {
+  adminBackfillXeroInvoices,
+} = require("../src/invoices/backfillXeroInvoices");
 const { adminIncomeReport } = require("../src/reports/incomeReport");
 const {
   adminInvoiceAgingReport,
@@ -148,6 +151,7 @@ module.exports = Object.assign(
     adminUpdateInvoice,
     adminDeleteInvoice,
     adminGetInvoicePdf,
+    adminBackfillXeroInvoices,
     adminIncomeReport,
     adminInvoiceAgingReport,
     adminExportReport,
