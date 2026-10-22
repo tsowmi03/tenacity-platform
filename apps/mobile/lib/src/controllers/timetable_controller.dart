@@ -985,72 +985,103 @@ class TimetableController extends ChangeNotifier {
     }
   }
 
-  /// One-off booking
+  /// One-off booking for a single child.
   Future<OneOffEnrollmentResult?> enrollStudentOneOff({
     required String classId,
     required String studentId,
     required String attendanceDocId,
   }) async {
+    final result = await enrollStudentsOneOff(
+      classId: classId,
+      studentIds: [studentId],
+      attendanceDocId: attendanceDocId,
+    );
+    if (result == null) return null;
+    if (result.noCapacity.contains(studentId)) {
+      errorMessage = 'Class is full for this date/week.';
+      notifyListeners();
+      return null;
+    }
+    final single = result.forStudent(studentId);
+    if (single.alreadyEnrolled) {
+      errorMessage = "Student already has a booking for this class this week.";
+      notifyListeners();
+    }
+    return single;
+  }
+
+  /// One-off booking for one or more children, in a single server call.
+  ///
+  /// The server is the only check on whether a child is already booked: the
+  /// roll read here used to run first and add a round trip to every booking
+  /// (MOB-55). It now runs alongside the call and serves the audit record only.
+  Future<OneOffBatchEnrollmentResult?> enrollStudentsOneOff({
+    required String classId,
+    required List<String> studentIds,
+    required String attendanceDocId,
+  }) async {
     _startLoading();
+    final attendanceRead = _service
+        .fetchAttendanceDoc(classId: classId, attendanceDocId: attendanceDocId)
+        .then<Attendance?>((value) => value, onError: (_) => null);
     try {
-      // Fetch the attendance doc for this class/week to check if the student is already booked.
-      final attendance = await _service.fetchAttendanceDoc(
+      final result = await _service.enrollStudentsOneOff(
         classId: classId,
+        studentIds: studentIds,
         attendanceDocId: attendanceDocId,
       );
-      if (attendance != null && attendance.attendance.contains(studentId)) {
-        _stopLoading();
-        errorMessage =
-            "Student already has a booking for this class this week.";
-        notifyListeners();
+      for (final studentId in studentIds) {
         Analytics.capture(AppEvent.oneOffBooked, {
-          'outcome': 'already_booked',
+          'outcome': result.enrolled.contains(studentId)
+              ? 'succeeded'
+              : result.alreadyEnrolled.contains(studentId)
+                  ? 'already_booked'
+                  : 'no_capacity',
           'class_id': classId,
         });
-        return const OneOffEnrollmentResult(
-          added: false,
-          alreadyEnrolled: true,
-        );
       }
-
-      final result = await _service.enrollStudentOneOff(
-        classId: classId,
-        studentId: studentId,
-        attendanceDocId: attendanceDocId,
-      );
-      Analytics.capture(AppEvent.oneOffBooked, {
-        'outcome': result.added ? 'succeeded' : 'already_booked',
-        'class_id': classId,
-      });
       final classModel = _classById(classId);
-      if (result.added && classModel != null && attendance != null) {
-        _auditService.record(
-          action: 'class.book_one_off',
-          targetType: 'attendance',
-          targetId: attendanceDocId,
-          targetName: AuditService.attendanceTargetName(
-            classModel: classModel,
-            attendance: attendance,
-          ),
-          payloadSummary: {
-            'classId': classId,
-            'className': AuditService.classTargetName(classModel),
-            'attendanceDate': AuditService.dateOnly(attendance.date),
-            'studentId': studentId,
-          },
-          before: {'attendance': attendance.attendance},
-          after: {
-            'attendance': [...attendance.attendance, studentId],
-          },
-        );
+      final attendance = await attendanceRead;
+      if (result.enrolled.isNotEmpty &&
+          classModel != null &&
+          attendance != null) {
+        // The read may land either side of the write, so the roll before is
+        // derived rather than taken as read.
+        var roll = attendance.attendance
+            .where((id) => !result.enrolled.contains(id))
+            .toList();
+        // One event per child, each showing only its own addition.
+        for (final studentId in result.enrolled) {
+          final next = [...roll, studentId];
+          _auditService.record(
+            action: 'class.book_one_off',
+            targetType: 'attendance',
+            targetId: attendanceDocId,
+            targetName: AuditService.attendanceTargetName(
+              classModel: classModel,
+              attendance: attendance,
+            ),
+            payloadSummary: {
+              'classId': classId,
+              'className': AuditService.classTargetName(classModel),
+              'attendanceDate': AuditService.dateOnly(attendance.date),
+              'studentId': studentId,
+            },
+            before: {'attendance': roll},
+            after: {'attendance': next},
+          );
+          roll = next;
+        }
       }
       _stopLoading();
       return result;
     } catch (e) {
-      Analytics.capture(AppEvent.oneOffBooked, {
-        'outcome': 'failed',
-        'class_id': classId,
-      });
+      for (var i = 0; i < studentIds.length; i++) {
+        Analytics.capture(AppEvent.oneOffBooked, {
+          'outcome': 'failed',
+          'class_id': classId,
+        });
+      }
       _reportFailure(e, action: 'book this class');
       return null;
     }

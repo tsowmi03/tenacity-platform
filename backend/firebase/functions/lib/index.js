@@ -4,198 +4,46 @@ const admin = require("firebase-admin");
 const { setGlobalOptions } = require("firebase-functions/v2/options");
 // Before any function is defined: some options are read at definition time.
 //
-// Every instance loads this whole bundle, whichever function it serves, so the
-// 256MiB default left each function a few megabytes from failing at startup
-// whenever a dependency grew. It did, repeatedly: TP-22, then the one-week
-// swap after RES-42 added the PostHog AI SDK (TP-37). Functions that need
-// more still say so on their own definition, which overrides this.
+// The 256MiB default left each function a few megabytes from failing at
+// startup whenever a dependency grew. It did, repeatedly: TP-22, then the
+// one-week swap after RES-42 added the PostHog AI SDK (TP-37). Functions that
+// need more still say so on their own definition, which overrides this.
 // `scripts/checkStartupMemory.js` fails CI before the bundle nears it.
 setGlobalOptions({ memory: "512MiB" });
 admin.initializeApp(); // Firebase Admin SDK initialization
-// Import functions from other files
-const emailFunctions = require("./email_functions");
-const enrolmentFunctions = require("./enrolment_functions");
-const paymentFunctions = require("./payment_functions");
-const xeroFunctions = require("./xero_functions");
-const timetableFunctions = require("./timetable_functions");
-const notificationsFunctions = require("./notifications/index");
-const portalOverrides = require("./portal/overrides");
-const uidLink_1 = require("./uidLink");
-const {
-  cancelResourceJob,
-  chatAboutResource,
-  deleteResourceJob,
-  generateResourcePreviewOnComplete,
-  processResourceJob,
-  processResourceFallback,
-  recoverStuckResourceJobs,
-  retryResourceJob,
-  submitResourceJob,
-  submitResourceRevision,
-} = require("../src/resources");
 
-// Phase 2 portal admin functions (user management). Each module exports the
-// onCall handler under the canonical function name.
-const { adminCreateUser } = require("../src/users/createUser");
-const { adminCreateParent } = require("../src/users/createParent");
-const { adminUpdateUser } = require("../src/users/updateUser");
-const { adminDeleteUser } = require("../src/users/deleteUser");
-const {
-  adminLinkStudentToParent,
-  adminUnlinkStudentFromParent,
-} = require("../src/users/linkStudent");
-const {
-  adminAdjustLessonTokens,
-} = require("../src/users/adjustLessonTokens");
-const { adminCreateStudent } = require("../src/students/createStudent");
-const { adminUpdateStudent } = require("../src/students/updateStudent");
-const { adminDeleteStudent } = require("../src/students/deleteStudent");
-const { adminAcceptEnrolment } = require("../src/enrolments/acceptEnrolment");
-const { getReferralLink } = require("../src/referrals/getReferralLink");
-const { createGroupChat } = require("../src/chats/createGroupChat");
-const { adminUpdateReferral } = require("../src/referrals/updateReferral");
-const {
-  adminArchiveEnrolment,
-  adminUnarchiveEnrolment,
-} = require("../src/enrolments/archiveEnrolment");
-const {
-  adminDeleteEnrolment,
-  adminPurgeEnrolment,
-} = require("../src/enrolments/deleteEnrolment");
-const { adminUpdateEnrolment } = require("../src/enrolments/updateEnrolment");
-const { adminCreateClass } = require("../src/classes/createClass");
-const { adminUpdateClass } = require("../src/classes/updateClass");
-const { adminDeleteClass } = require("../src/classes/deleteClass");
-const {
-  adminGenerateAttendanceForClass,
-  adminRegenerateAttendanceForTerm,
-} = require("../src/classes/attendanceGeneration");
-const {
-  adminCreateInvoice,
-  adminCreateInvoiceDraft,
-} = require("../src/invoices/createInvoice");
-const { adminUpdateInvoice } = require("../src/invoices/updateInvoice");
-const { adminDeleteInvoice } = require("../src/invoices/deleteInvoice");
-const { adminGetInvoicePdf } = require("../src/invoices/getInvoicePdf");
-const {
-  adminBackfillXeroInvoices,
-} = require("../src/invoices/backfillXeroInvoices");
-const { adminIncomeReport } = require("../src/reports/incomeReport");
-const {
-  adminInvoiceAgingReport,
-} = require("../src/reports/invoiceAgingReport");
-const { adminExportReport } = require("../src/reports/exportReport");
-const { adminAttendanceReport } = require("../src/reports/attendanceReport");
-const {
-  adminStudentEnrolmentReport,
-} = require("../src/reports/studentEnrolmentReport");
-const {
-  adminClassUtilisationReport,
-} = require("../src/reports/classUtilisationReport");
-const {
-  adminCreateTermsForYear,
-  adminUpdateTerm,
-} = require("../src/terms/manageTerms");
-const { recordAuditEvent } = require("../src/audit/recordAuditEvent");
-const { sendParentEmailBlast } = require("../src/email/parentEmailBlast");
-const {
-  previewParentEmailBlast,
-} = require("../src/email/previewParentEmailBlast");
-const {
-  syncGoogleCalendar,
-} = require("../src/calendar/syncGoogleCalendar");
-const {
-  reconcileOneOffPayments,
-} = require("../src/payments/reconcileOneOffPayments");
-const {
-  onAuditLogAnalytics,
-  onInvoicePaidAnalytics,
-  onPaymentLogAnalytics,
-  onUserAnalytics,
-} = require("../src/analytics/triggers");
+// A deployed instance serves exactly one function, named by FUNCTION_TARGET,
+// so it loads only the file that defines it (MOB-55). Loading all ~100 made
+// every cold start pay for code it never ran, and a cold start is what a
+// family waits through when booking a class.
+//
+// Everywhere else — deploy discovery, the emulator, tests, scripts — gets the
+// full export map from `allFunctions.js`, which stays the single source of
+// truth. `functionModules.json` is generated from it
+// (`npm run generate:function-modules`) and a unit test fails when they drift.
+// A target missing from the manifest falls back to the full map rather than
+// failing to start.
+// Read unconditionally so deploy scoping's require graph sees it.
+const functionModules = require("./functionModules.json");
+const target = process.env.FUNCTION_TARGET;
+const entry = target ? functionModules[target] : undefined;
 
-// Export all functions so Firebase can recognize them
-module.exports = Object.assign(
-  Object.assign(
-    Object.assign(
-      Object.assign(
-        Object.assign(
-          Object.assign(
-            Object.assign(Object.assign({}, emailFunctions), enrolmentFunctions),
-            paymentFunctions
-          ),
-          xeroFunctions
-        ),
-        timetableFunctions
-      ),
-      notificationsFunctions
-    ),
-    portalOverrides
-  ),
-  {
-    linkUsers: uidLink_1.linkUsers,
-    adminCreateUser,
-    adminCreateParent,
-    adminUpdateUser,
-    adminDeleteUser,
-    adminLinkStudentToParent,
-    adminUnlinkStudentFromParent,
-    adminAdjustLessonTokens,
-    adminCreateStudent,
-    adminUpdateStudent,
-    adminDeleteStudent,
-    adminAcceptEnrolment,
-    adminArchiveEnrolment,
-    adminUnarchiveEnrolment,
-    adminDeleteEnrolment,
-    adminPurgeEnrolment,
-    adminUpdateEnrolment,
-    adminCreateClass,
-    adminUpdateClass,
-    adminDeleteClass,
-    adminGenerateAttendanceForClass,
-    adminRegenerateAttendanceForTerm,
-    adminCreateInvoice,
-    adminCreateInvoiceDraft,
-    adminUpdateInvoice,
-    adminDeleteInvoice,
-    adminGetInvoicePdf,
-    adminBackfillXeroInvoices,
-    adminIncomeReport,
-    adminInvoiceAgingReport,
-    adminExportReport,
-    adminAttendanceReport,
-    adminStudentEnrolmentReport,
-    adminClassUtilisationReport,
-    adminCreateTermsForYear,
-    adminUpdateTerm,
-    recordAuditEvent,
-    sendParentEmailBlast,
-    previewParentEmailBlast,
-    syncGoogleCalendar,
-    reconcileOneOffPayments,
-    getReferralLink,
-    createGroupChat,
-    adminUpdateReferral,
-    onAuditLogAnalytics,
-    onInvoicePaidAnalytics,
-    onPaymentLogAnalytics,
-    onUserAnalytics,
-  }
-);
-module.exports.submitResourceJob = submitResourceJob;
-module.exports.submitResourceRevision = submitResourceRevision;
-module.exports.chatAboutResource = chatAboutResource;
-module.exports.processResourceJob = processResourceJob;
-module.exports.processResourceFallback = processResourceFallback;
-module.exports.generateResourcePreviewOnComplete = generateResourcePreviewOnComplete;
-module.exports.retryResourceJob = retryResourceJob;
-module.exports.deleteResourceJob = deleteResourceJob;
-module.exports.cancelResourceJob = cancelResourceJob;
-module.exports.recoverStuckResourceJobs = recoverStuckResourceJobs;
+if (entry) {
+  const [modulePath, exportName] = entry;
+  module.exports = { [target]: require(modulePath)[exportName] };
+} else {
+  module.exports = require("./allFunctions");
+}
 
-// The legacy onRequest `acceptPendingEnrolment` defined in
-// lib/enrolment_functions.js (and previously overridden by portal/overrides)
-// is replaced by the idempotent `adminAcceptEnrolment` callable. Explicitly
-// delete it from the export map so the live function URL stays removed.
-delete module.exports.acceptPendingEnrolment;
+// How long this instance took to load, measured from Node's own start. A cold
+// start is mostly time spent before Node runs at all; logging this figure is
+// what separates the part our code controls from the part it does not.
+if (target) {
+  console.log(JSON.stringify({
+    message: "functions_bundle_loaded",
+    functionTarget: target,
+    loadedSingleModule: Boolean(entry),
+    loadMs: Math.round(process.uptime() * 1000),
+    modulesLoaded: Object.keys(require.cache).length,
+  }));
+}

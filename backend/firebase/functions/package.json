@@ -29,7 +29,8 @@
     "test:diagrams:spike-renderers": "node scripts/spikeDiagramRenderers.js",
     "test:resources:render": "node scripts/renderResourceFixtures.js",
     "test:emulator": "firebase --config ../../../firebase.json emulators:exec --only auth,firestore --project demo-tenacity-functions-test \"node --test --test-concurrency=1 --test-reporter=spec 'test/integration/**/*.test.js'\"",
-    "test:all": "npm run test && npm run test:emulator"
+    "test:all": "npm run test && npm run test:emulator",
+    "generate:function-modules": "node scripts/generateFunctionModules.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

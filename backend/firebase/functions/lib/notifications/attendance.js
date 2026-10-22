@@ -13,6 +13,7 @@ const enrolOneOffStudents_1 = require("../../src/attendance/enrolOneOffStudents"
 const sameDayBookingCutoff_1 = require("../../src/attendance/sameDayBookingCutoff");
 const cancelledSession_1 = require("../../src/attendance/cancelledSession");
 const send_1 = require("../../src/notifications/send");
+const params_1 = require("firebase-functions/params");
 const auditLog_1 = require("../../src/shared/auditLog");
 const NO_LESSON_TOKENS_MESSAGE = "You don't have a lesson token for this booking. Pay for the class instead.";
 function requiredString(data, key) {
@@ -22,6 +23,25 @@ function requiredString(data, key) {
     }
     return value;
 }
+function requestedStudentIds(data) {
+    if (data.studentIds !== undefined) {
+        const ids = data.studentIds;
+        if (!Array.isArray(ids) ||
+            ids.length === 0 ||
+            ids.length > MAX_ONE_OFF_STUDENTS_PER_CALL ||
+            ids.some((id) => typeof id !== "string" || id.trim() === "")) {
+            throw new https_1.HttpsError("invalid-argument", "Missing or invalid studentIds");
+        }
+        return [...new Set(ids)];
+    }
+    return [requiredString(data, "studentId")];
+}
+// One family's children, not a roster: anything larger is a malformed call.
+const MAX_ONE_OFF_STUDENTS_PER_CALL = 10;
+// One warm instance in production, so a family booking a class does not wait
+// for a server to start (MOB-55). Zero elsewhere: staging is not worth paying
+// to keep warm. Set per project in `.env.<projectId>`.
+const oneOffBookingMinInstances = (0, params_1.defineInt)("ONE_OFF_BOOKING_MIN_INSTANCES", { default: 0 });
 async function sendAdminStudentAddedNotification(params) {
     const { recipients, eventId, dedupeKey, classId, studentId, studentName, classDay, classTime, attDateStr, } = params;
     return (0, send_1.sendAndRecord)({
@@ -71,8 +91,8 @@ async function sendAdminStudentAbsentNotification(params) {
 // The other half of the one-off money path: if this runs out of memory the
 // parent has paid and has no class. See PAYMENT_FUNCTION_MEMORY in
 // payment_functions.js for why the 256MiB default is not enough headroom.
-exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (request) => {
-    var _a, _b, _c;
+exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB", minInstances: oneOffBookingMinInstances }, async (request) => {
+    var _a;
     const requesterId = (_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid;
     if (!requesterId) {
         throw new https_1.HttpsError("unauthenticated", "You must be signed in to enrol for a class.");
@@ -82,8 +102,10 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (r
     }
     const requestData = request.data;
     const classId = requiredString(requestData, "classId");
-    const studentId = requiredString(requestData, "studentId");
     const attendanceDocId = requiredString(requestData, "attendanceDocId");
+    // `studentIds` books several children in one round trip (MOB-55).
+    // `studentId` stays for app versions already installed.
+    const studentIds = requestedStudentIds(requestData);
     const db = (0, firestore_2.getFirestore)();
     const actorSnap = await db.collection("users").doc(requesterId).get();
     if (!actorSnap.exists) {
@@ -115,6 +137,10 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (r
     // webhook and the reconciliation sweep, so a seat cannot be sold twice by
     // two paths disagreeing about whether it was free.
     //
+    // Admins hear about the booking from `onAttendanceChangeNotifyAdmins`,
+    // which fires on this write. Sending the push from here instead made the
+    // family wait for it before their booking was confirmed (MOB-55).
+    //
     // A parent reaching this callable is paying with a lesson token: paid
     // one-offs are enrolled by the payment webhook instead. The token is taken
     // in the same transaction as the seat (MOB-64). Admins book for free.
@@ -123,9 +149,10 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (r
         db,
         classId,
         attendanceDocId,
-        studentIds: [studentId],
+        studentIds,
         actor: { uid: requesterId },
         canEnrol: (studentData) => (0, permanent_enrollment_action_1.canPerformPermanentEnrollmentAction)(requesterId, actorData, studentData),
+        notifyAdminsViaTrigger: true,
         chargeTokensTo: chargesTokens ? requesterId : null,
     });
     if (!result.ok) {
@@ -144,10 +171,12 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (r
                 throw new https_1.HttpsError("permission-denied", "You cannot enrol this student for this class.");
         }
     }
-    if (result.noCapacity.length > 0) {
+    // A single-student call keeps its old contract: a full session is an
+    // error. Several students can part-fit, so they get the split back and
+    // the app reports which children missed out.
+    if (studentIds.length === 1 && result.noCapacity.length > 0) {
         throw new https_1.HttpsError("failed-precondition", "Class is full for this date/week.");
     }
-    const didAddStudent = result.enrolled.includes(studentId);
     if (result.tokens && result.tokens.charged > 0) {
         await (0, auditLog_1.writeAuditLog)(db, {
             actorUid: requesterId,
@@ -163,55 +192,18 @@ exports.enrollStudentOneOff = (0, https_1.onCall)({ memory: "512MiB" }, async (r
                 reason: "one_off_booking",
                 classId,
                 attendanceDocId,
-                studentId,
+                studentIds: result.enrolled,
             },
             before: { lessonTokens: result.tokens.before },
             after: { lessonTokens: result.tokens.after },
         }, { logger: console });
     }
-    if (didAddStudent) {
-        const attendanceRef = db
-            .collection("classes")
-            .doc(classId)
-            .collection("attendance")
-            .doc(attendanceDocId);
-        try {
-            const recipients = await (0, shared_1.getAdminTokenOwners)();
-            if (recipients.length) {
-                const classData = result.classData || {};
-                const studentSnap = await db.collection("students").doc(studentId).get();
-                const studentData = studentSnap.data() || {};
-                const classDay = classData.day || "Unknown day";
-                await sendAdminStudentAddedNotification({
-                    recipients,
-                    classId,
-                    studentId,
-                    studentName: `${(_b = studentData.firstName) !== null && _b !== void 0 ? _b : ""} ${(_c = studentData.lastName) !== null && _c !== void 0 ? _c : ""}`.trim() || studentId,
-                    classDay,
-                    classTime: classData.startTime
-                        ? (0, shared_1.to12Hour)(classData.startTime)
-                        : "Unknown time",
-                    attDateStr: (0, absence_1.formatSydneyAttendanceDate)((0, absence_1.timestampToDate)((result.attendanceData || {}).date), classDay),
-                });
-            }
-        }
-        catch (error) {
-            console.error("Error sending one-off enrolment admin notification:", error);
-        }
-        finally {
-            try {
-                await attendanceRef.update({
-                    notificationAction: firestore_2.FieldValue.delete(),
-                });
-            }
-            catch (error) {
-                console.error("Error clearing one-off enrolment notification action:", error);
-            }
-        }
-    }
     return {
-        added: didAddStudent,
-        alreadyEnrolled: result.alreadyEnrolled.includes(studentId),
+        added: result.enrolled.includes(studentIds[0]),
+        alreadyEnrolled: result.alreadyEnrolled.includes(studentIds[0]),
+        enrolled: result.enrolled,
+        alreadyEnrolledStudentIds: result.alreadyEnrolled,
+        noCapacity: result.noCapacity,
         tokensCharged: result.tokens ? result.tokens.charged : 0,
         lessonTokens: result.tokens ? result.tokens.after : null,
     };

@@ -33,6 +33,13 @@ const { HOLD_COLLECTION, capacityAfterHolds } = require("./oneOffSeatHolds");
  * few tokens is refused as `insufficient_tokens` before anything is written.
  * A student already in the session costs nothing, so a retried call cannot
  * charge twice.
+ *
+ * `notifyAdminsViaTrigger` lets `onAttendanceChangeNotifyAdmins` tell admins
+ * about the new students, as it does for any other attendance write. Off by
+ * default, which marks the write so the trigger stays quiet: the webhook and
+ * the sweep have never sent that notification and still do not. The
+ * parent-facing callable turns it on so it can answer the family as soon as
+ * the seat is written, instead of making them wait for the push (MOB-55).
  */
 async function enrolOneOffStudentsImpl({
   db,
@@ -43,6 +50,7 @@ async function enrolOneOffStudentsImpl({
   canEnrol,
   chargeTokensTo = null,
   respectHolds = false,
+  notifyAdminsViaTrigger = false,
   paymentIntentId = null,
   now = new Date(),
 }) {
@@ -153,12 +161,16 @@ async function enrolOneOffStudentsImpl({
         attendance: FieldValue.arrayUnion(...plan.toEnrol),
         updatedAt: FieldValue.serverTimestamp(),
         updatedBy: actor?.uid || "system",
-        notificationAction: {
-          type: "one_off_enrollment",
-          studentId: plan.toEnrol[0],
-          studentIds: plan.toEnrol,
-          actorId: actor?.uid || "system",
-        },
+        // Deleting rather than omitting: a marker left by an earlier write
+        // would otherwise still be on the document and silence the trigger.
+        notificationAction: notifyAdminsViaTrigger
+          ? FieldValue.delete()
+          : {
+              type: "one_off_enrollment",
+              studentId: plan.toEnrol[0],
+              studentIds: plan.toEnrol,
+              actorId: actor?.uid || "system",
+            },
       });
     }
 

@@ -1016,18 +1016,21 @@ class TimetableScreenState extends State<TimetableScreen>
     required List<String> alreadyBookedChildIds,
     required List<String> failedChildIds,
   }) async {
-    for (final childId in childIds) {
-      final result = await timetableController.enrollStudentOneOff(
-        classId: classInfo.id,
-        studentId: childId,
-        attendanceDocId: attendanceDocId,
-      );
-      if (result == null) {
+    // One call for every child: booking them one after another made the
+    // family wait for each round trip in turn (MOB-55).
+    final ids = childIds.toList();
+    final result = await timetableController.enrollStudentsOneOff(
+      classId: classInfo.id,
+      studentIds: ids,
+      attendanceDocId: attendanceDocId,
+    );
+    for (final childId in ids) {
+      if (result == null || result.noCapacity.contains(childId)) {
         failedChildIds.add(childId);
-      } else if (result.added) {
+      } else if (result.enrolled.contains(childId)) {
         bookedChildIds.add(childId);
         bucketBookedChildIds.add(childId);
-      } else if (result.alreadyEnrolled) {
+      } else if (result.alreadyEnrolled.contains(childId)) {
         alreadyBookedChildIds.add(childId);
       }
     }
