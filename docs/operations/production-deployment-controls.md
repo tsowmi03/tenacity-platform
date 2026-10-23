@@ -115,7 +115,8 @@ The workflow validates the manifest, package, emulator suite, export set and
 render fixtures before credentials exist; captures the live inventory;
 materialises deterministic batches of at most ten explicit
 `functions:default:<id>` selectors; dry-runs each batch; applies without
-`--force` and without automatic retry; captures live state after every attempt
+`--force` (except a batch approved through `allow_minimum_bill_increase`, see
+above) and without automatic retry; captures live state after every attempt
 including a failed one; and finally requires the exact 91-resource inventory,
 rejects metadata drift, and compares the complete raw records of all four
 external Functions against their pre-deploy state.
@@ -276,8 +277,11 @@ Stop immediately if:
 - a deploy proposes an unreviewed deletion; or
 - the Hosting target/site or Vercel project differs from the reviewed constants.
 
-Do not use `firebase deploy --force`. Do not convert the backend workflows to
-push triggers.
+Do not use `firebase deploy --force`, by hand or in a workflow. The one
+exception is the Functions workflow's guarded `allow_minimum_bill_increase`
+path (TP-40), which forces only a batch Firebase refused for raising the
+minimum bill; the template tests fail on any other use. Do not convert the
+backend workflows to push triggers.
 
 ## Validation
 
