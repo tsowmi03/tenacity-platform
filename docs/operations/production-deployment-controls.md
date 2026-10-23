@@ -55,6 +55,14 @@ how to recover from a partial failure.
 
 Individual surface workflows remain dispatchable on their own for reruns.
 
+A Functions deploy that raises the standing bill (a new or higher
+`minInstances`) is refused by Firebase unless forced. The Functions workflow
+takes `allow_minimum_bill_increase` (off by default) for that, ticked only
+once the cost is approved. It forces only the batches whose dry run refused for
+that reason, after a forced dry run of each. With it off, the deploy stops and
+names the batch. The orchestrator always passes it off, so a cost increase is
+deployed by dispatching `firebase-functions-production.yml` directly (TP-40).
+
 Two things are derived rather than asked for: `expected_content_change` on the
 rules deploy (true exactly when the commit changed rules), and which surfaces
 run at all.
@@ -107,7 +115,8 @@ The workflow validates the manifest, package, emulator suite, export set and
 render fixtures before credentials exist; captures the live inventory;
 materialises deterministic batches of at most ten explicit
 `functions:default:<id>` selectors; dry-runs each batch; applies without
-`--force` and without automatic retry; captures live state after every attempt
+`--force` (except a batch approved through `allow_minimum_bill_increase`, see
+above) and without automatic retry; captures live state after every attempt
 including a failed one; and finally requires the exact 91-resource inventory,
 rejects metadata drift, and compares the complete raw records of all four
 external Functions against their pre-deploy state.
@@ -268,8 +277,11 @@ Stop immediately if:
 - a deploy proposes an unreviewed deletion; or
 - the Hosting target/site or Vercel project differs from the reviewed constants.
 
-Do not use `firebase deploy --force`. Do not convert the backend workflows to
-push triggers.
+Do not use `firebase deploy --force`, by hand or in a workflow. The one
+exception is the Functions workflow's guarded `allow_minimum_bill_increase`
+path (TP-40), which forces only a batch Firebase refused for raising the
+minimum bill; the template tests fail on any other use. Do not convert the
+backend workflows to push triggers.
 
 ## Validation
 

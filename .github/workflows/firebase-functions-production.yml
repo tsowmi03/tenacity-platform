@@ -14,6 +14,14 @@ on:
         description: Type DEPLOY FUNCTIONS tenacity-tutoring-b8eb2
         required: true
         type: string
+      allow_minimum_bill_increase:
+        description: >-
+          Tick only for a reviewed change that raises the standing bill (a new
+          or higher minInstances). Applies only to batches whose dry run
+          refuses for that reason.
+        required: false
+        type: boolean
+        default: false
 
   workflow_call:
     inputs:
@@ -23,6 +31,10 @@ on:
       confirmation:
         required: true
         type: string
+      allow_minimum_bill_increase:
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -215,16 +227,48 @@ jobs:
               `in ${report.batches} batches; this run deploys all in 10`;
             console.log(`::notice::${line}`);
           ' "$reports_dir/scoped-deploy-shadow.json"
+      # Firebase refuses, without its --force flag, any deploy that raises the
+      # standing bill (a new or higher minInstances). --force also skips every
+      # other confirmation, so it is never passed blind: only when the operator
+      # ticked allow_minimum_bill_increase, only for a batch whose dry run
+      # refused for exactly that reason, and only after that batch passes a
+      # forced dry run. The batches needing it are recorded for the deploy.
       - name: Run a privileged dry run for every explicit batch
+        env:
+          ALLOW_MINIMUM_BILL_INCREASE: ${{ inputs.allow_minimum_bill_increase }}
         run: |
+          reports_dir="${RUNNER_TEMP}/function-deploy-reports"
+          bill_selectors="$reports_dir/minimum-bill-selectors.txt"
+          : > "$bill_selectors"
           while IFS= read -r selector; do
+            set +e
             firebase deploy \
               --config firebase.json \
               --project "$FIREBASE_PROJECT_ID" \
               --only "$selector" \
               --dry-run \
-              --non-interactive
-          done < "${RUNNER_TEMP}/function-deploy-reports/selectors.txt"
+              --non-interactive 2>&1 | tee "$reports_dir/dry-run.log"
+            dry_run_status=${PIPESTATUS[0]}
+            set -e
+            [[ "$dry_run_status" -eq 0 ]] && continue
+            if ! grep -q "Pass the --force option to deploy functions that increase the minimum bill" "$reports_dir/dry-run.log"; then
+              exit "$dry_run_status"
+            fi
+            if [[ "$ALLOW_MINIMUM_BILL_INCREASE" != "true" ]]; then
+              echo "::error::This batch raises the minimum bill: $selector. Re-dispatch with allow_minimum_bill_increase once the cost is approved."
+              exit 1
+            fi
+            force_args=(--force)
+            firebase deploy \
+              --config firebase.json \
+              --project "$FIREBASE_PROJECT_ID" \
+              --only "$selector" \
+              --dry-run \
+              --non-interactive \
+              "${force_args[@]}"
+            echo "$selector" >> "$bill_selectors"
+            echo "::notice::Minimum bill increase approved for: $selector"
+          done < "$reports_dir/selectors.txt"
       - name: Deploy reviewed Functions in bounded batches
         run: |
           reports_dir="${RUNNER_TEMP}/function-deploy-reports"
@@ -234,12 +278,17 @@ jobs:
           while IFS= read -r selector; do
             batch_number=$((batch_number + 1))
             echo "Deploying batch $batch_number: $selector"
+            deploy_args=()
+            if grep -qxF "$selector" "$reports_dir/minimum-bill-selectors.txt"; then
+              deploy_args=(--force)
+            fi
             set +e
             firebase deploy \
               --config firebase.json \
               --project "$FIREBASE_PROJECT_ID" \
               --only "$selector" \
-              --non-interactive
+              --non-interactive \
+              "${deploy_args[@]}"
             deploy_status=$?
             set -e
             current_inventory="$raw_dir/functions-after-batch-${batch_number}.json"

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-23 | [Functions deploys can approve a minimum-bill increase (TP-40)](#2026-10-23--functions-deploys-can-approve-a-minimum-bill-increase-tp-40) |
 | 2026-10-23 | [Booking a one-off no longer keeps families waiting (MOB-55)](#2026-10-23--booking-a-one-off-no-longer-keeps-families-waiting-mob-55) |
 | 2026-10-22 | [A failed generation step no longer loops a resource forever (RES-47)](#2026-10-22--a-failed-generation-step-no-longer-loops-a-resource-forever-res-47) |
 | 2026-10-21 | [Admins can send unsynced invoices to Xero from the portal (AWP-27)](#2026-10-21--admins-can-send-unsynced-invoices-to-xero-from-the-portal-awp-27) |
@@ -193,6 +194,20 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-23 — Functions deploys can approve a minimum-bill increase (TP-40)
+
+**What changed**
+- The production Functions deploy has a new option, `allow_minimum_bill_increase`, off by default. Tick it only for a change that adds a standing cost, such as a function kept warm with `minInstances`.
+- When it's on, only the batches Firebase refuses for that reason are forced, and each is dry-run with the force first. Nothing else changes.
+- With it off, such a deploy stops and says which batch and which option.
+- The check that bans `--force` in production workflows still applies everywhere else, and now also tests this guard.
+
+**Why:** The MOB-55 deploy failed in its dry run because keeping the booking function warm (about A$8 a month) raises the minimum bill, and the workflow had no way to approve that.
+
+**Status:** Live. MOB-55's Functions deployed with the option on.
 
 ---
 

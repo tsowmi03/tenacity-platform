@@ -21,6 +21,27 @@ const vercelTemplate = readFileSync(
   "utf8"
 );
 
+// The one sanctioned --force: Functions deploys that raise the standing bill
+// (minInstances), behind an operator opt-in (TP-40). Comments and the refusal
+// text Firebase prints are removed first, then the two array assignments the
+// guard owns; anything left that says --force is a new, unguarded use.
+const sanctionedForceAssignments = [
+  "            force_args=(--force)",
+  "              deploy_args=(--force)",
+];
+function withoutSanctionedForce(source) {
+  let rest = source
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .filter((line) => !line.includes('grep -q "Pass the --force option to deploy functions that increase the minimum bill"'))
+    .join("\n");
+  for (const assignment of sanctionedForceAssignments) {
+    assert.ok(rest.includes(assignment), `expected guarded assignment: ${assignment.trim()}`);
+    rest = rest.replace(assignment, "");
+  }
+  return rest;
+}
+
 const productionProviderPattern =
   /workload_identity_provider: projects\/398065992407\/locations\/global\/workloadIdentityPools\/github\/providers\/tenacity-platform/;
 const serviceAccounts = {
@@ -35,6 +56,39 @@ const serviceAccounts = {
   rules:
     "tenacity-production-rules@tenacity-tutoring-b8eb2.iam.gserviceaccount.com",
 };
+
+describe("the Functions minimum-bill opt-in", () => {
+  const { source } = templates.functions;
+
+  it("is off unless the operator ticks it, on both entry points", () => {
+    const declarations = source.match(
+      /\n      allow_minimum_bill_increase:\n(?:        .*\n)+?        default: false\n/g
+    ) ?? [];
+    assert.equal(declarations.length, 2);
+    assert.equal((source.match(/type: boolean/g) ?? []).length, 2);
+  });
+
+  it("forces only a batch whose dry run refused for the minimum bill", () => {
+    const dryRun = source.slice(
+      source.indexOf("- name: Run a privileged dry run for every explicit batch"),
+      source.indexOf("- name: Deploy reviewed Functions in bounded batches")
+    );
+    const refusal = dryRun.indexOf("increase the minimum bill");
+    const optIn = dryRun.indexOf('if [[ "$ALLOW_MINIMUM_BILL_INCREASE" != "true" ]]; then');
+    const forced = dryRun.indexOf("force_args=(--force)");
+    assert.ok(refusal > 0 && optIn > refusal && forced > optIn);
+    assert.match(dryRun, /ALLOW_MINIMUM_BILL_INCREASE: \$\{\{ inputs\.allow_minimum_bill_increase \}\}/);
+    assert.match(dryRun, /echo "\$selector" >> "\$bill_selectors"/);
+
+    const deploy = source.slice(
+      source.indexOf("- name: Deploy reviewed Functions in bounded batches")
+    );
+    assert.match(
+      deploy,
+      /if grep -qxF "\$selector" "\$reports_dir\/minimum-bill-selectors\.txt"; then\n              deploy_args=\(--force\)/
+    );
+  });
+});
 
 describe("active Firebase production workflows", () => {
   for (const [name, { path, source }] of Object.entries(templates)) {
@@ -85,7 +139,10 @@ describe("active Firebase production workflows", () => {
       assert.doesNotMatch(source, /tenacity-tutoring-staging/);
       assert.doesNotMatch(source, /environment: tenacity-staging/);
       assert.doesNotMatch(source, /354428033510/);
-      assert.doesNotMatch(source, /(?:^|\s)--force(?:\s|$)/m);
+      assert.doesNotMatch(
+        name === "functions" ? withoutSanctionedForce(source) : source,
+        /--force\b/
+      );
     });
 
     it(`${name} authenticates only through the production federation binding`, () => {
