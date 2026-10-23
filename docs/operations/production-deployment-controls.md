@@ -55,6 +55,14 @@ how to recover from a partial failure.
 
 Individual surface workflows remain dispatchable on their own for reruns.
 
+A Functions deploy that raises the standing bill (a new or higher
+`minInstances`) is refused by Firebase unless forced. The Functions workflow
+takes `allow_minimum_bill_increase` (off by default) for that, ticked only
+once the cost is approved. It forces only the batches whose dry run refused for
+that reason, after a forced dry run of each. With it off, the deploy stops and
+names the batch. The orchestrator always passes it off, so a cost increase is
+deployed by dispatching `firebase-functions-production.yml` directly (TP-40).
+
 Two things are derived rather than asked for: `expected_content_change` on the
 rules deploy (true exactly when the commit changed rules), and which surfaces
 run at all.
