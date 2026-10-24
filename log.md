@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-24 | [Mobile 3.4.0 (build 522)](#2026-10-24--mobile-340-build-522) |
 | 2026-10-24 | [Parents can open invoice PDFs: Storage rules can read Firestore (TP-41)](#2026-10-24--parents-can-open-invoice-pdfs-storage-rules-can-read-firestore-tp-41) |
 | 2026-10-23 | [Functions deploys can approve a minimum-bill increase (TP-40)](#2026-10-23--functions-deploys-can-approve-a-minimum-bill-increase-tp-40) |
 | 2026-10-23 | [Booking a one-off no longer keeps families waiting (MOB-55)](#2026-10-23--booking-a-one-off-no-longer-keeps-families-waiting-mob-55) |
@@ -195,6 +196,43 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-24 — Mobile 3.4.0 (build 522)
+
+**What changed**
+- Bumped the mobile app from `3.3.0+521` to `3.4.0+522` in
+  `apps/mobile/pubspec.yaml`. It is a minor bump because staff group chats are
+  a new feature.
+- Ships everything merged for mobile since 3.3.0 (521):
+  - Staff can start group chats (MOB-54).
+  - Booking a one-off with a lesson token now takes the token. The app no
+    longer writes `lessonTokens` itself (MOB-64).
+  - Parents are offered "Book a class", not just a one-off (MOB-56).
+  - Invoice PDF failures are recorded, and "Opening payment…" no longer
+    lingers (MOB-66).
+  - Booking several children is one call, so it no longer keeps families
+    waiting (MOB-55).
+- Built the production iOS archive from `main` at `31276f81` (prod flavor,
+  bundle ID `com.tenacityTutoring.tenacity`, Firebase project
+  `tenacity-tutoring-b8eb2`), exported it with the App Store Connect API key and
+  uploaded it with `altool`. `flutter analyze` reports one existing info note
+  in `test/widget_test.dart`, and all 1,395 tests pass.
+
+- Built the prod Android bundle at
+  `apps/mobile/build/app/outputs/bundle/prodRelease/app-prod-release.aab`
+  (64MB). It is signed with the Tenacity release key, and its manifest shows
+  `com.tenacityTutoring.tenacity` 3.4.0 (522), target SDK 36, minimum SDK 24.
+
+**Status:** iOS build 522 is uploaded to App Store Connect and Apple marks it
+Valid. It is not in a TestFlight group yet, and not submitted for App Store
+review. The Android bundle is built but not uploaded to Google Play.
+
+**Next steps**
+- Add 522 to a TestFlight group, then submit it for review (about 10 minutes
+  in App Store Connect).
+- Upload the Android bundle to Play (about 15 minutes).
 
 ---
 
