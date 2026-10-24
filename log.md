@@ -220,14 +220,19 @@ omitted, and open follow-ups are tracked at the bottom.
   uploaded it with `altool`. `flutter analyze` reports one existing info note
   in `test/widget_test.dart`, and all 1,395 tests pass.
 
+- Built the prod Android bundle at
+  `apps/mobile/build/app/outputs/bundle/prodRelease/app-prod-release.aab`
+  (64MB). It is signed with the Tenacity release key, and its manifest shows
+  `com.tenacityTutoring.tenacity` 3.4.0 (522), target SDK 36, minimum SDK 24.
+
 **Status:** iOS build 522 is uploaded to App Store Connect and Apple marks it
 Valid. It is not in a TestFlight group yet, and not submitted for App Store
-review. No Android bundle has been built.
+review. The Android bundle is built but not uploaded to Google Play.
 
 **Next steps**
 - Add 522 to a TestFlight group, then submit it for review (about 10 minutes
   in App Store Connect).
-- Build and upload the prod Android bundle to Play (about 30 minutes).
+- Upload the Android bundle to Play (about 15 minutes).
 
 ---
 
