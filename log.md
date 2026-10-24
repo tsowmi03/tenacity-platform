@@ -372,14 +372,19 @@ didn't realise it was also the way to enrol for the rest of the term.
 writing their own `lessonTokens`, the app's deduction after every token
 booking was refused. The booking still went through, so families booked and
 kept the token. Before 22 May the rules were fully open and deductions
-worked. The production dry run found 30 uncharged token bookings across 11
-families. Correcting them removes 22 tokens, and 8 are written off because
-the balance can't go below zero (Tom approved this).
+worked.
 
-**Status:** Live. Functions deployed, and balances corrected with
-`npm run correct-one-off-tokens:once -- --projectId=tenacity-tutoring-b8eb2`.
-The app changes ship with the next mobile release. Older builds keep
-attempting their own deduction, which Firestore rules refuse harmlessly.
+**Status:** Live. Functions deployed 2026-10-21. Balances corrected
+2026-10-24 with
+`npm run correct-one-off-tokens:once -- --projectId=tenacity-tutoring-b8eb2`
+(that script writes; `npm run dryrun:correct-one-off-tokens` is the dry run).
+It found 33 uncharged token bookings across 12 parents, one of them a test
+account. It took back 22 tokens and wrote off 11, because a balance can't go
+below zero (Tom approved this). The correction was first recorded here as
+done on 2026-10-21, but it had not run. The only booking since the deploy
+took its token. The app changes ship with the next mobile release. Older
+builds keep attempting their own deduction, which Firestore rules refuse
+harmlessly.
 
 ---
 
