@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-24 | [Parents can open invoice PDFs: Storage rules can read Firestore (TP-41)](#2026-10-24--parents-can-open-invoice-pdfs-storage-rules-can-read-firestore-tp-41) |
 | 2026-10-23 | [Functions deploys can approve a minimum-bill increase (TP-40)](#2026-10-23--functions-deploys-can-approve-a-minimum-bill-increase-tp-40) |
 | 2026-10-23 | [Booking a one-off no longer keeps families waiting (MOB-55)](#2026-10-23--booking-a-one-off-no-longer-keeps-families-waiting-mob-55) |
 | 2026-10-22 | [A failed generation step no longer loops a resource forever (RES-47)](#2026-10-22--a-failed-generation-step-no-longer-loops-a-resource-forever-res-47) |
@@ -194,6 +195,23 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-24 — Parents can open invoice PDFs: Storage rules can read Firestore (TP-41)
+
+**What changed**
+- Granted the Cloud Storage for Firebase service agent the **Firebase Rules Firestore Service Agent** role (`roles/firebaserules.firestoreServiceAgent`) in production and staging. No code changed.
+- The invoice-PDF Storage rule lets a parent read a PDF only after looking up the invoice in Firestore to check it's theirs. Storage rules need this role for that lookup. Without it the lookup failed, so every parent was refused. Staff skip the lookup, which is why PDFs always opened from the admin portal.
+- `firebase deploy` grants the role at a prompt the first time a rule reads Firestore. The CI rules deploy that added this rule (TP-21) never shows the prompt, so it was never granted.
+
+**Why:** A parent's PDF still failed after MOB-66 and TP-39. Their invoices all had a Xero copy, a cached path and a valid PDF in Storage, and the deployed rule matched the repo. That left only the lookup inside the rule. MOB-66 added failure reporting only, and that reporting needs the next app release.
+
+**Status:** Live in production and staging, with no app release needed. The binding is confirmed on both projects. A parent opening a PDF hasn't been seen yet, because a parent sign-in can't be scripted from here.
+
+**Next steps**
+- Confirm a parent can open a PDF in the current release, either a staging parent account or the next real attempt (5 min).
+- Make the rules drift check fail when this binding is missing, so a re-provisioned project can't lose it silently (TP-41, about 1 hour).
 
 ---
 
