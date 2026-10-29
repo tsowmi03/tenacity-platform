@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-29 | [Parents can respond to feedback (MOB-52)](#2026-10-29--parents-can-respond-to-feedback-mob-52) |
 | 2026-10-24 | [Parents can open invoice PDFs: Storage rules can read Firestore (TP-41)](#2026-10-24--parents-can-open-invoice-pdfs-storage-rules-can-read-firestore-tp-41) |
 | 2026-10-23 | [Functions deploys can approve a minimum-bill increase (TP-40)](#2026-10-23--functions-deploys-can-approve-a-minimum-bill-increase-tp-40) |
 | 2026-10-23 | [Booking a one-off no longer keeps families waiting (MOB-55)](#2026-10-23--booking-a-one-off-no-longer-keeps-families-waiting-mob-55) |
@@ -195,6 +196,22 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-29 — Parents can respond to feedback (MOB-52)
+
+**What changed**
+- Under each feedback note, a parent can tap 👍 Thanks, 🙋 Question or 💬 Comment. A question or comment asks for a message of up to 500 characters; a thanks sends in one tap.
+- Each parent can respond once per note, and a response can't be changed after it is sent. If a student has two parents, each can respond, and both responses show on the note with the parent's name.
+- Parents, tutors and admins all see responses on the note in the feedback history. Only parents get the response buttons.
+- The parent home screen's Latest feedback section now has an "All" link to a child's full feedback history, with a child picker for families with more than one child. Before, a parent could only reach the child behind the latest note, so older notes and other children's notes couldn't be responded to.
+- The tutor who wrote the note gets a push notification for a question or comment, not for a thanks. Tapping it opens the student's feedback. Admins can see responses but aren't notified.
+- Firestore rules let a parent add only their own response, once, and change nothing else on the note. A new Function, `onFeedbackResponded`, sends the push. It is added to the production and staging function inventories.
+
+**Why:** Feedback only went one way. Parents had no way to answer a note without starting a separate chat.
+
+**Status:** Merged. The app change ships with the next mobile release; the rules and `onFeedbackResponded` are deployed to production after the merge, and were tested on staging first.
 
 ---
 

@@ -114,6 +114,31 @@ service cloud.firestore {
         );
     }
 
+    // MOB-52: a parent's one-off response to a note, stored under their own
+    // uid in `parentResponses`. They may add it once and change nothing else —
+    // not another parent's entry, and not their own after it is sent.
+    function validFeedbackParentResponse() {
+      let before = resource.data.get('parentResponses', {});
+      let after = request.resource.data.get('parentResponses', {});
+      let response = after.get(request.auth.uid, null);
+      return onlyChangedKeys(['parentResponses'])
+        && after is map
+        && !(request.auth.uid in before)
+        && after.diff(before).affectedKeys().hasOnly([request.auth.uid])
+        && response is map
+        && response.keys().hasOnly(['type', 'text', 'parentName', 'respondedAt'])
+        && response.keys().hasAll(['type', 'text', 'parentName', 'respondedAt'])
+        && response.type in ['thanks', 'question', 'comment']
+        && response.text is string
+        && response.text.size() <= 500
+        // A question or comment with nothing in it tells the tutor nothing.
+        && (response.type == 'thanks' || response.text.trim().size() > 0)
+        && response.parentName is string
+        && response.parentName.size() > 0
+        && response.parentName.size() <= 100
+        && response.respondedAt == request.time;
+    }
+
     function validFeedbackCreate() {
       return isStaff()
         && request.resource.data.keys().hasOnly([
@@ -310,6 +335,9 @@ service cloud.firestore {
       allow update: if feedbackReadable(resource.data)
         && request.resource.data.isUnread == false
         && onlyChangedKeys(['isUnread']);
+      allow update: if feedbackReadable(resource.data)
+        && !isStaff()
+        && validFeedbackParentResponse();
     }
 
     match /waitlistEntries/{entryId} {

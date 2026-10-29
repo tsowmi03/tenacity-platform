@@ -33,6 +33,7 @@
       "onAttendanceChangeNotifyAdmins",
       "onAuditLogAnalytics",
       "onFeedbackCreated",
+      "onFeedbackResponded",
       "onInvoiceCreated",
       "onInvoicePaidAnalytics",
       "onInvoicePaidNotifyAdmins",
