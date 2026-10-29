@@ -204,7 +204,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 **What changed**
 - New `apps/mobile/scripts/release.sh` with fastlane lanes in `apps/mobile/fastlane/`. `status` shows the latest build on App Store Connect and Google Play and the next free build number; `bump <version>` sets `pubspec.yaml` to it; `ship --notes "..."` builds from `main`, uploads to both stores, submits iOS for review (released automatically on approval) and sends Android to production, optionally as a staged rollout.
-- `ship` refuses to run off `main`, with uncommitted changes, behind `origin/main`, or with a build number either store already has. `--ios` / `--android` finishes a release that stopped half way; `--build-only` signs both builds without uploading.
+- `ship` refuses to run off `main`, with uncommitted changes, behind `origin/main`, or with a build number either store already has. `--ios` / `--android` finishes a release that stopped half way: an iOS build already on App Store Connect (an interrupted submit, or `--no-submit`) is submitted without rebuilding. `--build-only` signs both builds without uploading.
+- A failed Google Play lookup stops the release instead of counting as "no builds", so it can't hand out a build number Play already has.
 - iOS archives and exports with `xcodebuild -allowProvisioningUpdates` and the App Store Connect API key, so no Xcode Organizer step, and the build number is kept as pubspec says (the old "untick Manage Version and Build Number" step).
 - Credentials stay outside the repo: the App Store Connect API key in `~/.appstoreconnect/config.env`, and a new `play-release` service account (Google Cloud project `tenacity-tutoring-b8eb2`, release access in Play Console) at `~/.play/tenacity-play.json`.
 - README "Mobile releases" now describes this flow instead of the Xcode and Play Console steps.

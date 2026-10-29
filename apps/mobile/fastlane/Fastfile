@@ -51,13 +51,12 @@ def ios_latest_build
   latest_testflight_build_number(api_key: asc_api_key, app_identifier: APP_ID, initial_build_number: 0).to_i
 end
 
-# Highest version code on any Play track. A track with no releases raises, so
-# it counts as empty.
+# Highest version code on any Play track. An empty track comes back as [], so
+# any error here is a real failure (credentials, network) and stops the
+# release rather than reporting zero and handing out a number Play has.
 def play_latest_build
   PLAY_TRACKS.flat_map do |track|
     google_play_track_version_codes(package_name: APP_ID, track: track, json_key: PLAY_KEY)
-  rescue StandardError
-    []
   end.map(&:to_i).max || 0
 end
 
@@ -95,11 +94,48 @@ lane :status do |options|
   File.write(options[:out], JSON.generate(result)) if options[:out]
 end
 
+def app_store_submit(version:, notes:, submit:, ipa: nil, build: nil)
+  upload_to_app_store(
+    api_key: asc_api_key,
+    app_identifier: APP_ID,
+    ipa: ipa,
+    # Resuming: attach the build already on App Store Connect instead.
+    skip_binary_upload: ipa.nil?,
+    build_number: build&.to_s,
+    app_version: version,
+    release_notes: { "default" => notes },
+    skip_screenshots: true,
+    skip_metadata: false,
+    force: true,
+    submit_for_review: submit,
+    # Goes live as soon as Apple approves it.
+    automatic_release: true,
+    precheck_include_in_app_purchases: false,
+    run_precheck_before_submit: false,
+    submission_information: { add_id_info_uses_idfa: false }
+  )
+end
+
 desc "Build the iOS app and, unless upload:false, submit it for review"
 lane :ios do |options|
   version, build = pubspec_version
   upload = options[:upload] != false
-  ensure_unused!(build, ios_latest_build, "App Store Connect") if upload
+  submit = options[:submit] != false
+
+  if upload
+    latest = ios_latest_build
+    # This exact build is already uploaded: an earlier run uploaded it and then
+    # stopped, or ran with --no-submit. Submit it rather than rebuilding, which
+    # App Store Connect would reject as a duplicate.
+    if build == latest
+      uploaded_version = lane_context[SharedValues::LATEST_TESTFLIGHT_VERSION]
+      UI.user_error!("Build #{build} on App Store Connect is #{uploaded_version}, not #{version}.") if uploaded_version != version
+      UI.important("Build #{build} is already on App Store Connect; submitting it without rebuilding.")
+      app_store_submit(version: version, build: build, notes: options.fetch(:notes), submit: submit)
+      next
+    end
+    ensure_unused!(build, latest, "App Store Connect")
+  end
 
   # Regenerates Generated.xcconfig, which is where Xcode reads the version and
   # build number from. Without it the archive carries the previous version.
@@ -127,22 +163,7 @@ lane :ios do |options|
   UI.success("Built #{version} (#{build}): #{ipa}")
   next unless upload
 
-  upload_to_app_store(
-    api_key: asc_api_key,
-    app_identifier: APP_ID,
-    ipa: ipa,
-    app_version: version,
-    release_notes: { "default" => options.fetch(:notes) },
-    skip_screenshots: true,
-    skip_metadata: false,
-    force: true,
-    submit_for_review: options[:submit] != false,
-    # Goes live as soon as Apple approves it.
-    automatic_release: true,
-    precheck_include_in_app_purchases: false,
-    run_precheck_before_submit: false,
-    submission_information: { add_id_info_uses_idfa: false }
-  )
+  app_store_submit(version: version, ipa: ipa, notes: options.fetch(:notes), submit: submit)
 end
 
 desc "Build the Android bundle and, unless upload:false, send it to production"

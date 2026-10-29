@@ -196,7 +196,9 @@ shared by both stores.
    submits iOS for review (released automatically once Apple approves it) and
    sends Android to production. `--rollout 0.2` makes Android a staged
    rollout; `--ios` or `--android` ships one store, e.g. to finish a release
-   that stopped half way; `--build-only` signs both builds without uploading.
+   that stopped half way (an iOS build already on App Store Connect is
+   submitted without rebuilding); `--build-only` signs both builds without
+   uploading.
 
 It refuses to ship off `main`, with uncommitted changes, or with a build number
 a store already has. Credentials stay outside the repo:

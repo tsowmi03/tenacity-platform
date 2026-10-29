@@ -11,7 +11,8 @@
 #   --notes "..."     What's new, shown in both stores (required, max 500 characters)
 #   --ios | --android One store only, e.g. to finish a release that stopped half way
 #   --rollout 0.2     Android staged rollout to 20% instead of everyone
-#   --no-submit       iOS: upload the build but don't submit it for review
+#   --no-submit       iOS: upload the build but don't submit it for review. A
+#                     later `ship --ios` submits that build without rebuilding.
 #   --build-only      Build and sign without uploading. Allowed off main.
 #
 # Credentials stay outside the repo: ~/.appstoreconnect/config.env
@@ -138,7 +139,8 @@ case "$cmd" in
       echo "==> $store"
       if ! fastlane "$store" ${store_args[@]+"${store_args[@]}"}; then
         echo "error: the $store release stopped. Anything uploaded before it is kept;" >&2
-        echo "       rerun with --$store once it's fixed." >&2
+        echo "       rerun with --$store once it's fixed (an iOS build that already" >&2
+        echo "       reached App Store Connect is submitted, not rebuilt)." >&2
         exit 1
       fi
     done
