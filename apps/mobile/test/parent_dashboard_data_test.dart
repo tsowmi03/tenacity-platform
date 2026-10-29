@@ -70,6 +70,13 @@ void main() {
     );
   }
 
+  test('lists every child, so any child\'s feedback can be opened (MOB-52)',
+      () {
+    final data = build(children: [ella, max]);
+    expect(data.children.map((c) => c.id), ['ella', 'max']);
+    expect(data.children.first.firstName, ella.firstName);
+  });
+
   group('sessions', () {
     test("counts only the children's own classes", () {
       final data = build(

@@ -14,6 +14,7 @@ StudentFeedback _feedback({
   bool isUnread = false,
   StudentProgress? progress,
   DateTime? editedAt,
+  Map<String, FeedbackResponse> parentResponses = const {},
 }) {
   return StudentFeedback(
     id: id,
@@ -26,17 +27,20 @@ StudentFeedback _feedback({
     isUnread: isUnread,
     progress: progress,
     editedAt: editedAt,
+    parentResponses: parentResponses,
   );
 }
 
 FeedbackHistoryData _build({
   List<StudentFeedback>? feedback,
   Map<String, String> tutorNames = const {'t1': 'Jordan Lee'},
+  String? respondingParentId,
 }) {
   return buildFeedbackHistory(
     feedback: feedback ?? [_feedback()],
     tutorNamesById: tutorNames,
     now: _now,
+    respondingParentId: respondingParentId,
   );
 }
 
@@ -150,6 +154,97 @@ void main() {
 
     test('carries the year for an older note', () {
       expect(feedbackDateLabel(DateTime(2025, 11, 3, 9), _now), '3 Nov 2025');
+    });
+  });
+
+  group('parent responses (MOB-52)', () {
+    FeedbackResponse response(
+      String parentId, {
+      FeedbackResponseType type = FeedbackResponseType.thanks,
+      String text = '',
+      String parentName = 'Pat Lee',
+      DateTime? respondedAt,
+    }) =>
+        FeedbackResponse(
+          parentId: parentId,
+          type: type,
+          text: text,
+          parentName: parentName,
+          respondedAt: respondedAt,
+        );
+
+    test('a parent may respond to a note they have not responded to', () {
+      final data = _build(respondingParentId: 'p1');
+      expect(data.notes.single.canRespond, isTrue);
+    });
+
+    test('a parent who has responded may not respond again', () {
+      final data = _build(
+        respondingParentId: 'p1',
+        feedback: [
+          _feedback(parentResponses: {'p1': response('p1', respondedAt: _now)}),
+        ],
+      );
+      expect(data.notes.single.canRespond, isFalse);
+    });
+
+    test('the other parent can still respond', () {
+      final data = _build(
+        respondingParentId: 'p2',
+        feedback: [
+          _feedback(parentResponses: {'p1': response('p1', respondedAt: _now)}),
+        ],
+      );
+      expect(data.notes.single.canRespond, isTrue);
+    });
+
+    test('staff never get the response buttons', () {
+      expect(_build().notes.single.canRespond, isFalse);
+    });
+
+    test('responses are oldest first, with an unconfirmed one last', () {
+      final data = _build(
+        feedback: [
+          _feedback(parentResponses: {
+            'pending': response('pending', parentName: 'Sam'),
+            'later': response(
+              'later',
+              parentName: 'Quinn',
+              type: FeedbackResponseType.question,
+              text: 'Fractions at home?',
+              respondedAt: _now,
+            ),
+            'earlier': response(
+              'earlier',
+              parentName: 'Pat',
+              respondedAt: _now.subtract(const Duration(days: 1)),
+            ),
+          }),
+        ],
+      );
+
+      final responses = data.notes.single.responses;
+      expect(responses.map((r) => r.parentName), ['Pat', 'Quinn', 'Sam']);
+      expect(responses.map((r) => r.dateLabel),
+          ['Yesterday', 'Today', 'Just now']);
+      expect(responses[1].text, 'Fractions at home?');
+      expect(responses[1].type, FeedbackResponseType.question);
+    });
+
+    test('a response with no stored name is attributed to "Parent"', () {
+      final data = _build(
+        feedback: [
+          _feedback(parentResponses: {
+            'p1': response('p1', parentName: '', respondedAt: _now),
+          }),
+        ],
+      );
+      expect(data.notes.single.responses.single.parentName, 'Parent');
+    });
+
+    test('an unknown response type is dropped rather than guessed at', () {
+      expect(FeedbackResponse.fromMap('p1', {'type': 'complaint'}), isNull);
+      expect(FeedbackResponse.fromMap('p1', 'not a map'), isNull);
     });
   });
 }

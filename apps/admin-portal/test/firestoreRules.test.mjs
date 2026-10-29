@@ -510,6 +510,106 @@ describe("firestore rules", () => {
     );
   });
 
+  // MOB-52: a parent's one-off response to a note.
+  function parentResponse(overrides = {}) {
+    return {
+      type: "question",
+      text: "Should we practise fractions at home?",
+      parentName: "Pat Parent",
+      respondedAt: serverTimestamp(),
+      ...overrides,
+    };
+  }
+
+  it("lets each parent respond to a note once, under their own uid", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      // A second parent linked to the same student.
+      await setDoc(doc(context.firestore(), "users", "parent-3"), {
+        role: "parent",
+        firstName: "Quinn",
+        students: ["student-1"],
+      });
+    });
+    const parentDb = authedDb("parent-1", "parent");
+    const secondParentDb = authedDb("parent-3", "parent");
+    const ref = (db) => doc(db, "feedback", "feedback-1");
+
+    await assertSucceeds(
+      updateDoc(ref(parentDb), {
+        "parentResponses.parent-1": parentResponse({ type: "thanks", text: "" }),
+      })
+    );
+    // Locked once sent.
+    await assertFails(
+      updateDoc(ref(parentDb), {
+        "parentResponses.parent-1": parentResponse(),
+      })
+    );
+    // The other parent responds independently.
+    await assertSucceeds(
+      updateDoc(ref(secondParentDb), {
+        "parentResponses.parent-3": parentResponse({ parentName: "Quinn Parent" }),
+      })
+    );
+  });
+
+  it("rejects parent responses that touch anything but their own new entry", async () => {
+    const parentDb = authedDb("parent-1", "parent");
+    const otherFamilyDb = authedDb("parent-2", "parent");
+    const ref = (db) => doc(db, "feedback", "feedback-1");
+
+    // Someone else's entry.
+    await assertFails(
+      updateDoc(ref(parentDb), { "parentResponses.parent-3": parentResponse() })
+    );
+    // Another field alongside it.
+    await assertFails(
+      updateDoc(ref(parentDb), {
+        "parentResponses.parent-1": parentResponse(),
+        feedback: "Rewritten",
+      })
+    );
+    // Malformed responses.
+    await assertFails(
+      updateDoc(ref(parentDb), {
+        "parentResponses.parent-1": parentResponse({ type: "complaint" }),
+      })
+    );
+    await assertFails(
+      updateDoc(ref(parentDb), {
+        "parentResponses.parent-1": parentResponse({ text: "   " }),
+      })
+    );
+    await assertFails(
+      updateDoc(ref(parentDb), {
+        "parentResponses.parent-1": parentResponse({ text: "x".repeat(501) }),
+      })
+    );
+    await assertFails(
+      updateDoc(ref(parentDb), {
+        "parentResponses.parent-1": parentResponse({ parentName: "" }),
+      })
+    );
+    await assertFails(
+      updateDoc(ref(parentDb), {
+        "parentResponses.parent-1": parentResponse({ extra: true }),
+      })
+    );
+    await assertFails(
+      updateDoc(ref(parentDb), {
+        "parentResponses.parent-1": parentResponse({
+          respondedAt: new Date("2020-01-01"),
+        }),
+      })
+    );
+    // A parent with no link to the student.
+    await assertFails(
+      updateDoc(ref(otherFamilyDb), {
+        "parentResponses.parent-2": parentResponse(),
+      })
+    );
+  });
+
   it("allows tutors to use app-required staff surfaces without payment access", async () => {
     const db = authedDb("tutor-1", "tutor");
 

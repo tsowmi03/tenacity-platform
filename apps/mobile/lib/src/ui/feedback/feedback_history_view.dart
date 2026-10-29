@@ -27,6 +27,13 @@ class FeedbackHistoryView extends StatelessWidget {
 
   final VoidCallback onBack;
 
+  /// A parent chose a response to a note. Only notes with
+  /// [FeedbackNote.canRespond] offer it.
+  final void Function(String noteId, FeedbackResponseType type)? onRespond;
+
+  /// Notes whose response is being sent, so their buttons are disabled.
+  final Set<String> respondingNoteIds;
+
   const FeedbackHistoryView({
     super.key,
     required this.data,
@@ -36,6 +43,8 @@ class FeedbackHistoryView extends StatelessWidget {
     required this.onBack,
     this.subtitle,
     this.onAdd,
+    this.onRespond,
+    this.respondingNoteIds = const {},
   });
 
   @override
@@ -112,7 +121,11 @@ class FeedbackHistoryView extends StatelessWidget {
         padding: EdgeInsets.only(
           bottom: index == data.notes.length - 1 ? 0 : AppSpacing.md,
         ),
-        child: _NoteCard(note: data.notes[index]),
+        child: _NoteCard(
+          note: data.notes[index],
+          onRespond: onRespond,
+          isResponding: respondingNoteIds.contains(data.notes[index].id),
+        ),
       ),
     );
   }
@@ -120,8 +133,14 @@ class FeedbackHistoryView extends StatelessWidget {
 
 class _NoteCard extends StatelessWidget {
   final FeedbackNote note;
+  final void Function(String noteId, FeedbackResponseType type)? onRespond;
+  final bool isResponding;
 
-  const _NoteCard({required this.note});
+  const _NoteCard({
+    required this.note,
+    this.onRespond,
+    this.isResponding = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -177,8 +196,107 @@ class _NoteCard extends StatelessWidget {
             note.body,
             style: AppText.serif(fontSize: 14).copyWith(height: 1.55),
           ),
+          if (note.responses.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            for (final response in note.responses)
+              _ResponseLine(response: response),
+          ],
+          if (note.canRespond && onRespond != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                for (final type in FeedbackResponseType.values)
+                  _ResponseButton(
+                    key: Key('feedback-respond-${note.id}-${type.value}'),
+                    type: type,
+                    onPressed:
+                        isResponding ? null : () => onRespond!(note.id, type),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+/// `👍 Pat Lee · Thanks · Today`, with the message underneath when there is
+/// one. Set off from the note by a rule so it reads as a reply, not part of
+/// the tutor's text.
+class _ResponseLine extends StatelessWidget {
+  final FeedbackNoteResponse response;
+
+  const _ResponseLine({required this.response});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: AppSpacing.sm),
+      padding: const EdgeInsets.only(left: AppSpacing.md),
+      decoration: const BoxDecoration(
+        border: Border(
+          left: BorderSide(color: AppColors.blue100, width: 3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: '${response.type.emoji} ${response.parentName}',
+                  style: AppText.body(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.text,
+                  ),
+                ),
+                TextSpan(
+                  text: ' · ${response.type.label} · ${response.dateLabel}',
+                  style: AppText.body(fontSize: 11.5, color: AppColors.muted),
+                ),
+              ],
+            ),
+          ),
+          if (response.text.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              response.text,
+              style: AppText.body(fontSize: 13.5, color: AppColors.text)
+                  .copyWith(height: 1.45),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ResponseButton extends StatelessWidget {
+  final FeedbackResponseType type;
+  final VoidCallback? onPressed;
+
+  const _ResponseButton({super.key, required this.type, this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.blue600,
+        side: const BorderSide(color: AppColors.blue100),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.pill),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        minimumSize: const Size(0, 36),
+        textStyle: AppText.body(fontSize: 12.5, fontWeight: FontWeight.w600),
+      ),
+      child: Text('${type.emoji} ${type.label}'),
     );
   }
 }

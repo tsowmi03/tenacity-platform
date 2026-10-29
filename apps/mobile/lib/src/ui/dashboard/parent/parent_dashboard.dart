@@ -12,6 +12,7 @@ import 'package:tenacity/src/controllers/timetable_controller.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
 import 'package:tenacity/src/models/invoice_model.dart';
 import 'package:tenacity/src/models/student_model.dart';
+import 'package:tenacity/src/ui/components/app_bottom_sheet.dart';
 import 'package:tenacity/src/ui/components/screen_skeletons.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard_data.dart';
 import 'package:tenacity/src/ui/dashboard/parent/parent_dashboard_view.dart';
@@ -224,10 +225,48 @@ class _ParentDashboardState extends State<ParentDashboard>
     await _refresh();
   }
 
-  void _openFeedback(String studentId) {
+  void _openFeedback(String studentId, {String? studentName}) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => FeedbackScreen(studentId: studentId)),
+      MaterialPageRoute(
+        builder: (_) => FeedbackScreen(
+          studentId: studentId,
+          studentName: studentName,
+        ),
+      ),
     );
+  }
+
+  /// Any child's full history (MOB-52). With one child it opens straight away;
+  /// with several the parent picks whose.
+  Future<void> _openAllFeedback(List<ParentDashboardChild> children) async {
+    if (children.isEmpty) return;
+    if (children.length == 1) {
+      final child = children.single;
+      _openFeedback(child.id, studentName: child.firstName);
+      return;
+    }
+
+    final picked = await showAppBottomSheet<ParentDashboardChild>(
+      context: context,
+      builder: (sheetContext) => AppBottomSheet(
+        title: 'Whose feedback?',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final child in children)
+              ListTile(
+                key: Key('parent-feedback-child-${child.id}'),
+                contentPadding: EdgeInsets.zero,
+                title: Text(child.firstName),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(sheetContext).pop(child),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    _openFeedback(picked.id, studentName: picked.firstName);
   }
 
   @override
@@ -290,6 +329,7 @@ class _ParentDashboardState extends State<ParentDashboard>
                 final feedback = data.latestFeedback;
                 if (feedback != null) _openFeedback(feedback.studentId);
               },
+              onOpenAllFeedback: () => _openAllFeedback(data.children),
             );
           },
         );

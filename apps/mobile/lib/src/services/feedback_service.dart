@@ -65,6 +65,29 @@ class FeedbackService {
     }
   }
 
+  /// Records a parent's one-off response (MOB-52).
+  ///
+  /// Written as a single nested key, so two parents responding at once cannot
+  /// overwrite each other. The rules reject a second response from the same
+  /// parent.
+  Future<void> respondToFeedback({
+    required String feedbackId,
+    required String parentId,
+    required String parentName,
+    required FeedbackResponseType type,
+    required String text,
+  }) async {
+    await feedbackCollection.doc(feedbackId).update({
+      'parentResponses.$parentId': {
+        'type': type.value,
+        'text': text.trim(),
+        'parentName': parentName.trim(),
+        // The rules require respondedAt == request.time.
+        'respondedAt': FieldValue.serverTimestamp(),
+      },
+    });
+  }
+
   // Accepts a list of feedback IDs and marks them as read in the backend.
   Future<void> markAsRead(List<String> feedbackIds) async {
     final batch = FirebaseFirestore.instance.batch();

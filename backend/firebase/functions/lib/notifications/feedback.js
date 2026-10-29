@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onFeedbackCreated = exports.createFeedback = void 0;
+exports.onFeedbackResponded = exports.onFeedbackCreated = exports.createFeedback = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
 const firestore_2 = require("firebase-admin/firestore");
@@ -23,10 +23,10 @@ function studentDisplayName(studentData) {
     var _a, _b;
     return `${(_a = studentData.firstName) !== null && _a !== void 0 ? _a : ""} ${(_b = studentData.lastName) !== null && _b !== void 0 ? _b : ""}`.trim() || "Your child";
 }
-async function parentTokens(parentId) {
+async function userTokens(uid) {
     const tokensSnap = await (0, firestore_2.getFirestore)()
         .collection("userTokens")
-        .doc(parentId)
+        .doc(uid)
         .collection("tokens")
         .get();
     return tokensSnap.docs
@@ -56,7 +56,7 @@ async function sendFeedbackCreatedNotifications(feedbackId, feedbackDoc) {
     for (const parentId of parents) {
         let tokens;
         try {
-            tokens = await parentTokens(parentId);
+            tokens = await userTokens(parentId);
         }
         catch (err) {
             console.error(`Failed to fetch tokens for parent ${parentId}:`, err);
@@ -164,4 +164,70 @@ exports.onFeedbackCreated = (0, firestore_1.onDocumentCreated)("feedback/{feedba
     if ((0, feedback_action_1.shouldSuppressFeedbackCreatedNotification)(feedbackDoc.notificationAction))
         return;
     await sendFeedbackCreatedNotifications(feedbackId, feedbackDoc);
+});
+/**
+ * MOB-52: tells the tutor who wrote a note that a parent asked a question or
+ * left a comment on it. Runs on every feedback update — mostly read-state
+ * changes — and returns early unless a new notifying response appeared.
+ */
+exports.onFeedbackResponded = (0, firestore_1.onDocumentUpdated)("feedback/{feedbackId}", async (event) => {
+    var _a, _b, _c, _d;
+    const feedbackId = event.params.feedbackId;
+    const before = (_b = (_a = event.data) === null || _a === void 0 ? void 0 : _a.before) === null || _b === void 0 ? void 0 : _b.data();
+    const after = (_d = (_c = event.data) === null || _c === void 0 ? void 0 : _c.after) === null || _d === void 0 ? void 0 : _d.data();
+    const responses = (0, feedback_action_1.responsesToNotify)(before, after);
+    if (!responses.length)
+        return;
+    const tutorId = after.tutorId;
+    if (typeof tutorId !== "string" || tutorId === "") {
+        console.error(`Feedback ${feedbackId} has no tutorId to notify`);
+        return;
+    }
+    const db = (0, firestore_2.getFirestore)();
+    let studentName = "your student";
+    if (typeof after.studentId === "string" && after.studentId !== "") {
+        const studentSnap = await db.collection("students").doc(after.studentId).get();
+        if (studentSnap.exists) {
+            const firstName = (studentSnap.data() || {}).firstName;
+            if (typeof firstName === "string" && firstName.trim() !== "")
+                studentName = firstName.trim();
+        }
+    }
+    let tokens;
+    try {
+        tokens = await userTokens(tutorId);
+    }
+    catch (err) {
+        console.error(`Failed to fetch tokens for tutor ${tutorId}:`, err);
+        return;
+    }
+    if (!tokens.length) {
+        console.log(`No tokens for tutor ${tutorId}`);
+        return;
+    }
+    for (const response of responses) {
+        const verb = response.type === "question" ? "asked a question" : "commented";
+        try {
+            await (0, send_1.sendAndRecord)({
+                messaging: (0, messaging_1.getMessaging)(),
+                db,
+                recipients: [{ uid: tutorId, role: "tutor", tokens }],
+                title: `${response.parentName} ${verb} about ${studentName}`,
+                body: (0, feedback_action_1.feedbackResponseNotificationBody)(response.text),
+                // Same type as new feedback, so a tap opens the student's
+                // feedback history where the response is shown.
+                data: {
+                    type: "feedback",
+                    studentId: after.studentId,
+                    feedbackId,
+                },
+                source: "trigger:onFeedbackResponded",
+                eventId: `feedback-response:${feedbackId}:${response.parentId}`,
+                dedupeKey: `feedback-response:${feedbackId}:${response.parentId}`,
+            });
+        }
+        catch (err) {
+            console.error(`Error notifying tutor ${tutorId} of a response on ${feedbackId}:`, err);
+        }
+    }
 });

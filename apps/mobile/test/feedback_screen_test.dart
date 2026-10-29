@@ -9,15 +9,19 @@ import 'package:tenacity/src/controllers/feedback_controller.dart';
 import 'package:tenacity/src/models/admin_model.dart';
 import 'package:tenacity/src/models/app_user_model.dart';
 import 'package:tenacity/src/models/feedback_model.dart';
+import 'package:tenacity/src/models/parent_model.dart';
 import 'package:tenacity/src/services/feedback_service.dart';
 import 'package:tenacity/src/ui/feedback_screen.dart';
 
 class _FakeAuthController extends ChangeNotifier implements AuthController {
-  _FakeAuthController({this.tutorNamesById = const {}});
+  _FakeAuthController({this.tutorNamesById = const {}, AppUser? currentUser})
+      : _currentUser = currentUser ?? _admin;
 
   final Map<String, String> tutorNamesById;
 
-  final AppUser _currentUser = Admin(
+  final AppUser _currentUser;
+
+  static final AppUser _admin = Admin(
     uid: 'admin-1',
     firstName: 'Ada',
     lastName: 'Admin',
@@ -54,6 +58,7 @@ class _FakeFeedbackController extends ChangeNotifier
   StudentFeedback? addedFeedback;
   final List<String> addedIds = [];
   Object? addError;
+  final List<(String, FeedbackResponseType, String, String)> responses = [];
 
   @override
   FeedbackService get service => throw UnimplementedError();
@@ -70,6 +75,17 @@ class _FakeFeedbackController extends ChangeNotifier
     addedIds.add(feedback.id);
     if (addError case final error?) throw error;
     await addCompleter.future;
+  }
+
+  @override
+  Future<void> respondToFeedback({
+    required String feedbackId,
+    required String parentId,
+    required String parentName,
+    required FeedbackResponseType type,
+    required String text,
+  }) async {
+    responses.add((feedbackId, type, text, parentName));
   }
 
   @override
@@ -264,5 +280,152 @@ void main() {
     expect(feedbackController.addedIds.toSet(), hasLength(1));
     expect(feedbackController.addedIds.first, isNotEmpty);
     expect(find.text('Add feedback'), findsNothing);
+  });
+
+  group('parent responses (MOB-52)', () {
+    final parent = Parent(
+      uid: 'parent-1',
+      firstName: 'Pat',
+      lastName: 'Lee',
+      email: 'pat@example.com',
+      fcmTokens: const [],
+      students: const ['student-1'],
+      phone: '',
+      unreadChats: const {},
+      activeChats: const [],
+    );
+
+    StudentFeedback note(
+            {Map<String, FeedbackResponse> responses = const {}}) =>
+        StudentFeedback(
+          id: 'feedback-1',
+          studentId: 'student-1',
+          tutorId: 'tutor-1',
+          parentIds: const ['parent-1'],
+          feedback: 'Good work on fractions.',
+          subject: 'Maths',
+          createdAt: DateTime(2026, 5, 26, 9),
+          isUnread: false,
+          parentResponses: responses,
+        );
+
+    Future<_FakeFeedbackController> pump(
+      WidgetTester tester, {
+      required AppUser user,
+      List<StudentFeedback>? feedback,
+    }) async {
+      final controller =
+          _FakeFeedbackController(feedback: feedback ?? [note()]);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AuthController>.value(
+              value: _FakeAuthController(
+                currentUser: user,
+                tutorNamesById: const {'tutor-1': 'Jordan Lee'},
+              ),
+            ),
+            ChangeNotifierProvider<FeedbackController>.value(value: controller),
+            ChangeNotifierProvider<ConnectivityController>.value(
+              value: _OnlineConnectivityController(),
+            ),
+          ],
+          child: const MaterialApp(
+            home: FeedbackScreen(studentId: 'student-1'),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      return controller;
+    }
+
+    const thanksKey = Key('feedback-respond-feedback-1-thanks');
+    const questionKey = Key('feedback-respond-feedback-1-question');
+
+    testWidgets('a thanks is sent in one tap', (tester) async {
+      final controller = await pump(tester, user: parent);
+
+      await tester.tap(find.byKey(thanksKey));
+      await tester.pumpAndSettle();
+
+      expect(controller.responses, [
+        ('feedback-1', FeedbackResponseType.thanks, '', 'Pat Lee'),
+      ]);
+    });
+
+    testWidgets('a question asks for the message first', (tester) async {
+      final controller = await pump(tester, user: parent);
+
+      await tester.tap(find.byKey(questionKey));
+      await tester.pumpAndSettle();
+      expect(find.text('Ask a question'), findsOneWidget);
+
+      // An empty question is not sent.
+      await tester.tap(find.byKey(const Key('sheet-confirm')));
+      await tester.pumpAndSettle();
+      expect(controller.responses, isEmpty);
+      expect(find.text('Enter a message'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('feedback-response-text')),
+        '  Should we practise at home?  ',
+      );
+      await tester.tap(find.byKey(const Key('sheet-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(controller.responses, [
+        (
+          'feedback-1',
+          FeedbackResponseType.question,
+          'Should we practise at home?',
+          'Pat Lee',
+        ),
+      ]);
+      expect(find.text('Ask a question'), findsNothing);
+    });
+
+    testWidgets('a sent response replaces the buttons', (tester) async {
+      await pump(
+        tester,
+        user: parent,
+        feedback: [
+          note(responses: {
+            'parent-1': FeedbackResponse(
+              parentId: 'parent-1',
+              type: FeedbackResponseType.comment,
+              text: 'Thanks, she loved it.',
+              parentName: 'Pat Lee',
+              respondedAt: DateTime.now(),
+            ),
+          }),
+        ],
+      );
+
+      expect(find.byKey(thanksKey), findsNothing);
+      expect(find.textContaining('Pat Lee'), findsOneWidget);
+      expect(find.text('Thanks, she loved it.'), findsOneWidget);
+    });
+
+    testWidgets('staff see responses but no buttons', (tester) async {
+      await pump(
+        tester,
+        user: _FakeAuthController._admin,
+        feedback: [
+          note(responses: {
+            'parent-1': FeedbackResponse(
+              parentId: 'parent-1',
+              type: FeedbackResponseType.thanks,
+              text: '',
+              parentName: 'Pat Lee',
+              respondedAt: DateTime.now(),
+            ),
+          }),
+        ],
+      );
+
+      expect(find.byKey(thanksKey), findsNothing);
+      expect(find.textContaining('Pat Lee'), findsOneWidget);
+    });
   });
 }

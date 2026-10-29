@@ -25,6 +25,75 @@ enum StudentProgress {
   }
 }
 
+/// How a parent answered a note (MOB-52).
+///
+/// Stored as a stable string for the same reason as [StudentProgress].
+enum FeedbackResponseType {
+  thanks('thanks', 'Thanks', '👍'),
+  question('question', 'Question', '🙋'),
+  comment('comment', 'Comment', '💬');
+
+  final String value;
+  final String label;
+  final String emoji;
+
+  const FeedbackResponseType(this.value, this.label, this.emoji);
+
+  /// A question or comment carries text the tutor should read, so it is the
+  /// one that notifies. A thanks is shown on the note only.
+  bool get needsText => this != FeedbackResponseType.thanks;
+
+  static FeedbackResponseType? fromValue(String? value) {
+    for (final type in FeedbackResponseType.values) {
+      if (type.value == value) return type;
+    }
+    return null;
+  }
+}
+
+/// A parent's one-off response to a note. Each parent may leave one, and it
+/// cannot be changed afterwards.
+class FeedbackResponse {
+  /// Longest text a response may carry; the rules enforce the same limit.
+  static const maxTextLength = 500;
+
+  final String parentId;
+  final FeedbackResponseType type;
+
+  /// Empty on a thanks sent without a message.
+  final String text;
+
+  /// Stored with the response because a parent cannot look up the other
+  /// parent's profile, and both see each other's responses.
+  final String parentName;
+
+  /// Server-stamped, so null for the moment before the write is confirmed.
+  final DateTime? respondedAt;
+
+  const FeedbackResponse({
+    required this.parentId,
+    required this.type,
+    required this.text,
+    required this.parentName,
+    this.respondedAt,
+  });
+
+  /// Null for an entry this build cannot read, rather than a guess.
+  static FeedbackResponse? fromMap(String parentId, Object? raw) {
+    if (raw is! Map) return null;
+    final type = FeedbackResponseType.fromValue(raw['type'] as String?);
+    if (type == null) return null;
+    final respondedAt = raw['respondedAt'];
+    return FeedbackResponse(
+      parentId: parentId,
+      type: type,
+      text: (raw['text'] as String?)?.trim() ?? '',
+      parentName: (raw['parentName'] as String?)?.trim() ?? '',
+      respondedAt: respondedAt is Timestamp ? respondedAt.toDate() : null,
+    );
+  }
+}
+
 class StudentFeedback {
   final String id;
   final String studentId;
@@ -56,6 +125,9 @@ class StudentFeedback {
   /// notification, so this marker is the only signal they get.
   final DateTime? editedAt;
 
+  /// Parents' responses, keyed by parent uid. Empty until one responds.
+  final Map<String, FeedbackResponse> parentResponses;
+
   StudentFeedback({
     required this.id,
     required this.studentId,
@@ -69,12 +141,21 @@ class StudentFeedback {
     this.sessionId,
     this.progress,
     this.editedAt,
+    this.parentResponses = const {},
   });
 
   factory StudentFeedback.fromDoc(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final createdAt = data['createdAt'];
     final editedAt = data['editedAt'];
+    final rawResponses = data['parentResponses'];
+    final parentResponses = <String, FeedbackResponse>{};
+    if (rawResponses is Map) {
+      rawResponses.forEach((parentId, raw) {
+        final response = FeedbackResponse.fromMap(parentId as String, raw);
+        if (response != null) parentResponses[parentId] = response;
+      });
+    }
     return StudentFeedback(
       id: doc.id,
       studentId: data['studentId'] ?? '',
@@ -90,6 +171,7 @@ class StudentFeedback {
       // Server-stamped, so it reads back as null for the moment between the
       // edit being written and the server confirming it.
       editedAt: editedAt is Timestamp ? editedAt.toDate() : null,
+      parentResponses: parentResponses,
     );
   }
 
@@ -150,6 +232,7 @@ class StudentFeedback {
       sessionId: sessionId ?? this.sessionId,
       progress: clearProgress ? null : (progress ?? this.progress),
       editedAt: editedAt ?? this.editedAt,
+      parentResponses: parentResponses,
     );
   }
 }

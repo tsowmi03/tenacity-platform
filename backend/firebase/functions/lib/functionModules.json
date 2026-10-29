@@ -267,6 +267,10 @@
     "./notifications/feedback",
     "onFeedbackCreated"
   ],
+  "onFeedbackResponded": [
+    "./notifications/feedback",
+    "onFeedbackResponded"
+  ],
   "onInvoiceCreated": [
     "./xero_functions",
     "onInvoiceCreated"

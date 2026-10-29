@@ -48,6 +48,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   /// the view stuck in its loading state.
   Stream<List<StudentFeedback>>? _feedback;
 
+  /// Notes whose response is being written (MOB-52).
+  final _responding = <String>{};
+
   /// Refer-a-friend counting (MOB-51). Held rather than looked up in
   /// [dispose], where the tree can no longer be read.
   ReferralController? _referrals;
@@ -84,7 +87,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   Widget build(BuildContext context) {
     final feedbackController = context.read<FeedbackController>();
     final authController = context.read<AuthController>();
-    final isAdmin = authController.currentUser?.role == 'admin';
+    final currentUser = authController.currentUser;
+    final isAdmin = currentUser?.role == 'admin';
+    final isParent = currentUser?.role == 'parent';
 
     return Scaffold(
       backgroundColor: AppColors.ink,
@@ -98,6 +103,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             feedback: feedback,
             tutorNamesById: _tutorNames,
             now: DateTime.now(),
+            respondingParentId: isParent ? currentUser?.uid : null,
           );
 
           _scheduleMarkRead(feedbackController, data.unreadIds);
@@ -126,6 +132,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                 : null,
             onBack: () => Navigator.of(context).pop(),
             onAdd: isAdmin ? () => _showAddFeedback(context) : null,
+            onRespond: isParent
+                ? (noteId, type) => _respond(context, noteId, type)
+                : null,
+            respondingNoteIds: _responding,
           );
         },
       ),
@@ -183,6 +193,79 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       }
       controller.markAsRead(pending);
     });
+  }
+
+  /// A thanks is sent straight away. A question or comment asks for the
+  /// message first.
+  Future<void> _respond(
+    BuildContext context,
+    String noteId,
+    FeedbackResponseType type,
+  ) async {
+    if (!type.needsText) {
+      if (!await OfflineActionGuard.ensureOnline(context, action: 'respond')) {
+        return;
+      }
+      if (!context.mounted) return;
+      final sent = await _sendResponse(context, noteId, type, '');
+      if (!sent && context.mounted) _showResponseFailed(context);
+      return;
+    }
+
+    await showAppBottomSheet<void>(
+      context: context,
+      allowUserDismissal: false,
+      builder: (sheetContext) => _RespondSheet(
+        type: type,
+        onSubmit: (text) async {
+          if (!await OfflineActionGuard.ensureOnline(
+            sheetContext,
+            action: 'respond',
+          )) {
+            return false;
+          }
+          if (!context.mounted) return false;
+          return _sendResponse(context, noteId, type, text);
+        },
+      ),
+    );
+  }
+
+  Future<bool> _sendResponse(
+    BuildContext context,
+    String noteId,
+    FeedbackResponseType type,
+    String text,
+  ) async {
+    final user = context.read<AuthController>().currentUser;
+    if (user == null) return false;
+    final controller = context.read<FeedbackController>();
+
+    setState(() => _responding.add(noteId));
+    try {
+      await controller.respondToFeedback(
+        feedbackId: noteId,
+        parentId: user.uid,
+        parentName: '${user.firstName} ${user.lastName}'.trim(),
+        type: type,
+        text: text,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[FeedbackScreen] respond failed: $e');
+      return false;
+    } finally {
+      if (mounted) setState(() => _responding.remove(noteId));
+    }
+  }
+
+  void _showResponseFailed(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Your response could not be sent. Please try again.'),
+        backgroundColor: AppColors.danger,
+      ),
+    );
   }
 
   Future<void> _showAddFeedback(BuildContext context) async {
@@ -312,6 +395,85 @@ class _AddFeedbackSheetState extends State<_AddFeedbackSheet> {
                   (value ?? '').trim().isEmpty ? 'Enter feedback' : null,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A parent's question or comment on a note (MOB-52).
+class _RespondSheet extends StatefulWidget {
+  final FeedbackResponseType type;
+
+  /// Returns true when the response was written.
+  final Future<bool> Function(String text) onSubmit;
+
+  const _RespondSheet({required this.type, required this.onSubmit});
+
+  @override
+  State<_RespondSheet> createState() => _RespondSheetState();
+}
+
+class _RespondSheetState extends State<_RespondSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _text = TextEditingController();
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    setState(() => _isSaving = true);
+    final saved = await widget.onSubmit(_text.text.trim());
+    if (!mounted) return;
+
+    if (saved) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    setState(() => _isSaving = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Your response could not be sent. Please try again.'),
+        backgroundColor: AppColors.danger,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isQuestion = widget.type == FeedbackResponseType.question;
+    return AppBottomSheet(
+      title: isQuestion ? 'Ask a question' : 'Add a comment',
+      subtitle: 'The tutor is notified. You can respond to each note once.',
+      footer: SheetActions(
+        confirmLabel: 'Send',
+        isBusy: _isSaving,
+        onConfirm: _submit,
+        onCancel: () => Navigator.of(context).pop(),
+      ),
+      child: Form(
+        key: _formKey,
+        child: TextFormField(
+          key: const Key('feedback-response-text'),
+          controller: _text,
+          enabled: !_isSaving,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          minLines: 3,
+          maxLines: 6,
+          maxLength: FeedbackResponse.maxTextLength,
+          decoration: InputDecoration(
+            labelText: isQuestion ? 'Your question' : 'Your comment',
+          ),
+          validator: (value) =>
+              (value ?? '').trim().isEmpty ? 'Enter a message' : null,
         ),
       ),
     );
