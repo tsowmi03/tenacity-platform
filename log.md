@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-29 | [Mobile 3.4.0 (build 523)](#2026-10-29--mobile-340-build-523) |
 | 2026-10-29 | [The app is released to both stores from the command line (MOB-67)](#2026-10-29--the-app-is-released-to-both-stores-from-the-command-line-mob-67) |
 | 2026-10-29 | [Parents can respond to feedback (MOB-52)](#2026-10-29--parents-can-respond-to-feedback-mob-52) |
 | 2026-10-24 | [Parents can open invoice PDFs: Storage rules can read Firestore (TP-41)](#2026-10-24--parents-can-open-invoice-pdfs-storage-rules-can-read-firestore-tp-41) |
@@ -197,6 +198,30 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-29 — Mobile 3.4.0 (build 523)
+
+**What changed**
+- Bumped the mobile app from `3.3.0+521` to `3.4.0+523` with `scripts/release.sh bump 3.4.0`. Build 522 (also 3.4.0, uploaded to App Store Connect on 2026-10-24 but never submitted) was cut before MOB-52 merged, so this release uses a new build from current `main`. It supersedes the unmerged 3.4.0 (522) release PR.
+- Ships everything merged for mobile since 3.3.0 (521):
+  - Parents can respond to feedback, and reach any child's feedback from Home (MOB-52).
+  - Staff can start group chats (MOB-54).
+  - Booking a one-off with a lesson token now takes the token (MOB-64).
+  - Parents are offered "Book a class", not just a one-off (MOB-56).
+  - Invoice PDF failures are recorded, and "Opening payment…" no longer lingers (MOB-66).
+  - Booking several children is one call, so it no longer keeps families waiting (MOB-55).
+- First release through `scripts/release.sh ship` (MOB-67): built, uploaded and submitted to both stores from `main`. "What's new" in both stores:
+  > • Reply to your child's feedback: tap Thanks, ask a question or leave a comment, and the tutor is told.
+  > • Open any child's full feedback history with the new "All" link on Home.
+  > • Book a regular weekly class from the app, not just a one-off lesson.
+  > • Booking for more than one child is quicker.
+  > • Lesson tokens are now used correctly when you book a one-off.
+  > • Tutors and admins can start group chats.
+  > • Fixes for opening invoice PDFs and payments.
+
+**Status:** Submitted for review on the App Store (released automatically on approval) and sent to Google Play production (released once Google approves it).
 
 ---
 
