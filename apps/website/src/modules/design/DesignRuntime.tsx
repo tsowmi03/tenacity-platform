@@ -14,6 +14,7 @@ import {
   type ReferralSourceCode,
 } from "@lib/referralSources";
 import { sendEmailForm } from "@lib/utils/apiHelper";
+import { classSlotLimits, hasValidClassSelection } from "@lib/registrationSlots";
 import { collection, getDocs } from "firebase/firestore";
 import { useEffect } from "react";
 
@@ -715,7 +716,8 @@ const setupRegistrationRuntime = () => {
     return yearNumber <= 6 ? "Primary" : "High School";
   };
 
-  const requiredClassCount = () => draft.studentSubjects.length;
+  const slotLimits = () =>
+    classSlotLimits(draft.studentYear, draft.studentSubjects);
 
   const selectedClassIds = () => new Set(draft.classes.map((slot) => slot.id));
 
@@ -746,14 +748,44 @@ const setupRegistrationRuntime = () => {
 
   const buildSlots = () => {
     slotList.innerHTML = "";
+    const title = getEl<HTMLElement>("slotRequirementTitle");
     const hint = getEl<HTMLElement>("slotHint");
-    const required = requiredClassCount();
+    const status = getEl<HTMLElement>("slotSelectionStatus");
+    const { min, max } = slotLimits();
+    const selectedCount = selectedClassIds().size;
+    const canContinue = hasValidClassSelection(
+      draft.studentYear,
+      draft.studentSubjects,
+      draft.classes
+    );
+    if (title) {
+      title.textContent =
+        min !== max
+          ? "Choose 1 or 2 class times"
+          : max > 1
+            ? `Choose ${max} class times — one hour per subject`
+            : "Choose 1 class time";
+    }
     if (hint) {
       hint.textContent =
-        required > 1
-          ? `Select ${required} different weekly class times. Each class can support Maths or English.`
-          : "Select your preferred weekly class time.";
+        min !== max
+          ? "Primary students can study Maths and English together in one hour. Choose one weekly class time for both subjects, or two class times if you prefer."
+          : max > 1
+            ? "High school students study Maths and English in separate one-hour sessions. Choose two different weekly class times to continue."
+            : "Select your preferred weekly one-hour class time.";
     }
+    if (status) {
+      const remaining = Math.max(0, min - selectedCount);
+      const selectedLabel = selectedCount === 1 ? "class time" : "class times";
+      const requiredLabel = min === 1 ? "class time" : "class times";
+      const remainingLabel = remaining === 1 ? "class time" : "class times";
+      const optionalSecond =
+        min !== max && selectedCount === 1 ? ", or select a second class time" : "";
+      status.textContent = canContinue
+        ? `${selectedCount} ${selectedLabel} selected. You can continue${optionalSecond}.`
+        : `${selectedCount} of ${min} ${requiredLabel} selected. Select ${remaining} more ${remainingLabel} to continue.`;
+    }
+    nextBtn.disabled = isSubmitting || !canContinue;
 
     if (!classSlots.length) {
       const empty = document.createElement("p");
@@ -785,9 +817,10 @@ const setupRegistrationRuntime = () => {
     slots.forEach((slot) => {
       const button = document.createElement("button");
       const selected = isSelected(slot);
-      const selectionFull = draft.classes.length >= required;
+      const selectionFull = draft.classes.length >= max;
       button.type = "button";
       button.className = `slot${selected ? " selected" : ""}`;
+      button.setAttribute("aria-pressed", String(selected));
       button.disabled = selectionFull && !selected;
       button.dataset.id = slot.id;
       const remaining = adjustedSpotsRemaining(slot);
@@ -819,7 +852,7 @@ const setupRegistrationRuntime = () => {
           draft.classes = draft.classes.filter(
             (selected) => selected.id !== slot.id
           );
-        } else if (draft.classes.length < requiredClassCount()) {
+        } else if (draft.classes.length < slotLimits().max) {
           draft.classes.push(slot);
         }
         track("registration_class_slot_toggled", {
@@ -829,7 +862,7 @@ const setupRegistrationRuntime = () => {
           spots_remaining: remaining,
           availability:
             availabilityClass === "neutral" ? "unknown" : availabilityClass,
-          required_count: requiredClassCount(),
+          required_count: slotLimits().min,
         });
         buildSlots();
       });
@@ -1213,12 +1246,14 @@ const setupRegistrationRuntime = () => {
       return missingOf([["subject", draft.studentSubjects.length > 0]]);
     }
     if (step === 3) {
-      const uniqueClassCount = selectedClassIds().size;
       return missingOf([
         [
           "class_times",
-          draft.classes.length === draft.studentSubjects.length &&
-            uniqueClassCount === draft.studentSubjects.length,
+          hasValidClassSelection(
+            draft.studentYear,
+            draft.studentSubjects,
+            draft.classes
+          ),
         ],
       ]);
     }
@@ -1310,6 +1345,12 @@ const setupRegistrationRuntime = () => {
     barFill.style.width = `${(step / TOTAL_REG_STEPS) * 100}%`;
     backBtn.disabled =
       step === 1 && students.length === 0 && editingIndex === null;
+    nextBtn.disabled = isSubmitting;
+    if (step === 3) {
+      nextBtn.setAttribute("aria-describedby", "slotSelectionStatus");
+    } else {
+      nextBtn.removeAttribute("aria-describedby");
+    }
     nextBtn.innerHTML =
       step === TOTAL_REG_STEPS
         ? 'Complete registration <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg>'

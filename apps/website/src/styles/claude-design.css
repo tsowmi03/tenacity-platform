@@ -893,6 +893,10 @@ section { position: relative; }
 .slot.selected .slot-check { background: var(--blue); border-color: var(--blue); }
 .slot.selected .slot-check svg { opacity: 1; }
 .slot-hint { font-size: .9rem; color: var(--muted); margin-bottom: 1.2rem; }
+.slot-requirement { padding: 16px 20px; margin-bottom: 1.2rem; border-left: 4px solid var(--blue); border-radius: var(--r-sm); background: var(--blue-50); color: var(--ink); }
+.slot-requirement strong { display: block; font-size: 1.05rem; margin-bottom: .4rem; }
+.slot-requirement p { margin: 0; }
+.slot-selection-status { margin: 1.2rem 0 0; font-weight: 600; color: var(--ink); }
 
 /* Form fields in wizard */
 .reg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -964,6 +968,7 @@ section { position: relative; }
 .reg-back svg { width: 17px; height: 17px; }
 .reg-back[disabled] { opacity: 0; pointer-events: none; }
 .reg-next { min-width: 150px; }
+.reg-next:disabled { opacity: .55; cursor: not-allowed; }
 .reg-next svg { width: 18px; height: 18px; }
 
 /* Success */
