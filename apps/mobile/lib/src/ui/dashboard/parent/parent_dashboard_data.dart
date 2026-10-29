@@ -86,6 +86,15 @@ class ParentDashboardFeedback {
   });
 }
 
+/// One of the parent's children, for picking whose feedback to open (MOB-52).
+@immutable
+class ParentDashboardChild {
+  final String id;
+  final String firstName;
+
+  const ParentDashboardChild({required this.id, required this.firstName});
+}
+
 @immutable
 class ParentDashboardViewData {
   final String parentName;
@@ -108,6 +117,10 @@ class ParentDashboardViewData {
   final ParentDashboardAnnouncement? unreadAnnouncement;
   final ParentDashboardFeedback? latestFeedback;
 
+  /// Every child, so the parent can open any child's feedback rather than only
+  /// the one behind the latest note.
+  final List<ParentDashboardChild> children;
+
   const ParentDashboardViewData({
     required this.parentName,
     required this.greeting,
@@ -122,6 +135,7 @@ class ParentDashboardViewData {
     required this.unpaidInvoice,
     required this.unreadAnnouncement,
     required this.latestFeedback,
+    this.children = const [],
   });
 
   /// True when nothing needs the parent's attention, so the section can be
@@ -190,6 +204,10 @@ ParentDashboardViewData buildParentDashboardViewData({
       .firstOrNull;
 
   return ParentDashboardViewData(
+    children: [
+      for (final child in children)
+        ParentDashboardChild(id: child.id, firstName: child.firstName.trim()),
+    ],
     parentName: parentName,
     greeting: dashboardGreeting(localNow.hour),
     subtitle: _subtitle(activeTerm, todaysSessions.length),

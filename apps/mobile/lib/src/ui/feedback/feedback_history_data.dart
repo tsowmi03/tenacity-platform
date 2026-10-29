@@ -29,6 +29,12 @@ class FeedbackNote {
   /// indication anything moved.
   final bool isEdited;
 
+  /// Parents' responses, oldest first (MOB-52).
+  final List<FeedbackNoteResponse> responses;
+
+  /// The viewer is a parent who has not yet responded to this note.
+  final bool canRespond;
+
   const FeedbackNote({
     required this.id,
     required this.subject,
@@ -38,12 +44,32 @@ class FeedbackNote {
     required this.isUnread,
     this.progress,
     this.isEdited = false,
+    this.responses = const [],
+    this.canRespond = false,
   });
 
   /// `Jordan Lee · Year 9 Maths`, matching how the parent dashboard attributes
   /// its feedback quote.
   String get attribution =>
       [tutorName, subject].where((part) => part.isNotEmpty).join(' · ');
+}
+
+/// A parent's response to a note, ready to render.
+@immutable
+class FeedbackNoteResponse {
+  final String parentName;
+  final FeedbackResponseType type;
+  final String text;
+
+  /// `Just now` while the server timestamp is still pending.
+  final String dateLabel;
+
+  const FeedbackNoteResponse({
+    required this.parentName,
+    required this.type,
+    required this.text,
+    required this.dateLabel,
+  });
 }
 
 @immutable
@@ -63,10 +89,14 @@ class FeedbackHistoryData {
 /// Pure, so ordering, attribution and date rules are testable without
 /// Firestore. [tutorNamesById] is resolved by the caller, since it needs a
 /// separate lookup.
+///
+/// [respondingParentId] is the signed-in parent, who may respond to each note
+/// once. Null for staff, who only read responses.
 FeedbackHistoryData buildFeedbackHistory({
   required List<StudentFeedback> feedback,
   required Map<String, String> tutorNamesById,
   required DateTime now,
+  String? respondingParentId,
 }) {
   final sorted = [...feedback]
     ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -92,6 +122,9 @@ FeedbackHistoryData buildFeedbackHistory({
           progress: entry.progress,
           isUnread: entry.isUnread,
           isEdited: entry.isEdited,
+          responses: _responsesFor(entry, now),
+          canRespond: respondingParentId != null &&
+              !entry.parentResponses.containsKey(respondingParentId),
         ),
     ],
     unreadIds: [
@@ -99,6 +132,31 @@ FeedbackHistoryData buildFeedbackHistory({
         if (entry.isUnread) entry.id,
     ],
   );
+}
+
+List<FeedbackNoteResponse> _responsesFor(StudentFeedback entry, DateTime now) {
+  // A response still waiting on its server timestamp is the newest, so it
+  // sorts last.
+  final sorted = entry.parentResponses.values.toList()
+    ..sort((a, b) {
+      final aAt = a.respondedAt, bAt = b.respondedAt;
+      if (aAt == null) return bAt == null ? 0 : 1;
+      if (bAt == null) return -1;
+      return aAt.compareTo(bAt);
+    });
+
+  return [
+    for (final response in sorted)
+      FeedbackNoteResponse(
+        parentName:
+            response.parentName.isEmpty ? 'Parent' : response.parentName,
+        type: response.type,
+        text: response.text,
+        dateLabel: response.respondedAt == null
+            ? 'Just now'
+            : feedbackDateLabel(response.respondedAt!, now),
+      ),
+  ];
 }
 
 /// `Today`, `Yesterday`, `Wed 15 Jul` within the year, else `15 Jul 2025`.

@@ -109,6 +109,7 @@ Future<Taps> pumpDashboard(
           onOpenInvoices: () => taps.invoices++,
           onOpenProfile: () => taps.profile++,
           onOpenFeedback: () => taps.feedback++,
+          onOpenAllFeedback: () => taps.allFeedback++,
           onCopyReferral: withReferral ? () => taps.referrals++ : null,
         ),
       ),
@@ -127,6 +128,7 @@ class Taps {
   int invoices = 0;
   int profile = 0;
   int feedback = 0;
+  int allFeedback = 0;
   int referrals = 0;
 }
 
@@ -284,6 +286,20 @@ void main() {
       await tester.pump();
 
       expect(taps.feedback, 1);
+    });
+
+    testWidgets('"All" opens the full feedback history (MOB-52)',
+        (tester) async {
+      final taps = await pumpDashboard(tester, _data());
+
+      await tester.tap(find.descendant(
+        of: find.byKey(const Key('parent-dashboard-feedback-all')),
+        matching: find.text('All'),
+      ));
+      await tester.pump();
+
+      expect(taps.allFeedback, 1);
+      expect(taps.feedback, 0);
     });
 
     testWidgets('quick actions are wired', (tester) async {

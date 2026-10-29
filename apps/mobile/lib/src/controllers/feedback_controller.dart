@@ -39,6 +39,27 @@ class FeedbackController extends ChangeNotifier {
     }
   }
 
+  Future<void> respondToFeedback({
+    required String feedbackId,
+    required String parentId,
+    required String parentName,
+    required FeedbackResponseType type,
+    required String text,
+  }) async {
+    try {
+      await service.respondToFeedback(
+        feedbackId: feedbackId,
+        parentId: parentId,
+        parentName: parentName,
+        type: type,
+        text: text,
+      );
+    } catch (e) {
+      debugPrint('Error responding to feedback: $e');
+      rethrow;
+    }
+  }
+
   Future<void> markAsRead(List<String> feedbackIds) async {
     try {
       await service.markAsRead(feedbackIds);

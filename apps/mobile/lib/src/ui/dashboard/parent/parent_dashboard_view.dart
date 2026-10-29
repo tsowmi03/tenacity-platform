@@ -20,6 +20,10 @@ class ParentDashboardView extends StatelessWidget {
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenFeedback;
 
+  /// Opens a child's full feedback history, where older notes can be read and
+  /// responded to. Null hides the "All" link.
+  final VoidCallback? onOpenAllFeedback;
+
   /// Copies the parent's referral link (MOB-51). The card is shown only when
   /// this is set.
   final VoidCallback? onCopyReferral;
@@ -36,6 +40,7 @@ class ParentDashboardView extends StatelessWidget {
     required this.onOpenInvoices,
     required this.onOpenProfile,
     required this.onOpenFeedback,
+    this.onOpenAllFeedback,
     this.onCopyReferral,
     this.isCopyingReferral = false,
     this.justCopiedReferral = false,
@@ -103,6 +108,7 @@ class ParentDashboardView extends StatelessWidget {
                     _FeedbackSection(
                       feedback: data.latestFeedback!,
                       onTap: onOpenFeedback,
+                      onOpenAll: onOpenAllFeedback,
                     ),
                   ],
                   if (onCopyReferral != null) ...[
@@ -234,8 +240,13 @@ class _SessionRow extends StatelessWidget {
 class _FeedbackSection extends StatelessWidget {
   final ParentDashboardFeedback feedback;
   final VoidCallback onTap;
+  final VoidCallback? onOpenAll;
 
-  const _FeedbackSection({required this.feedback, required this.onTap});
+  const _FeedbackSection({
+    required this.feedback,
+    required this.onTap,
+    this.onOpenAll,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -244,7 +255,12 @@ class _FeedbackSection extends StatelessWidget {
       // content it would shrink to a fraction of the width for a brief one.
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionLabel(title: 'LATEST FEEDBACK'),
+        SectionLabel(
+          key: const Key('parent-dashboard-feedback-all'),
+          title: 'LATEST FEEDBACK',
+          actionLabel: onOpenAll == null ? null : 'All',
+          onAction: onOpenAll,
+        ),
         const SizedBox(height: AppSpacing.labelGap),
         Material(
           key: const Key('parent-dashboard-feedback'),
