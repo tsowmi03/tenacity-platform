@@ -161,7 +161,7 @@ flowchart LR
 | --- | --- |
 | Admin portal, resource portal, website | **Automatically** once `Validate platform` passes on `main`, if that app changed and the commit didn't touch the backend |
 | Firestore indexes, rules, Cloud Functions | **Manual dispatch** of [`production-deploy.yml`](.github/workflows/production-deploy.yml) with the `main` SHA. It deploys what the commit changed, in dependency order |
-| Mobile | **By hand**, for both stores. See [Mobile releases](#mobile-releases) |
+| Mobile | **From the command line**, for both stores. See [Mobile releases](#mobile-releases) |
 
 Things worth knowing before you dispatch:
 
@@ -183,19 +183,31 @@ Full controls, abort conditions and rollback steps:
 
 ### Mobile releases
 
-From `apps/mobile`, after bumping `version:` in `pubspec.yaml`. Build numbers
-are one counter shared by both stores, so start above the highest number
-already uploaded.
+`apps/mobile/scripts/release.sh` builds from `main` and submits to both stores
+with fastlane (`apps/mobile/fastlane/Fastfile`). Build numbers are one counter
+shared by both stores.
 
-- **iOS:** run `flutter build ios --config-only --flavor prod
-  --dart-define=TENACITY_ENV=prod` so Xcode picks up the new version, then
-  archive the `prod` scheme in Xcode and distribute from Organizer with
-  *Manage Version and Build Number* unticked. (`flutter build ipa` fails at
-  export with a non-interactive keychain.)
-- **Android:** run `flutter build appbundle --flavor prod
-  --dart-define=TENACITY_ENV=prod`, check the bundle at
-  `build/app/outputs/bundle/prodRelease/app-prod-release.aab` reports the new
-  version, and upload it in Play Console.
+1. `scripts/release.sh status` shows the latest build on App Store Connect and
+   Google Play, and the next free number.
+2. `scripts/release.sh bump 3.5.0` sets `pubspec.yaml` to `3.5.0+<next free>`.
+   Merge that to `main` by PR with its `log.md` entry.
+3. From an up-to-date `main` checkout:
+   `scripts/release.sh ship --notes "What's new text"`. It builds, uploads,
+   submits iOS for review (released automatically once Apple approves it) and
+   sends Android to production. `--rollout 0.2` makes Android a staged
+   rollout; `--ios` or `--android` ships one store, e.g. to finish a release
+   that stopped half way (an iOS build already on App Store Connect is
+   submitted without rebuilding); `--build-only` signs both builds without
+   uploading.
+
+It refuses to ship off `main`, with uncommitted changes, or with a build number
+a store already has. Credentials stay outside the repo:
+`~/.appstoreconnect/config.env` (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_PATH`,
+an App Store Connect API key) and `~/.play/tenacity-play.json` (the
+`play-release` service account in Google Cloud project `tenacity-tutoring-b8eb2`,
+with release access in Play Console). Needs `brew install fastlane`. If a
+Homebrew Ruby upgrade (installing fastlane does one) leaves CocoaPods
+reporting "installed but broken", run `brew reinstall cocoapods`.
 
 ## Working in the repo
 
