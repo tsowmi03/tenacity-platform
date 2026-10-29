@@ -4,6 +4,7 @@ import { captureServerEvent } from "@lib/analyticsServer";
 import { getAdminDb } from "@lib/firebaseAdmin";
 import { lookupReferrer, normaliseReferralCode } from "@lib/referralCodes";
 import { isReferralSourceCode } from "@lib/referralSources";
+import { hasValidClassSelection } from "@lib/registrationSlots";
 import { requestIp, verifyTurnstile } from "@lib/turnstile";
 
 type ClassPayload = {
@@ -161,8 +162,11 @@ const buildStudent = (payload: unknown) => {
     !cleaned.studentFirstName ||
     !cleaned.studentLastName ||
     !cleaned.studentYear ||
-    cleaned.studentSubjects.length === 0 ||
-    cleaned.classes.length !== cleaned.studentSubjects.length
+    !hasValidClassSelection(
+      cleaned.studentYear,
+      cleaned.studentSubjects,
+      cleaned.classes
+    )
   ) {
     throw new Error("Invalid student payload.");
   }
