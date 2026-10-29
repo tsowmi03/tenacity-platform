@@ -56,3 +56,9 @@ keystore.properties
 
 # Local incident handoff notes
 ONE_OFF_BOOKING_APP_UPDATE.md
+
+# fastlane run output (MOB-67)
+/fastlane/report.xml
+/fastlane/README.md
+/fastlane/Preview.html
+/fastlane/test_output/

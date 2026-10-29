@@ -1,0 +1,188 @@
+# Store releases for the Tenacity app (MOB-67).
+#
+# Run these through `scripts/release.sh`, which checks the branch, the version
+# and the release notes first. See README "Mobile releases".
+#
+# Credentials stay outside the repo:
+#   ~/.appstoreconnect/config.env  ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH
+#   ~/.play/tenacity-play.json     Google Play service account (PLAY_JSON_KEY overrides)
+
+require "fileutils"
+require "json"
+require "tmpdir"
+
+APP_ID = "com.tenacityTutoring.tenacity"
+TEAM_ID = "N4NDYP2B7R"
+MOBILE_DIR = File.expand_path("..", __dir__)
+PLAY_KEY = ENV.fetch("PLAY_JSON_KEY", File.expand_path("~/.play/tenacity-play.json"))
+PLAY_TRACKS = %w[production beta alpha internal].freeze
+PLAY_LOCALE = "en-AU"
+IPA_DIR = File.join(MOBILE_DIR, "build/ios/release")
+AAB_PATH = File.join(MOBILE_DIR, "build/app/outputs/bundle/prodRelease/app-prod-release.aab")
+
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_filepath: ENV.fetch("ASC_KEY_PATH")
+  )
+end
+
+# Lets xcodebuild fetch certificates and profiles with the API key, so the
+# archive and export need no Xcode sign-in and no prompt.
+def xcode_auth_args
+  [
+    "-allowProvisioningUpdates",
+    "-authenticationKeyPath #{ENV.fetch('ASC_KEY_PATH')}",
+    "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')}",
+    "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
+  ].join(" ")
+end
+
+# `3.5.0+523` in pubspec.yaml, as ["3.5.0", 523].
+def pubspec_version
+  line = File.read(File.join(MOBILE_DIR, "pubspec.yaml"))[/^version:\s*(\S+)/, 1]
+  name, build = line.to_s.split("+")
+  UI.user_error!("pubspec.yaml version must look like 3.5.0+523, got #{line.inspect}") if name.nil? || build.nil?
+  [name, build.to_i]
+end
+
+def ios_latest_build
+  latest_testflight_build_number(api_key: asc_api_key, app_identifier: APP_ID, initial_build_number: 0).to_i
+end
+
+# Highest version code on any Play track. A track with no releases raises, so
+# it counts as empty.
+def play_latest_build
+  PLAY_TRACKS.flat_map do |track|
+    google_play_track_version_codes(package_name: APP_ID, track: track, json_key: PLAY_KEY)
+  rescue StandardError
+    []
+  end.map(&:to_i).max || 0
+end
+
+# Build numbers are one counter shared by both stores, and a store rejects a
+# number it already has, so this stops before a 10-minute build that would
+# fail at upload.
+def ensure_unused!(build, latest, store)
+  return if build > latest
+
+  UI.user_error!("Build #{build} is not above #{store}'s latest (#{latest}). Run `scripts/release.sh bump <version>`.")
+end
+
+# Homebrew's fastlane puts its own Ruby first on PATH and sets GEM_HOME and
+# GEM_PATH. Flutter runs `pod install`, and CocoaPods breaks under that Ruby,
+# so Flutter gets the shell's environment back (release.sh saves its PATH).
+def flutter_build(*args)
+  saved = ENV.to_h.slice("PATH", "GEM_HOME", "GEM_PATH")
+  ENV["PATH"] = ENV["RELEASE_ORIGINAL_PATH"] if ENV["RELEASE_ORIGINAL_PATH"]
+  ENV.delete("GEM_HOME")
+  ENV.delete("GEM_PATH")
+  Dir.chdir(MOBILE_DIR) do
+    sh("flutter", "build", *args, "--flavor", "prod", "--dart-define=TENACITY_ENV=prod")
+  end
+ensure
+  saved.each { |key, value| ENV[key] = value }
+end
+
+desc "Latest build on each store and the next free build number"
+lane :status do |options|
+  ios = ios_latest_build
+  play = play_latest_build
+  version, build = pubspec_version
+  result = { ios: ios, play: play, next: [ios, play].max + 1, pubspec_version: version, pubspec_build: build }
+  UI.important("App Store Connect: #{ios} · Google Play: #{play} · next free: #{result[:next]} · pubspec: #{version}+#{build}")
+  File.write(options[:out], JSON.generate(result)) if options[:out]
+end
+
+desc "Build the iOS app and, unless upload:false, submit it for review"
+lane :ios do |options|
+  version, build = pubspec_version
+  upload = options[:upload] != false
+  ensure_unused!(build, ios_latest_build, "App Store Connect") if upload
+
+  # Regenerates Generated.xcconfig, which is where Xcode reads the version and
+  # build number from. Without it the archive carries the previous version.
+  flutter_build("ios", "--config-only")
+
+  ipa = build_app(
+    workspace: File.join(MOBILE_DIR, "ios/Runner.xcworkspace"),
+    scheme: "prod",
+    configuration: "Release-prod",
+    export_method: "app-store",
+    output_directory: IPA_DIR,
+    output_name: "Tenacity.ipa",
+    clean: true,
+    # gym passes these on to the export step itself; repeating them in
+    # export_xcargs makes xcodebuild refuse the duplicate.
+    xcargs: xcode_auth_args,
+    export_options: {
+      teamID: TEAM_ID,
+      signingStyle: "automatic",
+      # Same as unticking "Manage Version and Build Number" in Organizer: keep
+      # the number pubspec says rather than one App Store Connect picks.
+      manageAppVersionAndBuildNumber: false
+    }
+  )
+  UI.success("Built #{version} (#{build}): #{ipa}")
+  next unless upload
+
+  upload_to_app_store(
+    api_key: asc_api_key,
+    app_identifier: APP_ID,
+    ipa: ipa,
+    app_version: version,
+    release_notes: { "default" => options.fetch(:notes) },
+    skip_screenshots: true,
+    skip_metadata: false,
+    force: true,
+    submit_for_review: options[:submit] != false,
+    # Goes live as soon as Apple approves it.
+    automatic_release: true,
+    precheck_include_in_app_purchases: false,
+    run_precheck_before_submit: false,
+    submission_information: { add_id_info_uses_idfa: false }
+  )
+end
+
+desc "Build the Android bundle and, unless upload:false, send it to production"
+lane :android do |options|
+  version, build = pubspec_version
+  upload = options[:upload] != false
+  ensure_unused!(build, play_latest_build, "Google Play") if upload
+
+  # The upload key isn't in git, so a fresh clone or worktree has none, and
+  # Gradle's error for it is buried in a page of output.
+  %w[keystore.properties my-release-key.jks].each do |file|
+    next if File.exist?(File.join(MOBILE_DIR, "android", file))
+
+    UI.user_error!("android/#{file} is missing. The Play upload key lives only in the main checkout; release from there.")
+  end
+
+  flutter_build("appbundle")
+  UI.success("Built #{version} (#{build}): #{AAB_PATH}")
+  next unless upload
+
+  # Play takes release notes only from a changelog file named after the
+  # version code.
+  metadata = Dir.mktmpdir("play-metadata")
+  FileUtils.mkdir_p(File.join(metadata, PLAY_LOCALE, "changelogs"))
+  File.write(File.join(metadata, PLAY_LOCALE, "changelogs", "#{build}.txt"), options.fetch(:notes))
+
+  rollout = options[:rollout]
+  upload_to_play_store(
+    package_name: APP_ID,
+    json_key: PLAY_KEY,
+    track: "production",
+    aab: AAB_PATH,
+    # A rollout fraction (e.g. 0.2) starts a staged rollout; without one the
+    # release goes to everyone once Google approves it.
+    release_status: rollout ? "inProgress" : "completed",
+    rollout: rollout&.to_s,
+    metadata_path: metadata,
+    skip_upload_metadata: true,
+    skip_upload_images: true,
+    skip_upload_screenshots: true,
+    skip_upload_changelogs: false
+  )
+end

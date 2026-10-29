@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-29 | [The app is released to both stores from the command line (MOB-67)](#2026-10-29--the-app-is-released-to-both-stores-from-the-command-line-mob-67) |
 | 2026-10-29 | [Parents can respond to feedback (MOB-52)](#2026-10-29--parents-can-respond-to-feedback-mob-52) |
 | 2026-10-24 | [Parents can open invoice PDFs: Storage rules can read Firestore (TP-41)](#2026-10-24--parents-can-open-invoice-pdfs-storage-rules-can-read-firestore-tp-41) |
 | 2026-10-23 | [Functions deploys can approve a minimum-bill increase (TP-40)](#2026-10-23--functions-deploys-can-approve-a-minimum-bill-increase-tp-40) |
@@ -196,6 +197,24 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-10-29 — The app is released to both stores from the command line (MOB-67)
+
+**What changed**
+- New `apps/mobile/scripts/release.sh` with fastlane lanes in `apps/mobile/fastlane/`. `status` shows the latest build on App Store Connect and Google Play and the next free build number; `bump <version>` sets `pubspec.yaml` to it; `ship --notes "..."` builds from `main`, uploads to both stores, submits iOS for review (released automatically on approval) and sends Android to production, optionally as a staged rollout.
+- `ship` refuses to run off `main`, with uncommitted changes, behind `origin/main`, or with a build number either store already has. `--ios` / `--android` finishes a release that stopped half way; `--build-only` signs both builds without uploading.
+- iOS archives and exports with `xcodebuild -allowProvisioningUpdates` and the App Store Connect API key, so no Xcode Organizer step, and the build number is kept as pubspec says (the old "untick Manage Version and Build Number" step).
+- Credentials stay outside the repo: the App Store Connect API key in `~/.appstoreconnect/config.env`, and a new `play-release` service account (Google Cloud project `tenacity-tutoring-b8eb2`, release access in Play Console) at `~/.play/tenacity-play.json`.
+- README "Mobile releases" now describes this flow instead of the Xcode and Play Console steps.
+
+**Why:** Releases were done by hand in Xcode Organizer and Play Console, with known traps (a stale Xcode version, Organizer renumbering builds).
+
+**Status:** Merged. Not yet used for a real release; `status`, `bump` and a `--build-only` run of both stores were tested.
+
+**Next steps**
+- Use it for the next release and confirm the App Store submission and Play upload steps end to end (about 30 minutes alongside that release).
 
 ---
 
