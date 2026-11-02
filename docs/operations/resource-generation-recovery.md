@@ -55,7 +55,10 @@ verification, omitted optional diagrams and maths repairs.
 ## RES-51: planned generation and lifecycle logs
 
 `RESOURCE_PLANNED_GENERATION_ENABLED` is a Firebase boolean parameter (default
-`false`). Enable it in staging first. Submission stamps `generationVersion: 1`
+`false`). The production dotenv explicitly enables it for the RES-51 release.
+Resource functions are excluded from the staging inventory, so local real-provider
+replay, emulator tests and exact-commit CI are the available pre-release checks.
+Submission stamps `generationVersion: 1`
 onto new jobs; switching it off stops opting new jobs in without changing jobs
 already running. Existing jobs retain their legacy checkpoint hashes and path.
 No existing failed jobs are retried automatically.
@@ -157,10 +160,11 @@ provider exhaustion and redaction. Emulator coverage verifies committed recovery
 and rejection of superseded workers, alongside existing lease/cancellation and
 queue-concurrency tests.
 
-Before enabling production: enable the parameter in staging, submit small and
-large requests with real references, verify DOCX/PDF output and the correlated
-job timeline, and measure real provider latency/usage. Then enable new production
-submissions gradually; disable the parameter if completion rates or recovery
+Before enabling production: run the local real-provider replay, verify the
+DOCX output and correlated job timeline, and pass exact-commit CI. Resource
+Functions are not present in the staging inventory; verify deployed revisions
+and the resource portal after release. Enable new production submissions with
+the explicit project dotenv parameter; disable the parameter if completion rates or recovery
 costs regress. Local deterministic tests do not establish real provider latency
 or content quality.
 

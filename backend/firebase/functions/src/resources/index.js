@@ -3696,6 +3696,7 @@ async function runQueueForTutor(createdBy, deps) {
             } : {}),
           } });
         const continuationOutcome = resumed === "cancelled" ? "cancelled" : resumed ? "pending" : "superseded";
+        if (continuationOutcome === "cancelled") await emitResourceTerminal({ db, job, outcome: "cancelled", clock });
         resourceEvent(job, "worker.continued", { outcome: continuationOutcome });
         return [...outcomes, { jobId: job.jobId, status: continuationOutcome }];
       }
