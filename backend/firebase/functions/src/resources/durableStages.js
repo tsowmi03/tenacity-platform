@@ -48,13 +48,16 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
   let inFlight = null;
   let completed = 0;
   const invocationStarted = Date.now();
-  const progress = async (message) => db.runTransaction(async (tx) => {
+  const progress = async (message, executing = false, recovery = {}) => db.runTransaction(async (tx) => {
     const snap = await tx.get(job.ref);
     const current = snap.data() || {};
     if (!snap.exists || current.status !== "processing" || current.attemptId !== job.attemptId || current.cancelRequested) {
       throw controlError("RESOURCE_SUPERSEDED", "This worker no longer owns the resource.");
     }
-    tx.update(job.ref, { progress: { message, completedStages: completed, updatedAt: fromDate(clock()) } });
+    tx.update(job.ref, { progress: { message, completedStages: completed, updatedAt: fromDate(clock()) },
+      ...(executing ? { providerCallCount: (current.providerCallCount || 0) + 1,
+        stageRetryCount: (current.stageRetryCount || 0) + (recovery.failures && !recovery.fallback ? 1 : 0),
+        stageFallbackCount: (current.stageFallbackCount || 0) + (recovery.fallback ? 1 : 0) } : {}) });
   });
   return async (request) => {
     const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, validateStageResult, ...publicRequest } = request;
@@ -100,7 +103,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
   };
 
   async function runFreshStage({ request, signal, stageLabel, file, key, recovery }) {
-    await progress(stageLabel || `Generating · ${completed} steps saved`);
+    await progress(stageLabel || `Generating · ${completed} steps saved`, true, recovery);
     const controller = new AbortController();
     const cancel = () => controller.abort(signal.reason);
     if (signal?.aborted) cancel();
@@ -120,6 +123,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
       });
       const { stageLabel: _label, stageId: _stageId, splitAllowed: _split, validateStageResult: validate, ...providerRequest } = request;
       if (recovery.fallback && fallbackModel) providerRequest.model = fallbackModel;
+      if (recovery.lastReason) providerRequest.userMessage += `\n\nThe prior response failed validation (${recovery.lastReason}). Correct that issue while preserving the original scope and requested limits.`;
       resourceEvent(job, "provider.started", { model: providerRequest.model, provider: providerForModel(providerRequest.model), timeoutMs: budget, remainingMs: INVOCATION_BUDGET_MS - (Date.now() - invocationStarted), retryCount: recovery.failures || 0 });
       const result = await Promise.race([callAi({ ...providerRequest, signal: controller.signal }), deadline]);
       providerFinished = true;
@@ -142,7 +146,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
         (!err?.resourceControl && !err?.refusal && !signal?.aborted && (err?.modelFailure || [429, 503, 529].includes(err?.status)));
       if (job.generationVersion === 1 && recoverable) {
         const failures = (recovery.failures || 0) + 1;
-        const next = { failures, split: Boolean(request.splitAllowed && err?.code === "RESOURCE_STAGE_TIMEOUT"),
+        const next = { failures, ...(err.resourceControl && err.reason ? { lastReason: err.reason } : {}), split: Boolean(request.splitAllowed && err?.code === "RESOURCE_STAGE_TIMEOUT"),
           fallback: failures >= 2 && Boolean(fallbackModel), exhausted: failures >= (fallbackModel ? 3 : 2) };
         const count = await db.runTransaction(async (tx) => {
           const snap = await tx.get(job.ref);
@@ -150,11 +154,10 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
           if (!snap.exists || current.status !== "processing" || current.attemptId !== job.attemptId || current.cancelRequested) throw controlError("RESOURCE_SUPERSEDED", "This worker no longer owns the resource.");
           const count = (current.stageRecoveryCount || 0) + 1;
           tx.update(job.ref, { stageRecovery: { ...current.stageRecovery, [key]: next }, stageRecoveryCount: count,
-            stageFallbackCount: (current.stageFallbackCount || 0) + (next.fallback && !recovery.fallback ? 1 : 0),
             progress: { completedStages: completed, updatedAt: fromDate(clock()), message: count > MAX_STAGE_RECOVERIES || next.exhausted ? "Recovery limit reached" : next.split ? "Continuing in smaller batches" : next.fallback ? "Retrying this stage with the backup model" : "Retrying this stage from saved progress" } });
           return count;
         });
-        resourceEvent(job, "recovery.decided", { errorCode: err?.code || "PROVIDER_FAILURE", retryCount: failures,
+        resourceEvent(job, "recovery.decided", { errorCode: err?.code || "PROVIDER_FAILURE", reason: err?.resourceControl ? err?.reason : undefined, retryCount: failures,
           recoveryDecision: count > MAX_STAGE_RECOVERIES || next.exhausted ? "exhausted" : next.split ? "split" : next.fallback ? "fallback" : "retry" }, "warn");
         if (count > MAX_STAGE_RECOVERIES || next.exhausted) throw controlError("RESOURCE_RECOVERY_EXHAUSTED", "Generation reached its recovery limit. Completed stages are retained; reduce the request before retrying.");
         throw controlError("RESOURCE_STAGE_YIELD", next.split ? "Continuing in smaller batches" : next.fallback ? "Retrying this stage with the backup model" : "Retrying this stage from saved progress");

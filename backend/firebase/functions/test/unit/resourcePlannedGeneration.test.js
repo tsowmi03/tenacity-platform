@@ -22,12 +22,17 @@ const prompt = "Exclude all of chapter 2 and everything after 10H. Create a work
 function plan(count = 14) {
   return { title: "Practice", clarification: "", timeAllowed: "90 minutes",
     topics: [{ name: "Algebra", evidence: "Algebra" }, { name: "Geometry", evidence: "Geometry" }],
-    questions: Array.from({ length: count }, (_, i) => ({ number: i + 1, topic: i < count / 2 ? "Algebra" : "Geometry", section: i < count / 2 ? "A" : "B", difficulty: "increasing", marks: 2 })) };
+    questions: Array.from({ length: count }, (_, i) => ({ number: i + 1, topic: i < count / 2 ? "Algebra" : "Geometry", section: i < count / 2 ? "A" : "B", difficulty: "increasing", marks: 2, sourceIds: [], estimatedMinutes: 6 })) };
 }
 function fakeProvider(savedPlan, calls) {
   return async (req) => {
     calls.push(req);
     if (req.systemPrompt.startsWith("Plan an educational")) return { parsed: savedPlan, provider: "openai" };
+    if (req.systemPrompt.startsWith("Independently audit")) {
+      const parsed = JSON.parse(req.userMessage.split("GENERATED RESOURCE TO CHECK: ")[1]);
+      const questions = parsed.topics ? parsed.sections.flatMap((section) => section.questions) : parsed.questions;
+      return { parsed: { scopePass: true, difficultyPass: true, issues: [], questions: questions.map((q) => ({ number: q.number, coveredSourceIds: [], estimatedMinutes: 6 })) } };
+    }
     const specs = req.userMessage.match(/SAVED PLAN .*?: (\[.*\])\nGenerate/);
     if (specs) {
       const questions = JSON.parse(specs[1]).map((q) => ({ number: q.number, marks: q.marks, stem: `Unique problem ${q.number}`, type: "short-answer", diagram: null, diagramType: "none", diagramRequired: false, parts: null }));
@@ -64,7 +69,7 @@ for (const type of ["worksheet", "practice-paper"]) it(`plans and resumes a ${ty
   const { buildResourceDocx } = require("../../src/resources/builder");
   const buffer = await buildResourceDocx(type, result.parsed, { subject: "maths", year: "10", answerMode: "worked" });
   assert.equal(buffer.subarray(0, 2).toString(), "PK", "assembled resource builds a DOCX");
-  assert.equal(calls.length, 7, "one plan, three content batches, three solution batches");
+  assert.equal(calls.length, 8, "one plan, three content batches, three solution batches and independent review");
   assert.equal(result.parsed.totalMarks, 28);
   assert.equal(result.parsed.answers.length, 14);
   if (type === "practice-paper") {
@@ -136,8 +141,10 @@ it("routes versioned jobs through the real generation pipeline and saves the ass
   }
   assert.ok(result?.outputPath);
   assert.equal(JSON.parse(result.generatedJson).questions.length, 14);
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
   assert.ok(h.values.has(result.outputPath));
+  const skipped = h.events.filter((e) => e.event === "stage.skipped").map((e) => e.stageId);
+  for (const stage of ["sourcing.passage", "sourcing.stimulus", "diagrams.fill", "diagrams.validate_repair", "answers.verify", "math.repair"]) assert.ok(skipped.includes(stage), `explicit skip for ${stage}`);
 });
 
 it("rejects incorrect solution links, duplicated questions and oversized resolved plans", () => {
@@ -152,4 +159,21 @@ it("honours the persisted job-wide recovery ceiling before another provider call
   let called = false;
   await assert.rejects(h.caller(async () => { called = true; })({ model: "gpt-test", userMessage: "new" }), { code: "RESOURCE_RECOVERY_EXHAUSTED" });
   assert.equal(called, false);
+});
+
+it("passes safe validation feedback to the next attempt without losing its checkpoint identity", async () => {
+  const h = harness();
+  const request = { model: "gpt-test", stageId: "plan.v2", userMessage: "original scope", validateStageResult: (result) => {
+    if (!result.parsed.valid) throw Object.assign(new Error("private generated text"), { code: "RESOURCE_PLAN_INVALID", reason: "incomplete_source_coverage", resourceControl: true });
+  } };
+  await assert.rejects(h.caller(async () => ({ parsed: { valid: false } }))(request), { code: "RESOURCE_STAGE_YIELD" });
+  const result = await h.caller(async (req) => {
+    assert.match(req.userMessage, /incomplete_source_coverage/);
+    assert.match(req.userMessage, /original scope/);
+    return { parsed: { valid: true } };
+  })(request);
+  assert.equal(result.parsed.valid, true);
+  await h.caller(() => { throw new Error("must reuse the corrected checkpoint"); })(request);
+  assert.equal(h.values.size, 1);
+  assert.ok(!JSON.stringify(h.events).includes("private generated text"));
 });

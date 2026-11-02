@@ -3,6 +3,7 @@
 const { controlError, requestedQuestionCount, MAX_QUESTIONS } = require("./durableStages");
 const { buildResponseSchema } = require("./responseSchema");
 const { buildSystemPrompt } = require("./promptBuilder");
+const { sourceScope, validatePlannedCoverage, verifyPlannedContent } = require("./contentVerification");
 const { resourceEvent, resourceStage } = require("./resourceLog");
 const obj = (properties) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
 const str = { type: "string" };
@@ -11,7 +12,7 @@ const list = (items) => ({ type: "array", items });
 const PLAN_SCHEMA = obj({
   title: str, timeAllowed: str, clarification: str,
   topics: list(obj({ name: str, evidence: str })),
-  questions: list(obj({ number: int, topic: str, section: str, difficulty: str, marks: int })),
+  questions: list(obj({ number: int, topic: str, section: str, difficulty: str, marks: int, sourceIds: list(str), estimatedMinutes: { type: "number" } })),
 });
 
 function perTopicCount(prompt = "") {
@@ -19,26 +20,30 @@ function perTopicCount(prompt = "") {
   return match ? Number(match[1]) : null;
 }
 
-function validatePlan(result, job, userMessage) {
+function validatePlan(result, job, userMessage, scope = { eligible: [], excluded: [], minutes: null }) {
   const plan = result?.parsed;
   if (plan?.clarification === "SIZE_LIMIT") throw controlError("RESOURCE_SIZE_LIMIT", `The resolved request exceeds ${MAX_QUESTIONS} questions. Split it into smaller resources.`);
   if (plan?.clarification) throw controlError("RESOURCE_SCOPE_CLARIFICATION", `Clarify the requested topics or attach the relevant contents pages, then submit again.`);
-  const invalid = () => { throw controlError("RESOURCE_PLAN_INVALID", "The generation plan did not match the requested scope. Check the topics and requested size, then retry."); };
+  const invalid = (reason = "plan_structure_or_count") => { throw Object.assign(controlError("RESOURCE_PLAN_INVALID", "The generation plan did not match the requested scope. Check the topics and requested size, then retry."), { reason }); };
   if (!plan || typeof plan.title !== "string" || !Array.isArray(plan.topics) || !plan.topics.length ||
       !Array.isArray(plan.questions) || !plan.questions.length) invalid();
   if (plan.questions.length > MAX_QUESTIONS) throw controlError("RESOURCE_SIZE_LIMIT", `The resolved request exceeds ${MAX_QUESTIONS} questions. Split it into smaller resources.`);
   const names = plan.topics.map((t) => t?.name);
-  if (new Set(names).size !== names.length || plan.topics.some((t) => !t || typeof t.name !== "string" || !t.name || typeof t.evidence !== "string" || !t.evidence || !userMessage.includes(t.evidence))) invalid();
+  if (new Set(names).size !== names.length || plan.topics.some((t) => !t || typeof t.name !== "string" || !t.name.trim() || typeof t.evidence !== "string" || !t.evidence.trim() || !userMessage.replace(/\s+/g, " ").includes(t.evidence.replace(/\s+/g, " ")))) invalid("source_evidence_not_found");
   if (plan.questions.some((q, i) => !q || q.number !== i + 1 || !names.includes(q.topic) ||
       !q.section || !Number.isInteger(q.marks) || q.marks < 1 || q.marks > 30)) invalid();
   const each = perTopicCount(job.customPrompt);
-  if (each && names.some((topic) => plan.questions.filter((q) => q.topic === topic).length !== each)) invalid();
+  if (each && scope.eligible.length) {
+    if (plan.questions.some((q) => q.sourceIds?.length !== 1) || scope.eligible.some((topic) => plan.questions.filter((q) => q.sourceIds?.includes(topic.id)).length !== each)) invalid("per_topic_count_mismatch");
+  } else if (each && names.some((topic) => plan.questions.filter((q) => q.topic === topic).length !== each)) invalid("per_topic_count_mismatch");
   const total = requestedQuestionCount(job.customPrompt);
   if (!each && total && plan.questions.length !== total) invalid();
-  if (names.some((topic) => !plan.questions.some((q) => q.topic === topic))) invalid();
+  // Coded scope is checked through sourceIds; a multipart question may test several topics.
+  if (!scope.eligible.length && names.some((topic) => !plan.questions.some((q) => q.topic === topic))) invalid("incomplete_topic_coverage");
   const sections = plan.questions.map((q) => q.section).filter((name, i, all) => i === 0 || all[i - 1] !== name);
   if (new Set(sections).size !== sections.length) invalid();
   if (job.resourceType === "practice-paper" && !plan.timeAllowed) invalid();
+  validatePlannedCoverage(plan, scope);
 }
 
 function questionRows(parsed, type) {
@@ -66,19 +71,28 @@ function validateAnswers(result, questions, answerKey) {
   }
 }
 
-async function generatePlannedResource({ job, request, callAi, hasStimulus = false, stimulusImages = [] }) {
+function usesPlannedGeneration(job) {
+  const count = requestedQuestionCount(job.customPrompt);
+  return job.generationVersion === 1 && ["worksheet", "practice-paper"].includes(job.resourceType) &&
+    (job.resourceType === "practice-paper" || perTopicCount(job.customPrompt) || !count || count > 15);
+}
+
+async function generatePlannedResource({ job, request, callAi, hasStimulus = false, stimulusImages = [], referenceText = "" }) {
   const each = perTopicCount(job.customPrompt);
   if (each > MAX_QUESTIONS) throw controlError("RESOURCE_SIZE_LIMIT", "Request fewer questions per topic.");
-  const validateStageResult = (result) => validatePlan(result, job, request.userMessage);
+  const scope = sourceScope(job, referenceText);
+  if (each && scope.eligible.length * each > MAX_QUESTIONS) throw controlError("RESOURCE_SIZE_LIMIT", `The resolved request needs ${scope.eligible.length * each} questions, above the ${MAX_QUESTIONS}-question limit. Split it by topic or chapter.`);
+  const validateStageResult = (result) => validatePlan(result, job, request.userMessage, scope);
   const { parsed: plan } = await callAi({ ...request,
-    stageId: "plan.v1", stageLabel: "Planning topics, question counts and sections",
+    stageId: "plan.v2", stageLabel: "Planning topics, question counts and sections",
     maxTokens: 16000, responseSchema: PLAN_SCHEMA, validateStageResult,
+    userMessage: `${request.userMessage}\n\nREFERENCE-DERIVED SCOPE (eligible IDs must all be covered, excluded IDs must never be covered): ${JSON.stringify(scope)}`,
     systemPrompt: `Plan an educational resource; do not write questions or solutions. Return the supplied JSON schema.
 Resolve the tutor's exact scope and exclusions using the supplied references. Topics must each quote exact evidence from the user's message or references. A textbook title alone does not establish its chapter contents. If the topic list or exclusions cannot be established, return a non-empty clarification and empty topics/questions; never invent a contents list.
-For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwise obey any requested total. For timed papers, allocate sections, progressively harder questions and marks that reasonably fit the sitting time. Do not silently reduce scope to fit a limit: if the resolved total exceeds ${MAX_QUESTIONS}, set clarification to "SIZE_LIMIT" and leave questions empty. Use consecutive global numbers from 1; assign each a topic, section, difficulty and marks. Supply title and timeAllowed (empty for untimed worksheets). clarification must be empty when the scope is resolved.`,
+For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwise obey any requested total. For timed papers, allocate sections, progressively harder questions and marks that reasonably fit the sitting time. Use a reasonable number of main questions with labelled parts to combine related skills. topics may group by chapter; sourceIds track detailed coverage independently of the primary topic label. If complete requested coverage is unrealistic in the sitting time, return a clarification rather than pretending it fits. Do not silently reduce scope to fit a limit: if the resolved total exceeds ${MAX_QUESTIONS}, set clarification to "SIZE_LIMIT" and leave questions empty. Use consecutive global numbers from 1; assign each a topic, section, difficulty and marks. Give every question sourceIds from the eligible reference inventory (multiple IDs allowed when the actual multipart question tests those skills), and a realistic positive estimatedMinutes. Cover every eligible ID. Balance chapter marks fairly. Do not merely attach IDs to questions that do not test them. Sum the question minutes to 75–100% of the requested sitting time; preserve the exact requested timeAllowed. Without coded references use an empty sourceIds array. Supply title and timeAllowed (empty for untimed worksheets). clarification must be empty when the scope is resolved.`,
   });
   validateStageResult({ parsed: plan });
-  resourceEvent(job, "plan.resolved", { stageId: "plan.v1", questionCount: plan.questions.length, generationVersion: 1 });
+  resourceEvent(job, "plan.resolved", { stageId: "plan.v2", questionCount: plan.questions.length, generationVersion: 1 });
   const contentOptions = { year: job.year, subject: job.subject, answerMode: "none", hasStimulus, stimulusImages };
   const answerKey = job.subject === "english" ? "markingGuide" : "answers";
   const fullSchema = buildResponseSchema(job.resourceType, { subject: job.subject, answerMode: job.answerMode, hasStimulus });
@@ -132,7 +146,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
   }
 
   for (let i = 0; i < plan.questions.length; i += batchSize) await batch(plan.questions.slice(i, i + batchSize), String(i / batchSize + 1));
-  return resourceStage(job, "assembly.validation", async () => {
+  const assembled = await resourceStage(job, "assembly.validation", async () => {
     const rows = chunks.flatMap((p) => questionRows(p, job.resourceType));
     const normal = (stem) => stem.toLowerCase().replace(/\s+/g, " ").trim();
     if (new Set(rows.map((q) => normal(q.stem))).size !== rows.length) throw controlError("RESOURCE_BATCH_INVALID", "Repeated questions were detected. Review the scope and retry.");
@@ -148,6 +162,8 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     if (job.answerMode !== "none") validateAnswers({ parsed }, rows, answerKey);
     return { parsed, raw: JSON.stringify(parsed) };
   });
+  await verifyPlannedContent({ job, request, callAi, plan, parsed: assembled.parsed, scope });
+  return assembled;
 }
 
-module.exports = { generatePlannedResource, perTopicCount, validatePlan, validateQuestions, validateAnswers };
+module.exports = { usesPlannedGeneration, generatePlannedResource, perTopicCount, validatePlan, validateQuestions, validateAnswers };

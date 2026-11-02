@@ -10,8 +10,8 @@ const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
 const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSHEET_BATCH_SIZE, MAX_RECOVERIES } = require("./durableStages");
-const { resourceEvent, resourceStage } = require("./resourceLog");
-const { generatePlannedResource, perTopicCount } = require("./plannedGeneration");
+const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
+const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
 const { callAiForResource } = require("./aiClient");
 const {
   ANSWER_MODES,
@@ -520,6 +520,7 @@ function buildResourceJobDoc({
     createdBy: actor.uid,
     createdByName: actorDisplayName({ actor, userData: actorUserData }),
     createdAt: now(clock),
+    runStartedAt: now(clock),
     // RES-23 lineage. Every job belongs to a stack: the resource it descends
     // from, or itself when it is an original. `derivation` says how this
     // version was produced, so history can label it without inferring.
@@ -1278,6 +1279,7 @@ async function claimNextPendingJobForTutor({
       attemptCount: (Number(pendingJob.attemptCount) || 0) + (pendingJob.stageContinuation ? 0 : 1),
       stageCount: (Number(pendingJob.stageCount) || 0) + 1,
       stageContinuation: false,
+      queueElapsedMs: (pendingJob.queueElapsedMs || 0) + Math.max(0, startedDate.getTime() - (timestampMs(pendingJob.queueTurnAt || pendingJob.createdAt) || startedDate.getTime())),
       leaseExpiresAt,
       startedAt,
       warnings: [],
@@ -1472,13 +1474,14 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     date: clock ? clock() : new Date(),
   });
   let built;
+  let mathRepairUsed = false;
   try {
     built = await resourceStage(job, "document.build", () => buildDocxWithDiagramReliability({
       resourceType: job.resourceType,
       parsed,
       buildDocx,
       repairMath: callAi
-        ? ({ resource, issues, round }) => repairMathFallbacks({
+        ? ({ resource, issues, round }) => { mathRepairUsed = true; return resourceStage(job, "math.repair", () => repairMathFallbacks({
           resource,
           issues,
           round,
@@ -1486,7 +1489,7 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
           model,
           signal,
           attempt: Number(job.attemptCount) || 1,
-        })
+        })); }
         : null,
       options: {
         studentName: job.studentName,
@@ -1505,6 +1508,7 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     }
     throw err;
   }
+  if (!mathRepairUsed) resourceEvent(job, "stage.skipped", { stageId: "math.repair", reason: callAi ? "no_notation_fallbacks" : "repair_disabled" });
   const { buffer: docxBuffer, warnings, resource: builtResource } = built;
   const outputPath = outputPathForJob(job.jobId, outputFileName, job.attemptId);
 
@@ -1561,7 +1565,7 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
  * Returns the preview path, or null when no preview was attached.
  */
 async function generateResourcePreview(args) {
-  return resourceStage(args.job, "preview", () => generateResourcePreviewLogged(args));
+  return resourceStage(args.job, "preview", () => generateResourcePreviewLogged(args), {}, (result) => result ? "complete" : "unavailable");
 }
 
 async function generateResourcePreviewLogged({ job, db, storage, pdfConverter }) {
@@ -1569,7 +1573,7 @@ async function generateResourcePreviewLogged({ job, db, storage, pdfConverter })
   if (!storage) throw new TypeError("generateResourcePreview requires storage");
   // No converter configured (RESOURCE_PDF_PREVIEW_URL unset) — previews are off.
   if (!pdfConverter) { resourceEvent(job, "stage.skipped", { stageId: "preview", reason: "converter_unconfigured" }); return null; }
-  if (!job?.jobId || !job.outputPath) return null;
+  if (!job?.jobId || !job.outputPath) { resourceEvent(job, "stage.skipped", { stageId: "preview", reason: "no_ready_output" }); return null; }
 
   const outputPath = job.outputPath;
   const pdfPath = outputPath.replace(/\.docx$/i, ".pdf");
@@ -2238,6 +2242,7 @@ async function fillDiagrams(args) {
 async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }) {
   const targets = collectDiagramTargets(parsed);
   const wanted = targets.filter((target) => target.diagramType !== "none");
+  if (!wanted.length) resourceEvent(job, "stage.skipped", { stageId: "diagrams.fill", reason: "no_diagrams_requested" });
 
   const byType = new Map();
   for (const target of wanted) {
@@ -2331,7 +2336,7 @@ async function runDiagramRepairPass(args) {
 
 async function runDiagramRepairPassLogged({ job, parsed, deps, callAi, model }) {
   const repair = deps?.repairDiagrams || repairDiagrams;
-  return repair({
+  const result = await repair({
     job,
     parsed,
     callAi,
@@ -2340,6 +2345,8 @@ async function runDiagramRepairPassLogged({ job, parsed, deps, callAi, model }) 
     signal: deps?.signal,
     isCancelled: deps?.isCancelled,
   });
+  if (!result.summary?.checked) resourceEvent(job, "stage.skipped", { stageId: "diagrams.validate_repair", reason: "no_diagrams_to_check" });
+  return result;
 }
 
 /**
@@ -2465,6 +2472,8 @@ async function runGenerationPipelineLogged(job, deps) {
   }
 
   resourceEvent(job, "sourcing.resolved", { outcome: passageSourcing.used || stimulusSourcing.used ? "sourced" : "skipped", reason: passageSourcing.used || stimulusSourcing.used ? "verified_sources" : "not_applicable_or_unavailable" });
+  if (!passageSourcing.used) resourceEvent(job, "stage.skipped", { stageId: "sourcing.passage", reason: passageSourcing.warning ? "source_unavailable" : "not_required" });
+  if (!stimulusSourcing.used) resourceEvent(job, "stage.skipped", { stageId: "sourcing.stimulus", reason: stimulusSourcing.warning ? "source_unavailable" : "not_required" });
   const sourceState = sourceStateFromSourcing({ passageSourcing, stimulusSourcing });
   if (sourceState.sourcePlanner?.usageByProvider) {
     for (const [provider, usage] of Object.entries(
@@ -2530,10 +2539,13 @@ async function runGenerationPipelineLogged(job, deps) {
     mathBearing: !isEnglishSubject(job.subject),
   };
   const questionCount = assertRequestSize(job);
-  const usePlan = job.generationVersion === 1 && ["worksheet", "practice-paper"].includes(job.resourceType) &&
-    (job.resourceType === "practice-paper" || perTopicCount(job.customPrompt) || !questionCount || questionCount > WORKSHEET_BATCH_SIZE);
+  const usePlan = usesPlannedGeneration(job);
+  if (!usePlan) {
+    resourceEvent(job, "stage.skipped", { stageId: "plan.v2", reason: job.generationVersion === 1 ? "small_explicit_request" : "legacy_job" });
+    resourceEvent(job, "stage.skipped", { stageId: "content.review.v1", reason: "unplanned_resource" });
+  }
   let { parsed, raw } = usePlan
-    ? await generatePlannedResource({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, hasStimulus, stimulusImages })
+    ? await generatePlannedResource({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, hasStimulus, stimulusImages, referenceText: uploadedContent.map((f) => f.content).join("\n") })
     : job.resourceType === "worksheet" && job.subject === "maths" && questionCount > WORKSHEET_BATCH_SIZE
     ? await generateWorksheetBatches({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, count: questionCount })
     : splitSchemas
@@ -2726,6 +2738,7 @@ async function verifyMathsAnswers(args) {
 
 async function verifyMathsAnswersLogged({ job, parsed, apiKey, signal, callAi = callAiForResource }) {
   const rows = parsed.answers;
+  if (!rows.length) { resourceEvent(job, "stage.skipped", { stageId: "answers.verify", reason: "no_answers_to_check" }); return parsed; }
   if (rows.length > WORKSHEET_BATCH_SIZE) {
     const answers = [];
     for (let offset = 0; offset < rows.length; offset += WORKSHEET_BATCH_SIZE) {
@@ -2859,6 +2872,8 @@ function buildRepairUserMessage(job) {
 }
 
 function canRepairJob(job) {
+  // Rewriting a reviewed planned resource in one call would bypass its scope gate.
+  if (usesPlannedGeneration(job)) return false;
   return (
     typeof job?.generatedJson === "string" &&
     job.generatedJson.trim().length > 0 &&
@@ -2883,6 +2898,7 @@ async function runRepairPipeline(job, deps) {
 }
 
 async function runRepairPipelineLogged(job, deps) {
+  for (const stageId of ["references", "sourcing.passage", "sourcing.stimulus", "plan.v2", "content.review.v1", "diagrams.fill", "answers.verify"]) resourceEvent(job, "stage.skipped", { stageId, reason: "dedicated_repair_pipeline" });
   const {
     storage,
     clock,
@@ -3157,6 +3173,7 @@ async function runRevisionPipeline(job, deps) {
 }
 
 async function runRevisionPipelineLogged(job, deps) {
+  for (const stageId of ["sourcing.passage", "sourcing.stimulus", "plan.v2", "content.review.v1", "diagrams.fill", "answers.verify"]) resourceEvent(job, "stage.skipped", { stageId, reason: "revision_uses_existing_resource" });
   const {
     db,
     storage,
@@ -3281,7 +3298,7 @@ function errorMessage(err) {
   return err?.message || String(err || "Unknown resource generation error");
 }
 
-async function finalizeResourceJobAttempt({ db, jobId, attemptId, patch }) {
+async function finalizeResourceJobAttempt({ db, jobId, attemptId, patch, clock }) {
   if (!db) throw new TypeError("finalizeResourceJobAttempt requires db");
   if (!jobId) throw new TypeError("finalizeResourceJobAttempt requires jobId");
   if (!attemptId) throw new TypeError("finalizeResourceJobAttempt requires attemptId");
@@ -3315,6 +3332,8 @@ async function finalizeResourceJobAttempt({ db, jobId, attemptId, patch }) {
     }
 
     const nextPatch = { ...patch };
+    const startMs = current.startedAt?.toMillis?.();
+    if (Number.isFinite(startMs)) nextPatch.activeElapsedMs = (current.activeElapsedMs || 0) + Math.max(0, (clock ? clock().getTime() : Date.now()) - startMs);
     if (patch.usageByProvider) {
       nextPatch.usageByProvider = mergeUsageByProvider(
         current.usageByProvider,
@@ -3413,6 +3432,7 @@ async function queueResourceFallback({ db, storage, job, err, clock }) {
     };
     tx.update(jobRef, {
       status: "fallback_pending",
+      activeElapsedMs: (current.activeElapsedMs || 0) + Math.max(0, (clock ? clock().getTime() : Date.now()) - (current.startedAt?.toMillis?.() || Date.now())),
       activeModel: targetModel,
       fallbackUsed: true,
       failover: {
@@ -3452,6 +3472,13 @@ async function queueResourceFallback({ db, storage, job, err, clock }) {
     });
     return true;
   });
+}
+
+async function emitResourceTerminal({ db, job, outcome, errorCode, clock }) {
+  let current = job;
+  try { const snap = await db.collection("resourceJobs").doc(job.jobId).get(); if (snap.exists) current = snap.data(); }
+  catch { resourceEvent(job, "summary.unavailable", { reason: "job_read_failed" }, "warn"); }
+  resourceEvent(job, `job.${outcome === "complete" ? "completed" : outcome}`, { ...terminalFields(current, outcome, clock ? clock() : new Date()), errorCode }, outcome === "failed" ? "error" : "info");
 }
 
 async function runQueueForTutor(createdBy, deps) {
@@ -3546,7 +3573,7 @@ async function runQueueForTutor(createdBy, deps) {
 
             // Diagrams that exhausted their own repair budget are done: see
             // canRepairJob. Everything else still gets the whole-document pass.
-            if (!err.diagramRepairExhausted) {
+            if (!err.diagramRepairExhausted && canRepairJob(job)) {
               const repairAttempt = await attemptRepair();
               result = repairAttempt.result;
               repairError = repairAttempt.error || repairError;
@@ -3563,7 +3590,7 @@ async function runQueueForTutor(createdBy, deps) {
         }
       }
       const finalized = await finalizeResourceJobAttempt({
-        db,
+        db, clock,
         jobId: job.jobId,
         attemptId: job.attemptId,
         patch: {
@@ -3601,9 +3628,7 @@ async function runQueueForTutor(createdBy, deps) {
         outcomes.push({ jobId: job.jobId, status: "superseded" });
         continue;
       }
-      resourceEvent(job, "job.completed", { outcome: "complete", retryCount: job.stageRecoveryCount || 0,
-        fallbackCount: (job.stageFallbackCount || 0) + (job.fallbackUsed ? 1 : 0), completedStages: job.progress?.completedStages, stageCount: job.stageCount,
-        totalElapsedMs: job.createdAt?.toMillis ? Date.now() - job.createdAt.toMillis() : undefined });
+      await emitResourceTerminal({ db, job, outcome: "complete", clock });
       outcomes.push({
         jobId: job.jobId,
         status: "complete",
@@ -3613,7 +3638,7 @@ async function runQueueForTutor(createdBy, deps) {
       });
     } catch (err) {
       if (err?.code === "RESOURCE_STAGE_YIELD") {
-        const resumed = await finalizeResourceJobAttempt({ db, jobId: job.jobId, attemptId: job.attemptId,
+        const resumed = await finalizeResourceJobAttempt({ db, clock, jobId: job.jobId, attemptId: job.attemptId,
           patch: {
             status: "pending", stageContinuation: true, queueTurnAt: now(clock), startedAt: null, error: null,
             // A parse/schema failure can hand off to repair after consuming this
@@ -3632,7 +3657,7 @@ async function runQueueForTutor(createdBy, deps) {
       // A tutor stopped the job mid-flight: finalize as cancelled, not failed.
       if (isCancellationError(err) || watcher.isCancelled()) {
         const finalized = await finalizeResourceJobAttempt({
-          db,
+          db, clock,
           jobId: job.jobId,
           attemptId: job.attemptId,
           patch: {
@@ -3649,7 +3674,7 @@ async function runQueueForTutor(createdBy, deps) {
           outcomes.push({ jobId: job.jobId, status: "superseded" });
           continue;
         }
-        resourceEvent(job, "job.cancelled", { outcome: "cancelled" });
+        await emitResourceTerminal({ db, job, outcome: "cancelled", clock });
         logger.info("[runQueueForTutor] job cancelled by request", {
           jobId: job.jobId,
           attemptId: job.attemptId,
@@ -3712,7 +3737,7 @@ async function runQueueForTutor(createdBy, deps) {
       patch.diagramRepairExhausted = Boolean(err?.diagramRepairExhausted);
       patch.diagramRepairs = err?.diagramRepairs || null;
       const finalized = await finalizeResourceJobAttempt({
-        db,
+        db, clock,
         jobId: job.jobId,
         attemptId: job.attemptId,
         patch,
@@ -3727,7 +3752,7 @@ async function runQueueForTutor(createdBy, deps) {
         outcomes.push({ jobId: job.jobId, status: "superseded" });
         continue;
       }
-      resourceEvent(job, "job.failed", { outcome: "failed", errorCode: patch.errorCode || "UNCLASSIFIED", retryCount: job.stageRecoveryCount || 0 }, "error");
+      await emitResourceTerminal({ db, job, outcome: "failed", errorCode: patch.errorCode || "UNCLASSIFIED", clock });
       outcomes.push({ jobId: job.jobId, status: "failed", error: patch.error });
     } finally {
       watcher.stop();
@@ -3798,6 +3823,7 @@ const RESUMABLE_REASON_CODES = new Set(["PROVIDER_BUSY", "PROVIDER_ACCESS", "PRO
 
 function resumableFailure(job) {
   if (job.status === "cancelled") return true;
+  if (job.errorCode === "RESOURCE_CONTENT_INVALID") return false;
   if (String(job.errorCode || "").startsWith("RESOURCE_")) return true;
   const attempts = Array.isArray(job.failureAttempts) ? job.failureAttempts : [];
   return attempts.length > 0 && attempts.every((attempt) => RESUMABLE_REASON_CODES.has(attempt?.reasonCode));
@@ -3829,7 +3855,8 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   // provider. After a content failure (invalid JSON, a missing required
   // diagram, a model error) a saved response may itself be the cause, and
   // replaying it would fail the same way every time, so Retry starts fresh.
-  if (deps.storage && !resumableFailure(job)) {
+  const canResume = resumableFailure(job);
+  if (deps.storage && !canResume) {
     await deps.storage.bucket().deleteFiles({ prefix: `resources/checkpoints/${payload.jobId}/` });
   }
 
@@ -3837,7 +3864,9 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   const requestedModel = configuredModelForResourceType(job.resourceType, modelChoice);
   const retryRunId = randomUUID();
   await jobRef.update({
-    runId: retryRunId,
+    runId: retryRunId, runStartedAt: now(clock), activeElapsedMs: 0, queueElapsedMs: 0, queueTurnAt: now(clock),
+    stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0,
+    progress: canResume ? job.progress || null : null,
     status: "pending",
     modelChoice,
     requestedModel,
@@ -3851,8 +3880,8 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     failureAttempts: [],
     recoveryCount: 0,
     ...(job.generationVersion === 1 ? {
-      stageRecoveryCount: 0, stageFallbackCount: 0,
-      stageRecovery: Object.fromEntries(Object.entries(job.stageRecovery || {}).filter(([, v]) => v.split).map(([k]) => [k, { split: true, failures: 0 }])),
+      stageRecoveryCount: 0,
+      stageRecovery: Object.fromEntries(Object.entries(canResume ? job.stageRecovery || {} : {}).filter(([, v]) => v.split).map(([k]) => [k, { split: true, failures: 0 }])),
     } : {}),
     usageByProvider: {},
     warnings: [],
@@ -3924,7 +3953,8 @@ async function cancelResourceJobImpl({ payload, actor, deps }) {
       "This job has already finished — there is nothing to stop."
     );
   });
-  resourceEvent({ ...committedJob, jobId: payload.jobId }, result.status === "cancelled" ? "job.cancelled" : "job.cancel_requested", { outcome: result.status });
+  if (result.status === "cancelled") await emitResourceTerminal({ db, job: { ...committedJob, jobId: payload.jobId }, outcome: "cancelled", clock });
+  else resourceEvent({ ...committedJob, jobId: payload.jobId }, "job.cancel_requested", { outcome: result.status });
   return result;
 }
 
@@ -4068,6 +4098,7 @@ async function recoverStuckResourceJobsImpl({ deps }) {
 
   const createdBySet = new Set();
   const recoveredJobIds = [];
+  const recoveryLogContext = { invocationId: randomUUID(), resourceLogSink: deps.resourceLogSink };
   for (const doc of snap.docs) {
     const queriedJob = doc.data() || {};
     const queriedAttemptId = queriedJob.attemptId || null;
@@ -4114,7 +4145,10 @@ async function recoverStuckResourceJobsImpl({ deps }) {
       jobId: doc.id,
       attemptId: queriedAttemptId,
     });
-    resourceEvent({ ...queriedJob, jobId: doc.id }, "worker.lease_recovered", { recoveryDecision: queriedJob.cancelRequested ? "cancel" : (queriedJob.recoveryCount || 0) >= MAX_RECOVERIES ? "exhausted" : "requeue" }, "warn");
+    resourceEvent({ ...queriedJob, ...recoveryLogContext, jobId: doc.id }, "worker.lease_recovered", { recoveryDecision: queriedJob.cancelRequested ? "cancel" : (queriedJob.recoveryCount || 0) >= MAX_RECOVERIES ? "exhausted" : "requeue" }, "warn");
+    if (queriedJob.cancelRequested || (queriedJob.recoveryCount || 0) >= MAX_RECOVERIES) {
+      await emitResourceTerminal({ db, job: { ...queriedJob, ...recoveryLogContext, jobId: doc.id }, outcome: queriedJob.cancelRequested ? "cancelled" : "failed", errorCode: queriedJob.cancelRequested ? undefined : "RESOURCE_WORKER_RECOVERY_EXHAUSTED", clock });
+    }
     recoveredJobIds.push(doc.id);
     if (queriedJob.createdBy) createdBySet.add(queriedJob.createdBy);
   }
@@ -4152,7 +4186,7 @@ async function recoverStuckResourceJobsImpl({ deps }) {
       return true;
     });
     if (!recovered) continue;
-    resourceEvent({ ...queriedJob, jobId: doc.id }, "worker.lease_recovered", { recoveryDecision: queriedJob.cancelRequested ? "cancel" : (queriedJob.recoveryCount || 0) >= MAX_RECOVERIES ? "exhausted" : "requeue" }, "warn");
+    resourceEvent({ ...queriedJob, ...recoveryLogContext, jobId: doc.id }, "worker.handoff_recovered", { recoveryDecision: "requeue", reason: "fallback_worker_not_started" }, "warn");
     recoveredJobIds.push(doc.id);
     if (queriedJob.createdBy) createdBySet.add(queriedJob.createdBy);
   }

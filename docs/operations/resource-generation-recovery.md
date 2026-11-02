@@ -163,3 +163,80 @@ job timeline, and measure real provider latency/usage. Then enable new productio
 submissions gradually; disable the parameter if completion rates or recovery
 costs regress. Local deterministic tests do not establish real provider latency
 or content quality.
+
+### Complete summaries and content checks
+
+Terminal `job.completed`, `job.failed` and `job.cancelled` events read the latest
+committed job state, including the final invocation. Each includes
+`totalElapsedMs`, `activeElapsedMs`, `queueElapsedMs`, `completedStages`,
+`stageCount`, `providerCallCount`, `retryCount`, `fallbackCount`, `recoveryCount`
+and `leaseRecoveryCount`. Actual provider retry/fallback starts are counted
+separately from decisions to retry, split or switch providers. Queue time and
+completed invocation time accumulate across worker handoffs; total elapsed time
+starts again on a manual Retry. A killed worker's precise active duration cannot
+be recovered, so active time covers completed handoffs, not an invented death
+time. Lease exhaustion and recovered cancellations also emit terminal summaries.
+
+Optional reference extraction, sourcing, planning, content review, diagram fills,
+diagram validation, answer checking, maths repair and preview record explicit
+skip reasons. Cancellation/supersession is a stopped stage with the matching
+outcome. Optional preview stages can finish with `outcome: unavailable`; inspect
+`preview.failed`, `preview.discarded` or the skip event to see why.
+
+For exhaustive requests backed by coded contents pages (for example `1A`, `1B`,
+`10H`), the scope resolver extracts a section inventory from the reference text.
+It supports chapter exclusions and an inclusive “everything after section X”
+boundary. The plan must cover every eligible ID, contain no excluded IDs, avoid
+chapter mark dominance and preserve the requested sitting duration. Multipart
+questions may cover several section IDs. Planned answering estimates must total
+75–100% of the sitting duration. Per-topic worksheets resolve their true total
+before generation; totals above the configured limit are rejected, not silently
+reduced. Uncoded or more complex source layouts still require model review and
+may require clarification; this is not a general textbook parser.
+
+A separate, checkpointed `content.review.v1` call reads the original request,
+reference scope and actual assembled questions/solutions. It independently
+reports actual covered IDs and answering-time estimates, and checks exclusions,
+mathematical validity, chapter balance and difficulty progression. Passing plan
+labels alone are insufficient. Missing/extra coverage, review issues or a
+reviewed timing mismatch stop the resource with `RESOURCE_CONTENT_INVALID`
+before document publication. Manual Retry discards the rejected journal and
+regenerates; a whole-document repair cannot bypass the review of a planned job.
+This model review is an additional quality gate, not a guarantee of educational
+or mathematical correctness.
+
+Plan validation failures include a safe finite `reason` code in lifecycle logs.
+The following attempt receives that reason as correction guidance without
+changing the stable checkpoint identity. Provider response bodies never enter
+lifecycle logs.
+
+### Local replay with real providers
+
+To reproduce a failed resource without writing to Firebase, first obtain its
+prompt/settings and reference file locally. Then run:
+
+```sh
+node backend/firebase/functions/scripts/replayResourceLocally.js \
+  --input /private/tmp/original-input.json \
+  --reference /private/tmp/original-reference.pdf \
+  --output /private/tmp/resource-replay \
+  --firebase-secrets --max-calls 60
+```
+
+The input manifest contains the original `resourceType`, `subject`, `year`,
+`customPrompt`, `answerMode`, `modelChoice`, marks setting and upload metadata.
+This runner supports one original reference file. Without `--firebase-secrets`,
+keys must already be available locally. Production access from the runner is
+limited to optional read-only Secret Manager access. The queue and all writes
+are local, with synthetic student/tutor identity; PostHog is disabled.
+
+Real-provider replay sends the original prompt/reference-derived text to those
+providers and incurs their API usage. Obtain the user's authorization for that
+transfer. Do not silently substitute mock responses and describe them as a real
+replay.
+
+The output contains `events.jsonl`, `job.json`, `summary.json`, private local
+checkpoint objects and, on success, `resource.docx`. `provider-responses/` keeps
+response bodies for local diagnosis only; it excludes API keys and must not be
+committed or published. Choose a fresh output directory per replay. The runner
+has a bounded call budget and stops starting calls after 45 minutes.
