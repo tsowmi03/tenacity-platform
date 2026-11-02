@@ -10,6 +10,9 @@ const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
 const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSHEET_BATCH_SIZE, MAX_RECOVERIES } = require("./durableStages");
+const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
+const { canKeepDraftAfterReview, unavailableReviewWarning } = require("./contentVerification");
+const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
 const { callAiForResource } = require("./aiClient");
 const {
   ANSWER_MODES,
@@ -110,6 +113,7 @@ const pdfPreviewUrl = defineString("RESOURCE_PDF_PREVIEW_URL", { default: "" });
 // choice). Changing it means a redeploy; to switch models without one, edit
 // the config/resourceModels Firestore doc instead (see modelRegistry.js).
 const llmModelOverride = defineString("RESOURCE_LLM_MODEL", { default: "" });
+const plannedGenerationEnabled = defineBoolean("RESOURCE_PLANNED_GENERATION_ENABLED", { default: false });
 const llmFailoverEnabled = defineBoolean("RESOURCE_LLM_FAILOVER_ENABLED", { default: true });
 // Feature flag (default ON): source a verified public-domain passage for English
 // passage-based resources instead of letting the model invent the text. See
@@ -512,9 +516,12 @@ function buildResourceJobDoc({
   );
   return {
     jobId,
+    runId: randomUUID(),
+    generationVersion: plannedGenerationEnabled.value() ? 1 : 0,
     createdBy: actor.uid,
     createdByName: actorDisplayName({ actor, userData: actorUserData }),
     createdAt: now(clock),
+    runStartedAt: now(clock),
     // RES-23 lineage. Every job belongs to a stack: the resource it descends
     // from, or itself when it is an original. `derivation` says how this
     // version was produced, so history can label it without inferring.
@@ -906,6 +913,7 @@ async function createResourceJobImpl({ payload, actor, deps }) {
   });
 
   await jobRef.set(doc);
+  resourceEvent(doc, "job.queued", { generationVersion: doc.generationVersion });
   return { jobId: jobRef.id };
 }
 
@@ -1173,6 +1181,7 @@ async function createResourceRevisionImpl({ payload, actor, deps }) {
   });
 
   await jobRef.set(doc);
+  resourceEvent(doc, "job.queued", { generationVersion: doc.generationVersion });
   return { jobId: jobRef.id };
 }
 
@@ -1271,6 +1280,7 @@ async function claimNextPendingJobForTutor({
       attemptCount: (Number(pendingJob.attemptCount) || 0) + (pendingJob.stageContinuation ? 0 : 1),
       stageCount: (Number(pendingJob.stageCount) || 0) + 1,
       stageContinuation: false,
+      queueElapsedMs: (pendingJob.queueElapsedMs || 0) + Math.max(0, startedDate.getTime() - (timestampMs(pendingJob.queueTurnAt || pendingJob.createdAt) || startedDate.getTime())),
       leaseExpiresAt,
       startedAt,
       warnings: [],
@@ -1309,9 +1319,13 @@ function uploadedFilesForJob(job = {}) {
   return [];
 }
 
-async function downloadUploadedContent({ job, storage, extractText = extractTextFromBuffer }) {
+async function downloadUploadedContent(args) {
+  return resourceStage(args.job, "references", () => downloadUploadedContentLogged(args));
+}
+
+async function downloadUploadedContentLogged({ job, storage, extractText = extractTextFromBuffer }) {
   const uploadedFiles = uploadedFilesForJob(job);
-  if (!uploadedFiles.length) return [];
+  if (!uploadedFiles.length) { resourceEvent(job, "stage.skipped", { stageId: "references", reason: "no_uploads" }); return []; }
   if (!storage) throw new TypeError("downloadUploadedContent requires storage");
 
   return Promise.all(uploadedFiles.map(async (file) => {
@@ -1446,9 +1460,13 @@ function extractJobTopics(parsed) {
   return [];
 }
 
-async function saveGeneratedResource({ job, parsed, storage, buildDocx, clock, model, callAi, signal }) {
+async function saveGeneratedResource(args) {
+  return resourceStage(args.job, "document.build_upload", () => saveGeneratedResourceLogged(args));
+}
+
+async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, clock, model, callAi, signal, reviewWarnings = [], reviewStatus = "passed", contentReview = null }) {
   const answerMode = answerModeForJob(job);
-  const outputFileName = buildOutputFileName({
+  let outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
     title: parsed.title,
     studentName: job.studentName,
@@ -1456,14 +1474,19 @@ async function saveGeneratedResource({ job, parsed, storage, buildDocx, clock, m
     subject: job.subject,
     date: clock ? clock() : new Date(),
   });
+  const notice = () => reviewStatus === "draft" || reviewWarnings.length ? {
+    label: reviewStatus === "draft" ? "DRAFT - tutor review required" : "Tutor review recommended",
+    messages: [...new Set(reviewWarnings.map((w) => w.message))].slice(0, 6),
+  } : null;
   let built;
+  let mathRepairUsed = false;
   try {
-    built = await buildDocxWithDiagramReliability({
+    built = await resourceStage(job, "document.build", () => buildDocxWithDiagramReliability({
       resourceType: job.resourceType,
       parsed,
       buildDocx,
       repairMath: callAi
-        ? ({ resource, issues, round }) => repairMathFallbacks({
+        ? ({ resource, issues, round }) => { mathRepairUsed = true; return resourceStage(job, "math.repair", () => repairMathFallbacks({
           resource,
           issues,
           round,
@@ -1471,9 +1494,10 @@ async function saveGeneratedResource({ job, parsed, storage, buildDocx, clock, m
           model,
           signal,
           attempt: Number(job.attemptCount) || 1,
-        })
+        })); }
         : null,
       options: {
+        reviewNotice: notice(),
         studentName: job.studentName,
         subject: job.subject,
         year: job.year,
@@ -1482,22 +1506,35 @@ async function saveGeneratedResource({ job, parsed, storage, buildDocx, clock, m
           ? job.showMarks
           : job.resourceType === "practice-paper",
       },
-    });
+    }));
   } catch (err) {
-    if (!isDiagramRenderError(err) && err?.name !== "ResourceValidationError" && !err?.resourceControl &&
-        !err?.modelFailure && !isCancellationError(err)) {
-      err.resourceInfrastructure = "docx";
+    if (usesPlannedGeneration(job) && canKeepDraftAfterReview(err)) {
+      reviewStatus = "draft";
+      reviewWarnings.push(unavailableReviewWarning("Maths formatting review"));
+      resourceEvent(job, "document.draft_retained", { outcome: "draft", errorCode: err?.code || "REVIEW_FAILED", recoveryDecision: "keep_draft" }, "warn");
+      // No further model call. The normal builder still validates question and
+      // answer structure; unresolved notation is shown with its fallback warning.
+      built = await resourceStage(job, "document.build_draft", () => buildDocxWithDiagramReliability({
+        resourceType: job.resourceType, parsed, buildDocx, repairMath: null,
+        options: { studentName: job.studentName, subject: job.subject, year: job.year,
+          answerMode, showMarks: job.showMarks, reviewNotice: notice() },
+      }));
+    } else {
+      if (!isDiagramRenderError(err) && err?.name !== "ResourceValidationError" && !err?.resourceControl &&
+          !err?.modelFailure && !isCancellationError(err)) err.resourceInfrastructure = "docx";
+      throw err;
     }
-    throw err;
   }
+  if (!mathRepairUsed) resourceEvent(job, "stage.skipped", { stageId: "math.repair", reason: callAi ? "no_notation_fallbacks" : "repair_disabled" });
   const { buffer: docxBuffer, warnings, resource: builtResource } = built;
+  if (reviewStatus === "draft") outputFileName = `Draft_${outputFileName}`;
   const outputPath = outputPathForJob(job.jobId, outputFileName, job.attemptId);
 
   try {
-    await storage.bucket().file(outputPath).save(docxBuffer, {
+    await resourceStage(job, "document.upload", () => storage.bucket().file(outputPath).save(docxBuffer, {
       metadata: { contentType: DOCX_CONTENT_TYPE },
       resumable: false,
-    });
+    }));
   } catch (err) {
     err.resourceInfrastructure = "storage";
     throw err;
@@ -1530,7 +1567,8 @@ async function saveGeneratedResource({ job, parsed, storage, buildDocx, clock, m
     // so it must match what the tutor downloaded.
     generatedJson: JSON.stringify(builtResource),
     extractedTopics: extractJobTopics(parsed),
-    warnings,
+    warnings: [...reviewWarnings, ...warnings],
+    ...(usesPlannedGeneration(job) || reviewWarnings.length || reviewStatus !== "passed" ? { reviewStatus: reviewStatus === "draft" ? "draft" : reviewWarnings.length ? "warnings" : "passed", contentReview } : {}),
     model,
   };
 }
@@ -1545,12 +1583,16 @@ async function saveGeneratedResource({ job, parsed, storage, buildDocx, clock, m
  *
  * Returns the preview path, or null when no preview was attached.
  */
-async function generateResourcePreview({ job, db, storage, pdfConverter }) {
+async function generateResourcePreview(args) {
+  return resourceStage(args.job, "preview", () => generateResourcePreviewLogged(args), {}, (result) => result ? "complete" : "unavailable");
+}
+
+async function generateResourcePreviewLogged({ job, db, storage, pdfConverter }) {
   if (!db) throw new TypeError("generateResourcePreview requires db");
   if (!storage) throw new TypeError("generateResourcePreview requires storage");
   // No converter configured (RESOURCE_PDF_PREVIEW_URL unset) — previews are off.
-  if (!pdfConverter) return null;
-  if (!job?.jobId || !job.outputPath) return null;
+  if (!pdfConverter) { resourceEvent(job, "stage.skipped", { stageId: "preview", reason: "converter_unconfigured" }); return null; }
+  if (!job?.jobId || !job.outputPath) { resourceEvent(job, "stage.skipped", { stageId: "preview", reason: "no_ready_output" }); return null; }
 
   const outputPath = job.outputPath;
   const pdfPath = outputPath.replace(/\.docx$/i, ".pdf");
@@ -1567,6 +1609,7 @@ async function generateResourcePreview({ job, db, storage, pdfConverter }) {
       resumable: false,
     });
   } catch (err) {
+    resourceEvent(job, "preview.failed", { errorCode: err?.code || "PREVIEW_CONVERSION" }, "warn");
     logger.warn("[generateResourcePreview] PDF preview conversion failed", {
       jobId: job.jobId,
       errorMessage: err?.message,
@@ -1605,6 +1648,7 @@ async function generateResourcePreview({ job, db, storage, pdfConverter }) {
     });
   }
 
+  resourceEvent(job, attached ? "preview.completed" : "preview.discarded", { outcome: attached ? "complete" : "superseded" });
   if (!attached) {
     // Either the job was superseded (retried/deleted) or attaching it threw
     // above — either way the PDF was uploaded but is not referenced by any
@@ -1635,7 +1679,11 @@ function shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent }) 
  * { used, sourced, warning }. Never throws: any failure degrades to used:false
  * so generation falls back to the model writing its own passage.
  */
-async function maybeSourcePassage({
+async function maybeSourcePassage(args) {
+  return resourceStage(args.job, "sourcing.passage", () => maybeSourcePassageLogged(args));
+}
+
+async function maybeSourcePassageLogged({
   job,
   anthropicApiKey,
   openaiApiKey,
@@ -1777,7 +1825,11 @@ function briefForSelection(job, selection) {
  * Best-effort per text: any that cannot be verified is skipped. Never throws
  * (except cancellation, which must abort the whole job).
  */
-async function maybeSourceStimulusSet({
+async function maybeSourceStimulusSet(args) {
+  return resourceStage(args.job, "sourcing.stimulus", () => maybeSourceStimulusSetLogged(args));
+}
+
+async function maybeSourceStimulusSetLogged({
   job,
   anthropicApiKey,
   openaiApiKey,
@@ -2202,9 +2254,14 @@ function describeDiagramTargets(targets) {
  * run the same call unconstrained, which is exactly the pre-AWP-15 behaviour and
  * is still covered by validation.js and the diagram repair path.
  */
-async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
+async function fillDiagrams(args) {
+  return resourceStage(args.job, "diagrams.fill", () => fillDiagramsLogged(args));
+}
+
+async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }) {
   const targets = collectDiagramTargets(parsed);
   const wanted = targets.filter((target) => target.diagramType !== "none");
+  if (!wanted.length) resourceEvent(job, "stage.skipped", { stageId: "diagrams.fill", reason: "no_diagrams_requested" });
 
   const byType = new Map();
   for (const target of wanted) {
@@ -2292,9 +2349,13 @@ async function fillDiagrams({ job, parsed, callAi, apiKey, model, signal }) {
  * disagrees with its question. English resources carry no diagrams, so this
  * costs them a walk of the document and nothing else.
  */
-async function runDiagramRepairPass({ job, parsed, deps, callAi, model }) {
+async function runDiagramRepairPass(args) {
+  return resourceStage(args.job, "diagrams.validate_repair", () => runDiagramRepairPassLogged(args));
+}
+
+async function runDiagramRepairPassLogged({ job, parsed, deps, callAi, model }) {
   const repair = deps?.repairDiagrams || repairDiagrams;
-  return repair({
+  const result = await repair({
     job,
     parsed,
     callAi,
@@ -2303,6 +2364,8 @@ async function runDiagramRepairPass({ job, parsed, deps, callAi, model }) {
     signal: deps?.signal,
     isCancelled: deps?.isCancelled,
   });
+  if (!result.summary?.checked) resourceEvent(job, "stage.skipped", { stageId: "diagrams.validate_repair", reason: "no_diagrams_to_check" });
+  return result;
 }
 
 /**
@@ -2336,6 +2399,10 @@ function answerGroupsFor(parsed) {
 }
 
 async function runGenerationPipeline(job, deps) {
+  return resourceStage(job, "generation", () => runGenerationPipelineLogged(job, deps));
+}
+
+async function runGenerationPipelineLogged(job, deps) {
   const {
     storage,
     clock,
@@ -2423,6 +2490,9 @@ async function runGenerationPipeline(job, deps) {
     throwIfCancelled(deps);
   }
 
+  resourceEvent(job, "sourcing.resolved", { outcome: passageSourcing.used || stimulusSourcing.used ? "sourced" : "skipped", reason: passageSourcing.used || stimulusSourcing.used ? "verified_sources" : "not_applicable_or_unavailable" });
+  if (!passageSourcing.used) resourceEvent(job, "stage.skipped", { stageId: "sourcing.passage", reason: passageSourcing.warning ? "source_unavailable" : "not_required" });
+  if (!stimulusSourcing.used) resourceEvent(job, "stage.skipped", { stageId: "sourcing.stimulus", reason: stimulusSourcing.warning ? "source_unavailable" : "not_required" });
   const sourceState = sourceStateFromSourcing({ passageSourcing, stimulusSourcing });
   if (sourceState.sourcePlanner?.usageByProvider) {
     for (const [provider, usage] of Object.entries(
@@ -2488,7 +2558,14 @@ async function runGenerationPipeline(job, deps) {
     mathBearing: !isEnglishSubject(job.subject),
   };
   const questionCount = assertRequestSize(job);
-  let { parsed, raw } = job.resourceType === "worksheet" && job.subject === "maths" && questionCount > WORKSHEET_BATCH_SIZE
+  const usePlan = usesPlannedGeneration(job);
+  if (!usePlan) {
+    resourceEvent(job, "stage.skipped", { stageId: "plan.v2", reason: job.generationVersion === 1 ? "small_explicit_request" : "legacy_job" });
+    resourceEvent(job, "stage.skipped", { stageId: "content.review.v1", reason: "unplanned_resource" });
+  }
+  let { parsed, raw, warnings: contentWarnings = [], reviewStatus = "passed", contentReview = null } = usePlan
+    ? await generatePlannedResource({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, hasStimulus, stimulusImages, referenceText: uploadedContent.map((f) => f.content).join("\n") })
+    : job.resourceType === "worksheet" && job.subject === "maths" && questionCount > WORKSHEET_BATCH_SIZE
     ? await generateWorksheetBatches({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, count: questionCount })
     : splitSchemas
     ? await generateSplitResource({
@@ -2527,14 +2604,25 @@ async function runGenerationPipeline(job, deps) {
 
   // Maths questions name the diagram they need; build those now. English
   // resources carry no diagramType, so this is a no-op walk for them.
-  const diagramFill = await fillDiagrams({
-    job,
-    parsed,
-    callAi: trackedCallAi,
-    apiKey: null,
-    model: generationModel,
-    signal: deps.signal,
-  });
+  let diagramFill;
+  const beforeDiagrams = usePlan ? structuredClone(parsed) : null;
+  try {
+    diagramFill = await fillDiagrams({
+      job,
+      parsed,
+      callAi: trackedCallAi,
+      apiKey: null,
+      model: generationModel,
+      signal: deps.signal,
+    });
+  } catch (err) {
+    if (!usePlan || !canKeepDraftAfterReview(err) || collectDiagramTargets(beforeDiagrams).some((t) => t.diagramType !== "none" && t.diagramRequired !== false)) throw err;
+    parsed = beforeDiagrams;
+    reviewStatus = "draft";
+    contentWarnings.push(unavailableReviewWarning("Diagram review"));
+    diagramFill = { requested: 0, filled: 0 };
+    resourceEvent(job, "review.draft_retained", { stageId: "diagrams.fill", outcome: "draft", recoveryDecision: "keep_draft" }, "warn");
+  }
   if (diagramFill.requested) {
     logger.info("[resource] diagrams filled", {
       jobId: job.jobId,
@@ -2562,9 +2650,15 @@ async function runGenerationPipeline(job, deps) {
       model: generationModel,
     });
   } catch (err) {
-    if (raw && !err.rawAiText) err.rawAiText = raw;
-    err.usageByProvider = { ...usageByProvider };
-    throw err;
+    if (usePlan && canKeepDraftAfterReview(err)) {
+      reviewStatus = "draft";
+      contentWarnings.push(unavailableReviewWarning("Diagram review"));
+      diagramRepair = { changed: false, warnings: [] };
+    } else {
+      if (raw && !err.rawAiText) err.rawAiText = raw;
+      err.usageByProvider = { ...usageByProvider };
+      throw err;
+    }
   }
   // A repaired or omitted diagram changes the document, and `raw` is what a
   // retry or a revision re-reads — so it has to be the document that was built.
@@ -2612,23 +2706,32 @@ async function runGenerationPipeline(job, deps) {
   // array could not say which question it answered. Each group is verified in
   // its own right; guarding on Array.isArray alone would silently skip the
   // booklet, which is the type that most needs the pass.
+  if (!(includesWorking(answerMode) && job.subject === "maths")) resourceEvent(job, "stage.skipped", { stageId: "answers.verify", reason: "no_worked_maths_answers" });
   if (includesWorking(answerMode) && job.subject === "maths") {
     for (const group of answerGroupsFor(parsed)) {
-      const verified = await verifyMathsAnswers({
-        job,
-        parsed: { ...parsed, answers: group.rows },
-        apiKey: null,
-        callAi: trackedCallAi,
-        signal: deps.signal,
-      });
-      group.replace(parsed, verified.answers);
+      try {
+        const verified = await verifyMathsAnswers({
+          job,
+          parsed: { ...parsed, answers: group.rows },
+          apiKey: null,
+          callAi: trackedCallAi,
+          signal: deps.signal,
+        });
+        group.replace(parsed, verified.answers);
+      } catch (err) {
+        if (!usePlan || !canKeepDraftAfterReview(err)) throw err;
+        reviewStatus = "draft";
+        if (!contentWarnings.some((w) => w.code === "RESOURCE_ANSWER_REVIEW_UNAVAILABLE")) contentWarnings.push({
+          code: "RESOURCE_ANSWER_REVIEW_UNAVAILABLE", message: "Answer checking could not finish. Original worked solutions are retained in this draft; tutor review is required." });
+        resourceEvent(job, "review.draft_retained", { stageId: "answers.verify", outcome: "draft", errorCode: err?.code || "REVIEW_FAILED", recoveryDecision: "keep_draft" }, "warn");
+      }
       throwIfCancelled(deps);
     }
   }
 
   try {
     const saved = await saveGeneratedResource({
-      job,
+      job, reviewWarnings: contentWarnings, reviewStatus, contentReview,
       parsed,
       storage,
       buildDocx,
@@ -2673,8 +2776,13 @@ async function runGenerationPipeline(job, deps) {
  * Any model failure propagates so the queue can repair or fail over rather than
  * silently ship an unverified mark scheme.
  */
-async function verifyMathsAnswers({ job, parsed, apiKey, signal, callAi = callAiForResource }) {
+async function verifyMathsAnswers(args) {
+  return resourceStage(args.job, "answers.verify", () => verifyMathsAnswersLogged(args));
+}
+
+async function verifyMathsAnswersLogged({ job, parsed, apiKey, signal, callAi = callAiForResource }) {
   const rows = parsed.answers;
+  if (!rows.length) { resourceEvent(job, "stage.skipped", { stageId: "answers.verify", reason: "no_answers_to_check" }); return parsed; }
   if (rows.length > WORKSHEET_BATCH_SIZE) {
     const answers = [];
     for (let offset = 0; offset < rows.length; offset += WORKSHEET_BATCH_SIZE) {
@@ -2703,6 +2811,7 @@ Return ONLY corrections, as valid JSON, for the entries you actually changed:
   try {
     const model = modelForResourceJob(job);
     const { parsed: verifiedParsed } = await callAi({
+      optionalReview: usesPlannedGeneration(job),
       apiKey,
       model,
       // Raised from 8000: thinking tokens come out of this budget, and a
@@ -2808,6 +2917,8 @@ function buildRepairUserMessage(job) {
 }
 
 function canRepairJob(job) {
+  // Rewriting a reviewed planned resource in one call would bypass its scope gate.
+  if (usesPlannedGeneration(job)) return false;
   return (
     typeof job?.generatedJson === "string" &&
     job.generatedJson.trim().length > 0 &&
@@ -2828,6 +2939,11 @@ function diagramRepairModeForJob(job) {
 }
 
 async function runRepairPipeline(job, deps) {
+  return resourceStage(job, "repair", () => runRepairPipelineLogged(job, deps));
+}
+
+async function runRepairPipelineLogged(job, deps) {
+  for (const stageId of ["references", "sourcing.passage", "sourcing.stimulus", "plan.v2", "content.review.v1", "diagrams.fill", "answers.verify"]) resourceEvent(job, "stage.skipped", { stageId, reason: "dedicated_repair_pipeline" });
   const {
     storage,
     clock,
@@ -3098,6 +3214,11 @@ function revisionDriftWarnings(changes) {
  * source there would be picked up by the repair path instead of this one.
  */
 async function runRevisionPipeline(job, deps) {
+  return resourceStage(job, "revision", () => runRevisionPipelineLogged(job, deps));
+}
+
+async function runRevisionPipelineLogged(job, deps) {
+  for (const stageId of ["sourcing.passage", "sourcing.stimulus", "plan.v2", "content.review.v1", "diagrams.fill", "answers.verify"]) resourceEvent(job, "stage.skipped", { stageId, reason: "revision_uses_existing_resource" });
   const {
     db,
     storage,
@@ -3222,7 +3343,7 @@ function errorMessage(err) {
   return err?.message || String(err || "Unknown resource generation error");
 }
 
-async function finalizeResourceJobAttempt({ db, jobId, attemptId, patch }) {
+async function finalizeResourceJobAttempt({ db, jobId, attemptId, patch, clock }) {
   if (!db) throw new TypeError("finalizeResourceJobAttempt requires db");
   if (!jobId) throw new TypeError("finalizeResourceJobAttempt requires jobId");
   if (!attemptId) throw new TypeError("finalizeResourceJobAttempt requires attemptId");
@@ -3256,6 +3377,8 @@ async function finalizeResourceJobAttempt({ db, jobId, attemptId, patch }) {
     }
 
     const nextPatch = { ...patch };
+    const startMs = current.startedAt?.toMillis?.();
+    if (Number.isFinite(startMs)) nextPatch.activeElapsedMs = (current.activeElapsedMs || 0) + Math.max(0, (clock ? clock().getTime() : Date.now()) - startMs);
     if (patch.usageByProvider) {
       nextPatch.usageByProvider = mergeUsageByProvider(
         current.usageByProvider,
@@ -3354,6 +3477,7 @@ async function queueResourceFallback({ db, storage, job, err, clock }) {
     };
     tx.update(jobRef, {
       status: "fallback_pending",
+      activeElapsedMs: (current.activeElapsedMs || 0) + Math.max(0, (clock ? clock().getTime() : Date.now()) - (current.startedAt?.toMillis?.() || Date.now())),
       activeModel: targetModel,
       fallbackUsed: true,
       failover: {
@@ -3395,6 +3519,13 @@ async function queueResourceFallback({ db, storage, job, err, clock }) {
   });
 }
 
+async function emitResourceTerminal({ db, job, outcome, errorCode, clock }) {
+  let current = job;
+  try { const snap = await db.collection("resourceJobs").doc(job.jobId).get(); if (snap.exists) current = snap.data(); }
+  catch { resourceEvent(job, "summary.unavailable", { reason: "job_read_failed" }, "warn"); }
+  resourceEvent(job, `job.${outcome === "complete" ? "completed" : outcome}`, { ...terminalFields(current, outcome, clock ? clock() : new Date()), errorCode, reviewStatus: current.reviewStatus || "not_requested", warningCount: current.warnings?.length || 0 }, outcome === "failed" ? "error" : "info");
+}
+
 async function runQueueForTutor(createdBy, deps) {
   const {
     db,
@@ -3417,7 +3548,11 @@ async function runQueueForTutor(createdBy, deps) {
       attemptIdFactory: deps.attemptIdFactory,
     });
     if (!job) return outcomes;
-
+    job.invocationId = randomUUID();
+    job.resourceLogSink = deps.resourceLogSink;
+    resourceEvent(job, "worker.claimed", { generationVersion: job.generationVersion || 0,
+      stageCount: job.stageCount, retryCount: job.stageRecoveryCount || 0, model: modelForResourceJob(job),
+      queueWaitMs: job.queueTurnAt?.toMillis ? Date.now() - job.queueTurnAt.toMillis() : job.createdAt?.toMillis ? Date.now() - job.createdAt.toMillis() : undefined });
     if (diagramRepairModeForJob(job)) job.repairMode = "diagram";
 
     // Watch this attempt for a cancel request and abort the in-flight AI call.
@@ -3432,7 +3567,7 @@ async function runQueueForTutor(createdBy, deps) {
     };
 
     if (deps.durableStages) {
-      jobDeps.callAi = createDurableCaller({ job, db, storage, clock, callAi: deps.callAi || callAiForResource });
+      jobDeps.callAi = createDurableCaller({ job, db, storage, clock, callAi: deps.callAi || callAiForResource, fallbackModel: deps.enableFailover === false ? null : fallbackTargetForJob(job) });
     }
 
     const attemptRepair = async () => {
@@ -3483,7 +3618,7 @@ async function runQueueForTutor(createdBy, deps) {
 
             // Diagrams that exhausted their own repair budget are done: see
             // canRepairJob. Everything else still gets the whole-document pass.
-            if (!err.diagramRepairExhausted) {
+            if (!err.diagramRepairExhausted && canRepairJob(job)) {
               const repairAttempt = await attemptRepair();
               result = repairAttempt.result;
               repairError = repairAttempt.error || repairError;
@@ -3500,7 +3635,7 @@ async function runQueueForTutor(createdBy, deps) {
         }
       }
       const finalized = await finalizeResourceJobAttempt({
-        db,
+        db, clock,
         jobId: job.jobId,
         attemptId: job.attemptId,
         patch: {
@@ -3510,6 +3645,7 @@ async function runQueueForTutor(createdBy, deps) {
             result.effectiveProvider || providerForModel(result.model || modelForResourceJob(job)),
           model: result.effectiveModel || result.model || modelForResourceJob(job),
           status: "complete",
+          ...(job.generationVersion === 1 ? { fallbackUsed: Boolean(job.fallbackUsed || job.stageFallbackCount) } : {}),
           completedAt: now(clock),
           diagramRepairExhausted: false,
           diagramRepairs: result.diagramRepairs || null,
@@ -3533,9 +3669,11 @@ async function runQueueForTutor(createdBy, deps) {
           jobId: job.jobId,
           attemptId: job.attemptId,
         });
+        resourceEvent(job, "worker.superseded", { outcome: "superseded" });
         outcomes.push({ jobId: job.jobId, status: "superseded" });
         continue;
       }
+      await emitResourceTerminal({ db, job, outcome: "complete", clock });
       outcomes.push({
         jobId: job.jobId,
         status: "complete",
@@ -3545,7 +3683,7 @@ async function runQueueForTutor(createdBy, deps) {
       });
     } catch (err) {
       if (err?.code === "RESOURCE_STAGE_YIELD") {
-        const resumed = await finalizeResourceJobAttempt({ db, jobId: job.jobId, attemptId: job.attemptId,
+        const resumed = await finalizeResourceJobAttempt({ db, clock, jobId: job.jobId, attemptId: job.attemptId,
           patch: {
             status: "pending", stageContinuation: true, queueTurnAt: now(clock), startedAt: null, error: null,
             // A parse/schema failure can hand off to repair after consuming this
@@ -3557,12 +3695,15 @@ async function runQueueForTutor(createdBy, deps) {
               repairMode: job.repairMode || null,
             } : {}),
           } });
-        return [...outcomes, { jobId: job.jobId, status: resumed === "cancelled" ? "cancelled" : resumed ? "pending" : "superseded" }];
+        const continuationOutcome = resumed === "cancelled" ? "cancelled" : resumed ? "pending" : "superseded";
+        if (continuationOutcome === "cancelled") await emitResourceTerminal({ db, job, outcome: "cancelled", clock });
+        resourceEvent(job, "worker.continued", { outcome: continuationOutcome });
+        return [...outcomes, { jobId: job.jobId, status: continuationOutcome }];
       }
       // A tutor stopped the job mid-flight: finalize as cancelled, not failed.
       if (isCancellationError(err) || watcher.isCancelled()) {
         const finalized = await finalizeResourceJobAttempt({
-          db,
+          db, clock,
           jobId: job.jobId,
           attemptId: job.attemptId,
           patch: {
@@ -3575,9 +3716,11 @@ async function runQueueForTutor(createdBy, deps) {
           },
         });
         if (!finalized) {
+          resourceEvent(job, "worker.superseded", { outcome: "superseded" });
           outcomes.push({ jobId: job.jobId, status: "superseded" });
           continue;
         }
+        await emitResourceTerminal({ db, job, outcome: "cancelled", clock });
         logger.info("[runQueueForTutor] job cancelled by request", {
           jobId: job.jobId,
           attemptId: job.attemptId,
@@ -3595,6 +3738,7 @@ async function runQueueForTutor(createdBy, deps) {
           clock,
         });
         if (queued) {
+          resourceEvent(job, "provider.fallback_queued", { recoveryDecision: "fallback", model: fallbackTargetForJob(job) }, "warn");
           outcomes.push({
             jobId: job.jobId,
             status: "fallback_pending",
@@ -3639,7 +3783,7 @@ async function runQueueForTutor(createdBy, deps) {
       patch.diagramRepairExhausted = Boolean(err?.diagramRepairExhausted);
       patch.diagramRepairs = err?.diagramRepairs || null;
       const finalized = await finalizeResourceJobAttempt({
-        db,
+        db, clock,
         jobId: job.jobId,
         attemptId: job.attemptId,
         patch,
@@ -3650,9 +3794,11 @@ async function runQueueForTutor(createdBy, deps) {
           attemptId: job.attemptId,
           errorMessage: patch.error,
         });
+        resourceEvent(job, "worker.superseded", { outcome: "superseded" });
         outcomes.push({ jobId: job.jobId, status: "superseded" });
         continue;
       }
+      await emitResourceTerminal({ db, job, outcome: "failed", errorCode: patch.errorCode || "UNCLASSIFIED", clock });
       outcomes.push({ jobId: job.jobId, status: "failed", error: patch.error });
     } finally {
       watcher.stop();
@@ -3754,13 +3900,18 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   // provider. After a content failure (invalid JSON, a missing required
   // diagram, a model error) a saved response may itself be the cause, and
   // replaying it would fail the same way every time, so Retry starts fresh.
-  if (deps.storage && !resumableFailure(job)) {
+  const canResume = resumableFailure(job);
+  if (deps.storage && !canResume) {
     await deps.storage.bucket().deleteFiles({ prefix: `resources/checkpoints/${payload.jobId}/` });
   }
 
   const modelChoice = inferModelChoice(job);
   const requestedModel = configuredModelForResourceType(job.resourceType, modelChoice);
+  const retryRunId = randomUUID();
   await jobRef.update({
+    runId: retryRunId, runStartedAt: now(clock), activeElapsedMs: 0, queueElapsedMs: 0, queueTurnAt: now(clock),
+    stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0, optionalReviewFailures: {}, reviewStatus: null, contentReview: null,
+    progress: canResume ? job.progress || null : null,
     status: "pending",
     modelChoice,
     requestedModel,
@@ -3773,6 +3924,10 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     failover: null,
     failureAttempts: [],
     recoveryCount: 0,
+    ...(job.generationVersion === 1 ? {
+      stageRecoveryCount: 0,
+      stageRecovery: Object.fromEntries(Object.entries(canResume ? job.stageRecovery || {} : {}).filter(([, v]) => v.split).map(([k]) => [k, { split: true, failures: 0 }])),
+    } : {}),
     usageByProvider: {},
     warnings: [],
     error: null,
@@ -3788,6 +3943,7 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     completedAt: null,
   });
 
+  resourceEvent({ ...job, runId: retryRunId, attemptId: null }, "job.retry_queued", { recoveryDecision: "manual_retry" });
   const outcomes = deps.durableStages ? [] : await (deps.runQueueForTutor || runQueueForTutor)(
     job.createdBy,
     deps
@@ -3801,13 +3957,15 @@ async function cancelResourceJobImpl({ payload, actor, deps }) {
   if (!actor?.uid) throw new TypeError("cancelResourceJobImpl requires actor.uid");
 
   const jobRef = db.collection("resourceJobs").doc(payload.jobId);
-  return db.runTransaction(async (tx) => {
+  let committedJob;
+  const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(jobRef);
     if (!snap.exists) {
       throw new HttpsError("not-found", `Resource job not found: ${payload.jobId}`);
     }
 
     const job = snap.data() || {};
+    committedJob = job;
     if (actor.role !== "admin" && job.createdBy !== actor.uid) {
       throw new HttpsError("permission-denied", "You can only stop your own resource jobs");
     }
@@ -3840,6 +3998,9 @@ async function cancelResourceJobImpl({ payload, actor, deps }) {
       "This job has already finished — there is nothing to stop."
     );
   });
+  if (result.status === "cancelled") await emitResourceTerminal({ db, job: { ...committedJob, jobId: payload.jobId }, outcome: "cancelled", clock });
+  else resourceEvent({ ...committedJob, jobId: payload.jobId }, "job.cancel_requested", { outcome: result.status });
+  return result;
 }
 
 async function deleteStorageObject({ storage, path }) {
@@ -3982,6 +4143,7 @@ async function recoverStuckResourceJobsImpl({ deps }) {
 
   const createdBySet = new Set();
   const recoveredJobIds = [];
+  const recoveryLogContext = { invocationId: randomUUID(), resourceLogSink: deps.resourceLogSink };
   for (const doc of snap.docs) {
     const queriedJob = doc.data() || {};
     const queriedAttemptId = queriedJob.attemptId || null;
@@ -4028,6 +4190,10 @@ async function recoverStuckResourceJobsImpl({ deps }) {
       jobId: doc.id,
       attemptId: queriedAttemptId,
     });
+    resourceEvent({ ...queriedJob, ...recoveryLogContext, jobId: doc.id }, "worker.lease_recovered", { recoveryDecision: queriedJob.cancelRequested ? "cancel" : (queriedJob.recoveryCount || 0) >= MAX_RECOVERIES ? "exhausted" : "requeue" }, "warn");
+    if (queriedJob.cancelRequested || (queriedJob.recoveryCount || 0) >= MAX_RECOVERIES) {
+      await emitResourceTerminal({ db, job: { ...queriedJob, ...recoveryLogContext, jobId: doc.id }, outcome: queriedJob.cancelRequested ? "cancelled" : "failed", errorCode: queriedJob.cancelRequested ? undefined : "RESOURCE_WORKER_RECOVERY_EXHAUSTED", clock });
+    }
     recoveredJobIds.push(doc.id);
     if (queriedJob.createdBy) createdBySet.add(queriedJob.createdBy);
   }
@@ -4065,6 +4231,7 @@ async function recoverStuckResourceJobsImpl({ deps }) {
       return true;
     });
     if (!recovered) continue;
+    resourceEvent({ ...queriedJob, ...recoveryLogContext, jobId: doc.id }, "worker.handoff_recovered", { recoveryDecision: "requeue", reason: "fallback_worker_not_started" }, "warn");
     recoveredJobIds.push(doc.id);
     if (queriedJob.createdBy) createdBySet.add(queriedJob.createdBy);
   }
