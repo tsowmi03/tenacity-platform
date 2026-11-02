@@ -177,3 +177,56 @@ it("passes safe validation feedback to the next attempt without losing its check
   assert.equal(h.values.size, 1);
   assert.ok(!JSON.stringify(h.events).includes("private generated text"));
 });
+
+it("retains a labelled downloadable draft after a review failure across worker continuations", async () => {
+  const { runGenerationPipeline } = require("../../src/resources");
+  const mammoth = require("mammoth");
+  const h = harness({ resourceType: "worksheet", subject: "maths", year: "10", answerMode: "worked", createdBy: "tutor", customPrompt: prompt });
+  const calls = [];
+  const provider = fakeProvider(plan(), calls);
+  let reviews = 0;
+  let result;
+  for (let turn = 0; turn < 30; turn++) {
+    try {
+      result = await runGenerationPipeline(h.job(), { db: h.db, storage: h.storage,
+        callAi: h.caller(async (req) => {
+          if (req.systemPrompt.startsWith("Independently audit")) { reviews++; throw Object.assign(new Error("private provider failure"), { modelFailure: true }); }
+          if (req.systemPrompt.startsWith("You are a senior mathematics")) return { parsed: { corrections: [] } };
+          return provider(req);
+        }) });
+      break;
+    } catch (err) { assert.equal(err.code, "RESOURCE_STAGE_YIELD", err.stack); }
+  }
+  assert.ok(result?.outputPath);
+  assert.equal(result.reviewStatus, "draft");
+  assert.equal(reviews, 1, "failed optional review is not repeated on every continuation");
+  assert.ok(result.warnings.some((w) => w.code === "RESOURCE_REVIEW_UNAVAILABLE"));
+  const text = await mammoth.extractRawText({ buffer: Buffer.from(h.values.get(result.outputPath)) });
+  assert.match(text.value, /DRAFT - tutor review required/);
+  assert.match(text.value, /Unique problem 14/);
+});
+
+it("returns a real DOCX with review notes for content concerns instead of throwing away the paper", async () => {
+  const { runGenerationPipeline } = require("../../src/resources");
+  const mammoth = require("mammoth");
+  const h = harness({ resourceType: "practice-paper", subject: "maths", year: "10", answerMode: "none", createdBy: "tutor", customPrompt: "90-minute paper. Algebra; Geometry." });
+  const calls = [];
+  const provider = fakeProvider(plan(), calls);
+  let result;
+  for (let turn = 0; turn < 20; turn++) {
+    try {
+      result = await runGenerationPipeline(h.job(), { db: h.db, storage: h.storage, callAi: h.caller(async (req) => {
+        const response = await provider(req);
+        if (req.systemPrompt.startsWith("Independently audit")) { response.parsed.scopePass = false; response.parsed.questions.forEach((q) => { q.estimatedMinutes = 8; }); }
+        return response;
+      }) });
+      break;
+    } catch (err) { assert.equal(err.code, "RESOURCE_STAGE_YIELD", err.stack); }
+  }
+  assert.ok(result?.outputPath);
+  assert.equal(result.reviewStatus, "warnings");
+  assert.ok(result.warnings.some((w) => w.code === "RESOURCE_TIMING_WARNING"));
+  const text = await mammoth.extractRawText({ buffer: Buffer.from(h.values.get(result.outputPath)) });
+  assert.match(text.value, /Tutor review recommended/);
+  assert.match(text.value, /Estimated answering time is 112 minutes/);
+});

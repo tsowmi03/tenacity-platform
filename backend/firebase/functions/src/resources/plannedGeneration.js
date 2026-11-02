@@ -39,7 +39,7 @@ function validatePlan(result, job, userMessage, scope = { eligible: [], excluded
   const total = requestedQuestionCount(job.customPrompt);
   if (!each && total && plan.questions.length !== total) invalid();
   // Coded scope is checked through sourceIds; a multipart question may test several topics.
-  if (!scope.eligible.length && names.some((topic) => !plan.questions.some((q) => q.topic === topic))) invalid("incomplete_topic_coverage");
+  // Coverage shortfalls are reported as review notes, never a late fatal error.
   const sections = plan.questions.map((q) => q.section).filter((name, i, all) => i === 0 || all[i - 1] !== name);
   if (new Set(sections).size !== sections.length) invalid();
   if (job.resourceType === "practice-paper" && !plan.timeAllowed) invalid();
@@ -86,10 +86,10 @@ async function generatePlannedResource({ job, request, callAi, hasStimulus = fal
   const { parsed: plan } = await callAi({ ...request,
     stageId: "plan.v2", stageLabel: "Planning topics, question counts and sections",
     maxTokens: 16000, responseSchema: PLAN_SCHEMA, validateStageResult,
-    userMessage: `${request.userMessage}\n\nREFERENCE-DERIVED SCOPE (eligible IDs must all be covered, excluded IDs must never be covered): ${JSON.stringify(scope)}`,
+    userMessage: `${request.userMessage}\n\nREFERENCE-DERIVED SCOPE (use representative chapter coverage for papers unless every subsection is explicitly requested; honour exclusions): ${JSON.stringify(scope)}`,
     systemPrompt: `Plan an educational resource; do not write questions or solutions. Return the supplied JSON schema.
 Resolve the tutor's exact scope and exclusions using the supplied references. Topics must each quote exact evidence from the user's message or references. A textbook title alone does not establish its chapter contents. If the topic list or exclusions cannot be established, return a non-empty clarification and empty topics/questions; never invent a contents list.
-For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwise obey any requested total. For timed papers, allocate sections, progressively harder questions and marks that reasonably fit the sitting time. Use a reasonable number of main questions with labelled parts to combine related skills. topics may group by chapter; sourceIds track detailed coverage independently of the primary topic label. If complete requested coverage is unrealistic in the sitting time, return a clarification rather than pretending it fits. Do not silently reduce scope to fit a limit: if the resolved total exceeds ${MAX_QUESTIONS}, set clarification to "SIZE_LIMIT" and leave questions empty. Use consecutive global numbers from 1; assign each a topic, section, difficulty and marks. Give every question sourceIds from the eligible reference inventory (multiple IDs allowed when the actual multipart question tests those skills), and a realistic positive estimatedMinutes. Cover every eligible ID. Balance chapter marks fairly. Do not merely attach IDs to questions that do not test them. Sum the question minutes to 75–100% of the requested sitting time; preserve the exact requested timeAllowed. Without coded references use an empty sourceIds array. Supply title and timeAllowed (empty for untimed worksheets). clarification must be empty when the scope is resolved.`,
+For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwise obey any requested total. For timed papers, allocate sections, progressively harder questions and marks that reasonably fit the sitting time. Use a reasonable number of main questions with labelled parts to combine related skills. topics may group by chapter; sourceIds track detailed coverage independently of the primary topic label. Aim for the sitting time with representative chapter coverage. If the coverage is ambitious, produce a usable plan and let the review flag the trade-off; do not return a clarification solely for workload or coverage concerns. Do not silently reduce scope to fit a limit: if the resolved total exceeds ${MAX_QUESTIONS}, set clarification to "SIZE_LIMIT" and leave questions empty. Use consecutive global numbers from 1; assign each a topic, section, difficulty and marks. Give every question sourceIds from the eligible reference inventory (multiple IDs allowed when the actual multipart question tests those skills), and a realistic positive estimatedMinutes. For chapter coverageMode, sample across every eligible chapter; do not force every subsection into a timed paper. For section coverageMode, aim to cover every requested ID. Balance chapter marks fairly. Do not merely attach IDs to questions that do not test them. Sum the question minutes to 75–100% of the requested sitting time; preserve the exact requested timeAllowed. Without coded references use an empty sourceIds array. Supply title and timeAllowed (empty for untimed worksheets). clarification must be empty when the scope is resolved.`,
   });
   validateStageResult({ parsed: plan });
   resourceEvent(job, "plan.resolved", { stageId: "plan.v2", questionCount: plan.questions.length, generationVersion: 1 });
@@ -153,7 +153,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     const parsed = { ...chunks[0], title: plan.title, totalMarks: plan.questions.reduce((n, q) => n + q.marks, 0),
       [answerKey]: chunks.flatMap((p) => p[answerKey] || []) };
     if (job.resourceType === "practice-paper") {
-      parsed.timeAllowed = plan.timeAllowed;
+      parsed.timeAllowed = scope.minutes ? `${scope.minutes} minutes` : plan.timeAllowed;
       parsed.topics = plan.topics.map((t) => t.name);
       parsed.sections = [...new Set(plan.questions.map((q) => q.section))].map((title) => ({ title,
         questions: rows.filter((q) => plan.questions[q.number - 1].section === title) }));
@@ -162,8 +162,9 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     if (job.answerMode !== "none") validateAnswers({ parsed }, rows, answerKey);
     return { parsed, raw: JSON.stringify(parsed) };
   });
-  await verifyPlannedContent({ job, request, callAi, plan, parsed: assembled.parsed, scope });
-  return assembled;
+  const review = await verifyPlannedContent({ job, request, callAi, plan, parsed: assembled.parsed, scope });
+  return { ...assembled, reviewStatus: review.status, contentReview: review.summary,
+    warnings: [...validatePlannedCoverage(plan, scope), ...review.warnings] };
 }
 
 module.exports = { usesPlannedGeneration, generatePlannedResource, perTopicCount, validatePlan, validateQuestions, validateAnswers };

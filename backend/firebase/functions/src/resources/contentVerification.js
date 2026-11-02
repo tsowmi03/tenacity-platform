@@ -1,6 +1,7 @@
 "use strict";
 
 const { controlError } = require("./durableStages");
+const { isCancellationError } = require("./cancellation");
 const { resourceEvent, resourceStage } = require("./resourceLog");
 const object = (properties) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
 const str = { type: "string" };
@@ -33,33 +34,45 @@ function sourceScope(job, text = "") {
     (Number(id.match(/^\d+/)[0]) === Number(cutoff.match(/^\d+/)[0]) && id.at(-1) > cutoff.at(-1)));
   const excluded = unique.filter((t) => chapters.includes(t.chapter) || after(t.id));
   const excludedIds = new Set(excluded.map((t) => t.id));
-  return { eligible: unique.filter((t) => !excludedIds.has(t.id)), excluded, minutes: requestedMinutes(prompt) };
+  const explicitSections = /\b(?:all|every|each)\s+(?:individual\s+)?(?:subsections?|subtopics?|sections?)\b|\b(?:per|each)\s+topic/i.test(prompt);
+  return { eligible: unique.filter((t) => !excludedIds.has(t.id)), excluded, minutes: requestedMinutes(prompt),
+    coverageMode: job.resourceType === "practice-paper" && !explicitSections ? "chapter" : "section" };
+}
+
+function coverageCounts(scope, ids) {
+  const eligible = new Set(scope.eligible.map((t) => t.id));
+  const covered = new Set(ids);
+  const chapter = (id) => String(id).match(/^\d+/)?.[0];
+  const requiredUnits = scope.coverageMode === "chapter" ? new Set([...eligible].map(chapter)) : eligible;
+  const coveredUnits = scope.coverageMode === "chapter" ? new Set([...covered].filter((id) => eligible.has(id)).map(chapter)) : covered;
+  return { required: requiredUnits.size, covered: [...requiredUnits].filter((id) => coveredUnits.has(id)).length,
+    missing: [...requiredUnits].filter((id) => !coveredUnits.has(id)).length,
+    excluded: eligible.size ? [...covered].filter((id) => !eligible.has(id)).length : 0 };
 }
 
 function validatePlannedCoverage(plan, scope) {
-  const invalid = (reason) => { throw Object.assign(controlError("RESOURCE_PLAN_INVALID", "The plan omitted required topics, included excluded topics, or did not fit the requested sitting time."), { reason }); };
-  if (scope.eligible.length) {
-    const eligible = new Set(scope.eligible.map((t) => t.id));
-    const covered = new Set();
-    for (const q of plan.questions) {
-      if (!Array.isArray(q.sourceIds) || !q.sourceIds.length || q.sourceIds.some((id) => !eligible.has(id))) invalid("missing_or_excluded_source_ids");
-      q.sourceIds.forEach((id) => covered.add(id));
-    }
-    if (covered.size !== eligible.size) invalid("incomplete_source_coverage");
-    // Allocate marks across chapters; a multi-topic question shares its marks.
-    const weights = new Map();
-    for (const q of plan.questions) for (const id of q.sourceIds) {
-      const chapter = Number(id.match(/^\d+/)[0]);
-      weights.set(chapter, (weights.get(chapter) || 0) + q.marks / q.sourceIds.length);
-    }
-    const mean = [...weights.values()].reduce((a, b) => a + b, 0) / weights.size;
-    if (weights.size > 1 && [...weights.values()].some((w) => w > mean * 1.8)) invalid("chapter_marks_unbalanced");
-  }
+  const warnings = [];
+  const coverage = coverageCounts(scope, plan.questions.flatMap((q) => q.sourceIds || []));
+  if (coverage.missing || coverage.excluded) warnings.push({ code: "RESOURCE_PLAN_COVERAGE_WARNING", message: "The plan may not fully match the requested coverage or exclusions. Tutor review recommended." });
   if (scope.minutes) {
-    const allowed = requestedMinutes(plan.timeAllowed || "");
     const minutes = plan.questions.reduce((n, q) => n + (Number(q.estimatedMinutes) || 0), 0);
-    if (allowed !== scope.minutes || plan.questions.some((q) => !(q.estimatedMinutes > 0)) || minutes > scope.minutes || minutes < scope.minutes * 0.75) invalid("sitting_time_mismatch");
+    if (requestedMinutes(plan.timeAllowed || "") !== scope.minutes || minutes > scope.minutes || minutes < scope.minutes * 0.75) {
+      warnings.push({ code: "RESOURCE_PLAN_TIMING_WARNING", message: `The plan may need a different workload for the requested ${scope.minutes}-minute sitting. Tutor review recommended.` });
+    }
   }
+  return warnings;
+}
+
+// Control flow and unusable documents must still stop. A failed optional review
+// should not discard valid questions/answer links or restart the whole resource.
+function canKeepDraftAfterReview(err) {
+  if (isCancellationError(err) || ["RESOURCE_STAGE_YIELD", "RESOURCE_SUPERSEDED"].includes(err?.code) ||
+      err?.resourceInfrastructure || err?.name === "ResourceValidationError" || err?.diagramRequired) return false;
+  return Boolean(err?.modelFailure || ["RESOURCE_REVIEW_UNAVAILABLE", "RESOURCE_STAGE_TIMEOUT", "RESOURCE_RECOVERY_EXHAUSTED", "RESOURCE_STAGE_LIMIT", "RESOURCE_BATCH_INVALID", "RESOURCE_MATH_UNRESOLVED", "RESOURCE_LOCAL_BUDGET"].includes(err?.code));
+}
+
+function unavailableReviewWarning(stage = "Content review") {
+  return { code: "RESOURCE_REVIEW_UNAVAILABLE", message: `${stage} could not finish. A downloadable draft is retained; tutor review is required before use.` };
 }
 
 function validateReview(result, questions) {
@@ -74,40 +87,45 @@ function validateReview(result, questions) {
 }
 
 async function verifyPlannedContent(args) {
-  return resourceStage(args.job, "content.review", () => verifyPlannedContentLogged(args));
+  try {
+    return await resourceStage(args.job, "content.review", () => verifyPlannedContentLogged(args));
+  } catch (err) {
+    if (!canKeepDraftAfterReview(err)) throw err;
+    resourceEvent(args.job, "content.review_unavailable", { outcome: "draft", errorCode: err?.code || "REVIEW_FAILED", recoveryDecision: "keep_draft" }, "warn");
+    return { status: "draft", warnings: [unavailableReviewWarning()], summary: { status: "unavailable" } };
+  }
 }
 
 async function verifyPlannedContentLogged({ job, request, callAi, plan, parsed, scope }) {
   const questions = job.resourceType === "practice-paper" ? parsed.sections.flatMap((s) => s.questions) : parsed.questions;
-  const result = await callAi({ ...request, stageId: "content.review.v1", stageLabel: "Checking topic coverage, exclusions and sitting time",
+  const result = await callAi({ ...request, optionalReview: true, stageId: "content.review.v1", stageLabel: "Checking topic coverage, exclusions and sitting time",
     maxTokens: 12000, effort: "medium", responseSchema: REVIEW_SCHEMA,
-    systemPrompt: `Independently audit an educational resource against the ORIGINAL tutor request and source contents. Do not accept the planner's coverage labels as proof. Read the actual questions and parts. For each question list only source IDs substantively tested (not merely mentioned), and estimate realistic student answering minutes, including multipart work. Check exclusions, mathematical validity, fair chapter coverage and accessible-to-extending difficulty progression. Report missing requested coverage and any excluded content in issues. scopePass and difficultyPass must be false when their corresponding checks fail. Assess difficultyPass only on the progression of question difficulty; do not make it false merely because the workload takes too long. Timing is checked separately using your estimatedMinutes. Do not rewrite the resource.`,
+    systemPrompt: `Independently audit an educational resource against the ORIGINAL tutor request and source contents. Do not accept the planner's coverage labels as proof. Read the actual questions and parts. For each question list only source IDs substantively tested (not merely mentioned), and estimate realistic student answering minutes, including multipart work. Check exclusions, mathematical validity, fair chapter coverage and accessible-to-extending difficulty progression. Use SOURCE SCOPE coverageMode: chapter means representative coverage across each eligible chapter; section means every eligible subsection was explicitly requested. Report missing requested coverage and any excluded content in issues. scopePass and difficultyPass must be false when their corresponding checks fail. Assess difficultyPass only on the progression of question difficulty; do not make it false merely because the workload takes too long. Timing is checked separately using your estimatedMinutes. Do not rewrite the resource.`,
     userMessage: `${request.userMessage}\n\nSOURCE SCOPE: ${JSON.stringify(scope)}\nSAVED PLAN: ${JSON.stringify(plan)}\nGENERATED RESOURCE TO CHECK: ${JSON.stringify(parsed)}`,
     validateStageResult: (r) => validateReview(r, questions),
   });
   validateReview(result, questions);
   const review = result.parsed;
-  const eligible = new Set(scope.eligible.map((t) => t.id));
-  const covered = new Set(review.questions.flatMap((q) => q.coveredSourceIds));
+  const covered = review.questions.flatMap((q) => q.coveredSourceIds);
+  const coverage = coverageCounts(scope, covered);
   const estimatedMinutes = review.questions.reduce((n, q) => n + q.estimatedMinutes, 0);
-  const scopeMatches = !eligible.size || (covered.size === eligible.size && [...covered].every((id) => eligible.has(id)));
   const timingMatches = !scope.minutes || (estimatedMinutes <= scope.minutes && estimatedMinutes >= scope.minutes * 0.75);
-  const passed = review.scopePass && review.difficultyPass && !review.issues.length && scopeMatches && timingMatches;
-  resourceEvent(job, "content.verified", { outcome: passed ? "passed" : "rejected", questionCount: questions.length,
-    requiredTopicCount: eligible.size, coveredTopicCount: covered.size, estimatedMinutes, requestedMinutes: scope.minutes, issueCount: review.issues.length,
-    scopePass: review.scopePass && scopeMatches, timingPass: timingMatches, difficultyPass: review.difficultyPass,
-    missingTopicCount: [...eligible].filter((id) => !covered.has(id)).length,
-    excludedTopicCount: eligible.size ? [...covered].filter((id) => !eligible.has(id)).length : 0 });
-  if (!passed) {
-    const failedChecks = [];
-    if (!review.scopePass || !scopeMatches) failedChecks.push("topic coverage/exclusions");
-    if (!timingMatches) failedChecks.push("estimated sitting time");
-    if (!review.difficultyPass) failedChecks.push("difficulty progression");
-    if (!failedChecks.length) failedChecks.push("content quality");
-    throw Object.assign(controlError("RESOURCE_CONTENT_INVALID", `The generated resource failed ${failedChecks.join(", ")} checks. Retry for a fresh generation; narrow the scope or allow more time if needed.`),
-      { reason: failedChecks.join("|") });
-  }
-  return review;
+  const warnings = [];
+  if (coverage.missing) warnings.push({ code: "RESOURCE_COVERAGE_WARNING", message: `Review confirmed ${coverage.covered} of ${coverage.required} requested ${scope.coverageMode === "chapter" ? "chapters" : "subsection topics"}. Tutor review recommended.` });
+  if (coverage.excluded) warnings.push({ code: "RESOURCE_EXCLUSIONS_WARNING", message: "The review identified content outside the requested scope. Check the exclusions before use." });
+  if (!timingMatches) warnings.push({ code: "RESOURCE_TIMING_WARNING", message: `Estimated answering time is ${estimatedMinutes} minutes for the requested ${scope.minutes}-minute sitting. Tutor review recommended.` });
+  if (!review.difficultyPass) warnings.push({ code: "RESOURCE_DIFFICULTY_WARNING", message: "Check the difficulty progression before using this resource." });
+  if (review.issues.length || !review.scopePass) warnings.push({ code: "RESOURCE_CONTENT_WARNING", message: "The content review raised concerns. Check the questions and answers before use." });
+  const status = warnings.length ? "warnings" : "passed";
+  const summary = { status, coverageMode: scope.coverageMode || "section", requiredTopics: coverage.required,
+    coveredTopics: coverage.covered, missingTopics: coverage.missing, excludedTopics: coverage.excluded,
+    estimatedMinutes, requestedMinutes: scope.minutes || null, issueCount: review.issues.length };
+  resourceEvent(job, "content.verified", { outcome: status, questionCount: questions.length,
+    requiredTopicCount: coverage.required, coveredTopicCount: coverage.covered, estimatedMinutes, requestedMinutes: scope.minutes, issueCount: review.issues.length,
+    scopePass: review.scopePass && !coverage.missing && !coverage.excluded, timingPass: timingMatches, difficultyPass: review.difficultyPass,
+    missingTopicCount: coverage.missing, excludedTopicCount: coverage.excluded }, warnings.length ? "warn" : "info");
+  return { status, warnings, summary };
 }
 
-module.exports = { sourceScope, requestedMinutes, validatePlannedCoverage, verifyPlannedContent, validateReview };
+module.exports = { sourceScope, requestedMinutes, validatePlannedCoverage, verifyPlannedContent, validateReview,
+  coverageCounts, canKeepDraftAfterReview, unavailableReviewWarning };

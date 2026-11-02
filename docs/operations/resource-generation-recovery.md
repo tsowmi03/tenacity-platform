@@ -186,10 +186,10 @@ outcome. Optional preview stages can finish with `outcome: unavailable`; inspect
 For exhaustive requests backed by coded contents pages (for example `1A`, `1B`,
 `10H`), the scope resolver extracts a section inventory from the reference text.
 It supports chapter exclusions and an inclusive “everything after section X”
-boundary. The plan must cover every eligible ID, contain no excluded IDs, avoid
-chapter mark dominance and preserve the requested sitting duration. Multipart
-questions may cover several section IDs. Planned answering estimates must total
-75–100% of the sitting duration. Per-topic worksheets resolve their true total
+boundary. The plan aims to respect exclusions, balance chapter marks and preserve the
+requested sitting duration. Coverage/timing concerns are advisory warnings. Multipart
+questions may cover several section IDs. Planned answering estimates target
+75–100% of the sitting duration; a mismatch is a review note, not a fatal error. Per-topic worksheets resolve their true total
 before generation; totals above the configured limit are rejected, not silently
 reduced. Uncoded or more complex source layouts still require model review and
 may require clarification; this is not a general textbook parser.
@@ -199,9 +199,8 @@ reference scope and actual assembled questions/solutions. It independently
 reports actual covered IDs and answering-time estimates, and checks exclusions,
 mathematical validity, chapter balance and difficulty progression. Passing plan
 labels alone are insufficient. Missing/extra coverage, review issues or a
-reviewed timing mismatch stop the resource with `RESOURCE_CONTENT_INVALID`
-before document publication. Manual Retry discards the rejected journal and
-regenerates; a whole-document repair cannot bypass the review of a planned job.
+reviewed timing mismatch produce a downloadable document with review notes.
+A whole-document rewrite is not used to chase a speculative quality score.
 This model review is an additional quality gate, not a guarantee of educational
 or mathematical correctness.
 
@@ -240,3 +239,43 @@ checkpoint objects and, on success, `resource.docx`. `provider-responses/` keeps
 response bodies for local diagnosis only; it excludes API keys and must not be
 committed or published. Choose a fresh output directory per replay. The runner
 has a bounded call budget and stops starting calls after 45 minutes.
+
+
+## Advisory review and downloadable drafts (current completion policy)
+
+Coverage, sitting-time estimates and difficulty are review findings. They never
+invalidate otherwise usable generated questions/solutions. Jobs finish with
+`status: complete` so downloads and previews remain available, plus:
+
+- `reviewStatus: warnings`: a completed review raised concerns. The app shows
+  **Review recommended**, the details show every warning, and the DOCX includes
+  a tutor-review notice.
+- `reviewStatus: draft`: an optional content, answer, diagram or notation review
+  could not finish. The app shows **Draft available**, and the file is labelled
+  **DRAFT - tutor review required**. Valid original content is retained.
+
+Timed papers use representative chapter coverage by default. Explicit requests
+to test every subsection/subtopic, and per-topic worksheets, still track detailed
+section coverage. Exclusions are checked in both modes. Timing estimates and
+coverage counts remain visible; an estimated overrun is not a reason to throw
+away the paper. The requested sitting time remains on the cover even when the
+review estimates a different workload.
+
+Optional provider review calls have at most a two-minute deadline. An unavailable
+review is persisted under the job's attempt fence and skipped on subsequent
+continuations, preventing an endless cycle of redoing a failed review. Manual
+Retry clears that marker. Older `RESOURCE_CONTENT_INVALID` failures retain their
+saved journal on Retry instead of deliberately deleting valid content. Ordinary generation and targeted repair budgets remain
+bounded; warnings do not trigger whole-resource regeneration.
+
+Cancellation, superseded workers and normal continuation are never swallowed as
+warnings. Broken question/answer links, invalid document structure, required
+unrenderable figures, and failed file writes still stop completion. A readable
+notation fallback after exhausted maths review can be retained in an explicitly
+labelled draft. The draft builder still runs normal document validation.
+
+A previous local replay was rejected by the former strict content gate. Its
+saved real-provider responses can now be recovered offline into a labelled DOCX
+with warnings, without repeating the expensive generation. Such an offline
+recovery must disclose any optional diagrams/reviews for which no saved response
+exists; it is a draft, not a newly verified paper.

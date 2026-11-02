@@ -135,4 +135,30 @@ describe("resource queue concurrency (firestore emulator)", () => {
     assert.equal(events.filter((e) => e.event === "recovery.decided").length, 1);
   });
 
+  it("persists optional-review failures once and fences a superseded reviewer", async () => {
+    const ref = db.collection("resourceJobs").doc("optional-review");
+    const base = { jobId: "optional-review", generationVersion: 1, status: "processing", attemptId: "owned" };
+    await ref.set(base);
+    const storage = { bucket: () => ({ file: () => ({ download: async () => { throw Object.assign(new Error("missing"), { code: 404 }); }, save: async () => {} }) }) };
+    const make = (job, callAi) => createDurableCaller({ job: { ...job, ref, resourceLogSink: () => {} }, db, storage, callAi });
+    const request = { model: "gpt-test", stageId: "content.review", optionalReview: true, userMessage: "synthetic" };
+    let calls = 0;
+    await assert.rejects(make(base, async () => { calls++; throw Object.assign(new Error("provider unavailable"), { modelFailure: true }); })(request), { code: "RESOURCE_REVIEW_UNAVAILABLE" });
+    const current = (await ref.get()).data();
+    await assert.rejects(make(current, async () => { calls++; return { parsed: {} }; })(request), { code: "RESOURCE_REVIEW_UNAVAILABLE" });
+    assert.equal(calls, 1);
+    assert.equal(current.providerCallCount, 1);
+    assert.equal(Object.keys(current.optionalReviewFailures).length, 1);
+
+    let begin;
+    let fail;
+    const ready = new Promise((resolve) => { begin = resolve; });
+    const pending = make(current, () => { begin(); return new Promise((_resolve, reject) => { fail = reject; }); })({ ...request, stageId: "answers.review", userMessage: "another check" });
+    await ready;
+    await ref.update({ attemptId: "new" });
+    fail(Object.assign(new Error("provider unavailable"), { modelFailure: true }));
+    await assert.rejects(pending, { code: "RESOURCE_SUPERSEDED" });
+    assert.equal(Object.keys((await ref.get()).data().optionalReviewFailures).length, 1);
+  });
+
 });

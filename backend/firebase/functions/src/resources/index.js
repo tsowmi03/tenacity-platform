@@ -11,6 +11,7 @@ const admin = require("firebase-admin");
 
 const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSHEET_BATCH_SIZE, MAX_RECOVERIES } = require("./durableStages");
 const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
+const { canKeepDraftAfterReview, unavailableReviewWarning } = require("./contentVerification");
 const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
 const { callAiForResource } = require("./aiClient");
 const {
@@ -1463,9 +1464,9 @@ async function saveGeneratedResource(args) {
   return resourceStage(args.job, "document.build_upload", () => saveGeneratedResourceLogged(args));
 }
 
-async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, clock, model, callAi, signal }) {
+async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, clock, model, callAi, signal, reviewWarnings = [], reviewStatus = "passed", contentReview = null }) {
   const answerMode = answerModeForJob(job);
-  const outputFileName = buildOutputFileName({
+  let outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
     title: parsed.title,
     studentName: job.studentName,
@@ -1473,6 +1474,10 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     subject: job.subject,
     date: clock ? clock() : new Date(),
   });
+  const notice = () => reviewStatus === "draft" || reviewWarnings.length ? {
+    label: reviewStatus === "draft" ? "DRAFT - tutor review required" : "Tutor review recommended",
+    messages: [...new Set(reviewWarnings.map((w) => w.message))].slice(0, 6),
+  } : null;
   let built;
   let mathRepairUsed = false;
   try {
@@ -1492,6 +1497,7 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
         })); }
         : null,
       options: {
+        reviewNotice: notice(),
         studentName: job.studentName,
         subject: job.subject,
         year: job.year,
@@ -1502,14 +1508,26 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
       },
     }));
   } catch (err) {
-    if (!isDiagramRenderError(err) && err?.name !== "ResourceValidationError" && !err?.resourceControl &&
-        !err?.modelFailure && !isCancellationError(err)) {
-      err.resourceInfrastructure = "docx";
+    if (usesPlannedGeneration(job) && canKeepDraftAfterReview(err)) {
+      reviewStatus = "draft";
+      reviewWarnings.push(unavailableReviewWarning("Maths formatting review"));
+      resourceEvent(job, "document.draft_retained", { outcome: "draft", errorCode: err?.code || "REVIEW_FAILED", recoveryDecision: "keep_draft" }, "warn");
+      // No further model call. The normal builder still validates question and
+      // answer structure; unresolved notation is shown with its fallback warning.
+      built = await resourceStage(job, "document.build_draft", () => buildDocxWithDiagramReliability({
+        resourceType: job.resourceType, parsed, buildDocx, repairMath: null,
+        options: { studentName: job.studentName, subject: job.subject, year: job.year,
+          answerMode, showMarks: job.showMarks, reviewNotice: notice() },
+      }));
+    } else {
+      if (!isDiagramRenderError(err) && err?.name !== "ResourceValidationError" && !err?.resourceControl &&
+          !err?.modelFailure && !isCancellationError(err)) err.resourceInfrastructure = "docx";
+      throw err;
     }
-    throw err;
   }
   if (!mathRepairUsed) resourceEvent(job, "stage.skipped", { stageId: "math.repair", reason: callAi ? "no_notation_fallbacks" : "repair_disabled" });
   const { buffer: docxBuffer, warnings, resource: builtResource } = built;
+  if (reviewStatus === "draft") outputFileName = `Draft_${outputFileName}`;
   const outputPath = outputPathForJob(job.jobId, outputFileName, job.attemptId);
 
   try {
@@ -1549,7 +1567,8 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     // so it must match what the tutor downloaded.
     generatedJson: JSON.stringify(builtResource),
     extractedTopics: extractJobTopics(parsed),
-    warnings,
+    warnings: [...reviewWarnings, ...warnings],
+    ...(usesPlannedGeneration(job) || reviewWarnings.length || reviewStatus !== "passed" ? { reviewStatus: reviewStatus === "draft" ? "draft" : reviewWarnings.length ? "warnings" : "passed", contentReview } : {}),
     model,
   };
 }
@@ -2544,7 +2563,7 @@ async function runGenerationPipelineLogged(job, deps) {
     resourceEvent(job, "stage.skipped", { stageId: "plan.v2", reason: job.generationVersion === 1 ? "small_explicit_request" : "legacy_job" });
     resourceEvent(job, "stage.skipped", { stageId: "content.review.v1", reason: "unplanned_resource" });
   }
-  let { parsed, raw } = usePlan
+  let { parsed, raw, warnings: contentWarnings = [], reviewStatus = "passed", contentReview = null } = usePlan
     ? await generatePlannedResource({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, hasStimulus, stimulusImages, referenceText: uploadedContent.map((f) => f.content).join("\n") })
     : job.resourceType === "worksheet" && job.subject === "maths" && questionCount > WORKSHEET_BATCH_SIZE
     ? await generateWorksheetBatches({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, count: questionCount })
@@ -2585,14 +2604,25 @@ async function runGenerationPipelineLogged(job, deps) {
 
   // Maths questions name the diagram they need; build those now. English
   // resources carry no diagramType, so this is a no-op walk for them.
-  const diagramFill = await fillDiagrams({
-    job,
-    parsed,
-    callAi: trackedCallAi,
-    apiKey: null,
-    model: generationModel,
-    signal: deps.signal,
-  });
+  let diagramFill;
+  const beforeDiagrams = usePlan ? structuredClone(parsed) : null;
+  try {
+    diagramFill = await fillDiagrams({
+      job,
+      parsed,
+      callAi: trackedCallAi,
+      apiKey: null,
+      model: generationModel,
+      signal: deps.signal,
+    });
+  } catch (err) {
+    if (!usePlan || !canKeepDraftAfterReview(err) || collectDiagramTargets(beforeDiagrams).some((t) => t.diagramType !== "none" && t.diagramRequired !== false)) throw err;
+    parsed = beforeDiagrams;
+    reviewStatus = "draft";
+    contentWarnings.push(unavailableReviewWarning("Diagram review"));
+    diagramFill = { requested: 0, filled: 0 };
+    resourceEvent(job, "review.draft_retained", { stageId: "diagrams.fill", outcome: "draft", recoveryDecision: "keep_draft" }, "warn");
+  }
   if (diagramFill.requested) {
     logger.info("[resource] diagrams filled", {
       jobId: job.jobId,
@@ -2620,9 +2650,15 @@ async function runGenerationPipelineLogged(job, deps) {
       model: generationModel,
     });
   } catch (err) {
-    if (raw && !err.rawAiText) err.rawAiText = raw;
-    err.usageByProvider = { ...usageByProvider };
-    throw err;
+    if (usePlan && canKeepDraftAfterReview(err)) {
+      reviewStatus = "draft";
+      contentWarnings.push(unavailableReviewWarning("Diagram review"));
+      diagramRepair = { changed: false, warnings: [] };
+    } else {
+      if (raw && !err.rawAiText) err.rawAiText = raw;
+      err.usageByProvider = { ...usageByProvider };
+      throw err;
+    }
   }
   // A repaired or omitted diagram changes the document, and `raw` is what a
   // retry or a revision re-reads — so it has to be the document that was built.
@@ -2673,21 +2709,29 @@ async function runGenerationPipelineLogged(job, deps) {
   if (!(includesWorking(answerMode) && job.subject === "maths")) resourceEvent(job, "stage.skipped", { stageId: "answers.verify", reason: "no_worked_maths_answers" });
   if (includesWorking(answerMode) && job.subject === "maths") {
     for (const group of answerGroupsFor(parsed)) {
-      const verified = await verifyMathsAnswers({
-        job,
-        parsed: { ...parsed, answers: group.rows },
-        apiKey: null,
-        callAi: trackedCallAi,
-        signal: deps.signal,
-      });
-      group.replace(parsed, verified.answers);
+      try {
+        const verified = await verifyMathsAnswers({
+          job,
+          parsed: { ...parsed, answers: group.rows },
+          apiKey: null,
+          callAi: trackedCallAi,
+          signal: deps.signal,
+        });
+        group.replace(parsed, verified.answers);
+      } catch (err) {
+        if (!usePlan || !canKeepDraftAfterReview(err)) throw err;
+        reviewStatus = "draft";
+        if (!contentWarnings.some((w) => w.code === "RESOURCE_ANSWER_REVIEW_UNAVAILABLE")) contentWarnings.push({
+          code: "RESOURCE_ANSWER_REVIEW_UNAVAILABLE", message: "Answer checking could not finish. Original worked solutions are retained in this draft; tutor review is required." });
+        resourceEvent(job, "review.draft_retained", { stageId: "answers.verify", outcome: "draft", errorCode: err?.code || "REVIEW_FAILED", recoveryDecision: "keep_draft" }, "warn");
+      }
       throwIfCancelled(deps);
     }
   }
 
   try {
     const saved = await saveGeneratedResource({
-      job,
+      job, reviewWarnings: contentWarnings, reviewStatus, contentReview,
       parsed,
       storage,
       buildDocx,
@@ -2767,6 +2811,7 @@ Return ONLY corrections, as valid JSON, for the entries you actually changed:
   try {
     const model = modelForResourceJob(job);
     const { parsed: verifiedParsed } = await callAi({
+      optionalReview: usesPlannedGeneration(job),
       apiKey,
       model,
       // Raised from 8000: thinking tokens come out of this budget, and a
@@ -3478,7 +3523,7 @@ async function emitResourceTerminal({ db, job, outcome, errorCode, clock }) {
   let current = job;
   try { const snap = await db.collection("resourceJobs").doc(job.jobId).get(); if (snap.exists) current = snap.data(); }
   catch { resourceEvent(job, "summary.unavailable", { reason: "job_read_failed" }, "warn"); }
-  resourceEvent(job, `job.${outcome === "complete" ? "completed" : outcome}`, { ...terminalFields(current, outcome, clock ? clock() : new Date()), errorCode }, outcome === "failed" ? "error" : "info");
+  resourceEvent(job, `job.${outcome === "complete" ? "completed" : outcome}`, { ...terminalFields(current, outcome, clock ? clock() : new Date()), errorCode, reviewStatus: current.reviewStatus || "not_requested", warningCount: current.warnings?.length || 0 }, outcome === "failed" ? "error" : "info");
 }
 
 async function runQueueForTutor(createdBy, deps) {
@@ -3823,7 +3868,6 @@ const RESUMABLE_REASON_CODES = new Set(["PROVIDER_BUSY", "PROVIDER_ACCESS", "PRO
 
 function resumableFailure(job) {
   if (job.status === "cancelled") return true;
-  if (job.errorCode === "RESOURCE_CONTENT_INVALID") return false;
   if (String(job.errorCode || "").startsWith("RESOURCE_")) return true;
   const attempts = Array.isArray(job.failureAttempts) ? job.failureAttempts : [];
   return attempts.length > 0 && attempts.every((attempt) => RESUMABLE_REASON_CODES.has(attempt?.reasonCode));
@@ -3865,7 +3909,7 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   const retryRunId = randomUUID();
   await jobRef.update({
     runId: retryRunId, runStartedAt: now(clock), activeElapsedMs: 0, queueElapsedMs: 0, queueTurnAt: now(clock),
-    stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0,
+    stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0, optionalReviewFailures: {}, reviewStatus: null, contentReview: null,
     progress: canResume ? job.progress || null : null,
     status: "pending",
     modelChoice,

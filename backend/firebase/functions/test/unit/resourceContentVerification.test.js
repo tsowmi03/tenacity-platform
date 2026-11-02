@@ -2,7 +2,7 @@
 const { it } = require("node:test");
 const assert = require("node:assert/strict");
 const { sourceScope, requestedMinutes, validatePlannedCoverage, verifyPlannedContent } = require("../../src/resources/contentVerification");
-const prompt = "Write a paper for a 90-minute sitting. Cover all topics except Chapter 2; exclude everything after section 10H.";
+const prompt = "Write a paper for a 90-minute sitting. Cover all topics except Chapter 2; exclude everything after section 10H. Test every subsection.";
 const contents = "1A Algebra 4\n1B Lines 10\n2A Geometry 20\n10A Functions 30\n10H Polynomials 40\n10I Circles 50\n11A Networks 60";
 const job = { jobId: "test", resourceType: "practice-paper", customPrompt: prompt, resourceLogSink: () => {} };
 const scope = sourceScope(job, contents);
@@ -24,16 +24,15 @@ it("resolves chapter exclusions and an inclusive section boundary from source co
   assert.throws(() => sourceScope({ customPrompt: "All topics after section 20Z are excluded" }, contents), { code: "RESOURCE_SCOPE_CLARIFICATION" });
 });
 
-it("rejects missing coverage, excluded topics, dominant chapters and incorrect sitting times", () => {
+it("retains plans with coverage or timing concerns as warnings", () => {
   validatePlannedCoverage(plan, scope);
   for (const changed of [
     { ...plan, questions: [questions[0]] },
     { ...plan, questions: [...questions, { ...questions[0], sourceIds: ["2A"] }] },
     { ...plan, timeAllowed: "60 minutes" },
     { ...plan, questions: questions.map((q) => ({ ...q, estimatedMinutes: 60 })) },
-  ]) assert.throws(() => validatePlannedCoverage(changed, scope), { code: "RESOURCE_PLAN_INVALID" });
-  const many = { eligible: [1, 3, 4].map((c) => ({ id: `${c}A` })) };
-  assert.throws(() => validatePlannedCoverage({ questions: [1, 3, 4].map((c) => ({ marks: c === 1 ? 20 : 1, sourceIds: [`${c}A`] })) }, many), { code: "RESOURCE_PLAN_INVALID" });
+  ]) assert.ok(validatePlannedCoverage(changed, scope).length);
+
 });
 
 it("requires an independent content review of actual questions rather than planner labels", async () => {
@@ -55,9 +54,9 @@ it("requires an independent content review of actual questions rather than plann
     { ...review, questions: review.questions.map((q) => ({ ...q, estimatedMinutes: 60 })) },
     { ...review, questions: [{ ...review.questions[0], coveredSourceIds: ["1A"] }, review.questions[1]] },
     { ...review, questions: [{ ...review.questions[0], coveredSourceIds: ["2A", "1A", "1B"] }, review.questions[1]] },
-  ]) await assert.rejects(run(changed), { code: "RESOURCE_CONTENT_INVALID" });
-  await assert.rejects(run({ ...review, questions: [] }), { code: "RESOURCE_BATCH_INVALID" });
-  assert.equal(events.filter((e) => e.event === "content.verified").at(-1).outcome, "rejected");
+  ]) { const result = await run(changed); assert.equal(result.status, "warnings"); assert.ok(result.warnings.length); }
+  assert.equal((await run({ ...review, questions: [] })).status, "draft");
+  assert.equal(events.filter((e) => e.event === "content.verified").at(-1).outcome, "warnings");
 });
 
 it("allows multipart questions to cover several reference topics without inventing extra whole questions", () => {
@@ -65,4 +64,18 @@ it("allows multipart questions to cover several reference topics without inventi
   const planned = { ...plan, title: "Paper", clarification: "", topics: scope.eligible.map((t) => ({ name: t.title, evidence: t.title })),
     questions: questions.map((q, index) => ({ ...q, topic: index === 0 ? "Algebra" : "Functions", section: "Paper", difficulty: "standard" })) };
   validatePlan({ parsed: planned }, job, contents, scope);
+});
+
+it("distinguishes representative paper coverage from an explicit every-subsection request", () => {
+  const representative = sourceScope({ ...job, customPrompt: "A 90-minute paper across all topics except Chapter 2; exclude everything after 10H." }, contents);
+  assert.equal(representative.coverageMode, "chapter");
+  assert.equal(scope.coverageMode, "section");
+  assert.deepEqual(validatePlannedCoverage({ ...plan, questions: questions.map((q) => ({ ...q, sourceIds: [q.sourceIds[0]] })) }, representative), []);
+});
+
+it("never converts cancellation, supersession or a normal handoff into a draft", async () => {
+  const { ResourceCancelledError } = require("../../src/resources/cancellation");
+  for (const err of [new ResourceCancelledError(), Object.assign(new Error("handoff"), { code: "RESOURCE_STAGE_YIELD", resourceControl: true }), Object.assign(new Error("stale"), { code: "RESOURCE_SUPERSEDED", resourceControl: true })]) {
+    await assert.rejects(verifyPlannedContent({ job, request: {}, plan, parsed: { sections: [{ questions: [{ number: 1 }] }] }, scope, callAi: async () => { throw err; } }), (actual) => actual === err);
+  }
 });

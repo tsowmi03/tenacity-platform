@@ -60,7 +60,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
         stageFallbackCount: (current.stageFallbackCount || 0) + (recovery.fallback ? 1 : 0) } : {}) });
   });
   return async (request) => {
-    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, validateStageResult, ...publicRequest } = request;
+    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, validateStageResult, ...publicRequest } = request;
     for (const key of Object.keys(publicRequest)) {
       if (key.startsWith("posthog") || key === "safetyIdentifier") delete publicRequest[key];
     }
@@ -77,6 +77,9 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
       return cached;
     } catch (err) {
       if (Number(err.code) !== 404) throw err;
+    }
+    if (request.optionalReview && job.optionalReviewFailures?.[key]) {
+      throw controlError("RESOURCE_REVIEW_UNAVAILABLE", "This optional review could not finish; the draft is retained.");
     }
     // Concurrent stages (diagram fills run under Promise.all) reach here
     // together. The slot is taken before any await, so only one provider call
@@ -113,7 +116,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     let providerResult;
     const providerStarted = Date.now();
     const activeModel = recovery.fallback && fallbackModel ? fallbackModel : request.model;
-    const budget = Math.max(1, Math.min(timeoutMs, INVOCATION_BUDGET_MS - (Date.now() - invocationStarted)));
+    const budget = Math.max(1, Math.min(timeoutMs, request.optionalReview ? 120_000 : timeoutMs, INVOCATION_BUDGET_MS - (Date.now() - invocationStarted)));
     try {
       const deadline = new Promise((_, reject) => {
         timer = setTimeout(() => {
@@ -121,7 +124,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
           controller.abort();
         }, budget);
       });
-      const { stageLabel: _label, stageId: _stageId, splitAllowed: _split, validateStageResult: validate, ...providerRequest } = request;
+      const { stageLabel: _label, stageId: _stageId, splitAllowed: _split, optionalReview: _optional, validateStageResult: validate, ...providerRequest } = request;
       if (recovery.fallback && fallbackModel) providerRequest.model = fallbackModel;
       if (recovery.lastReason) providerRequest.userMessage += `\n\nThe prior response failed validation (${recovery.lastReason}). Correct that issue while preserving the original scope and requested limits.`;
       resourceEvent(job, "provider.started", { model: providerRequest.model, provider: providerForModel(providerRequest.model), timeoutMs: budget, remainingMs: INVOCATION_BUDGET_MS - (Date.now() - invocationStarted), retryCount: recovery.failures || 0 });
@@ -144,7 +147,17 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
       if (providerResult?.usage) { err.usage = providerResult.usage; err.provider = providerResult.provider; }
       const recoverable = ["RESOURCE_STAGE_TIMEOUT", "RESOURCE_BATCH_INVALID", "RESOURCE_PLAN_INVALID"].includes(err?.code) ||
         (!err?.resourceControl && !err?.refusal && !signal?.aborted && (err?.modelFailure || [429, 503, 529].includes(err?.status)));
-      if (job.generationVersion === 1 && recoverable) {
+      if (request.optionalReview && recoverable && !signal?.aborted) {
+        await db.runTransaction(async (tx) => {
+          const snap = await tx.get(job.ref);
+          const current = snap.data() || {};
+          if (!snap.exists || current.status !== "processing" || current.attemptId !== job.attemptId || current.cancelRequested) throw controlError("RESOURCE_SUPERSEDED", "This worker no longer owns the resource.");
+          tx.update(job.ref, { optionalReviewFailures: { ...current.optionalReviewFailures, [key]: err?.code || "REVIEW_FAILED" } });
+        });
+        resourceEvent(job, "review.unavailable_saved", { errorCode: err?.code || "REVIEW_FAILED", outcome: "draft", recoveryDecision: "keep_draft" }, "warn");
+        throw controlError("RESOURCE_REVIEW_UNAVAILABLE", "This optional review could not finish; the draft is retained.");
+      }
+      if (job.generationVersion === 1 && recoverable && !request.optionalReview) {
         const failures = (recovery.failures || 0) + 1;
         const next = { failures, ...(err.resourceControl && err.reason ? { lastReason: err.reason } : {}), split: Boolean(request.splitAllowed && err?.code === "RESOURCE_STAGE_TIMEOUT"),
           fallback: failures >= 2 && Boolean(fallbackModel), exhausted: failures >= (fallbackModel ? 3 : 2) };

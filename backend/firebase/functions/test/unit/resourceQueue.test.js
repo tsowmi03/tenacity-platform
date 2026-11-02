@@ -1649,7 +1649,7 @@ describe("retryResourceJobImpl", () => {
 
   it("starts afresh after a content failure but resumes after a timeout or busy provider", async () => {
     const cases = [
-      [{ errorCode: "RESOURCE_CONTENT_INVALID" }, true],
+      [{ errorCode: "RESOURCE_CONTENT_INVALID" }, false],
       [{ errorCode: "DIAGRAM_LAYOUT_ERROR", failureAttempts: [{ reasonCode: "REQUIRED_DIAGRAM" }] }, true],
       [{ errorCode: null, failureAttempts: [{ reasonCode: "SCHEMA_INVALID" }, { reasonCode: "PROVIDER_BUSY" }] }, true],
       [{ errorCode: "RESOURCE_STAGE_TIMEOUT", failureAttempts: [{ reasonCode: "MODEL_FAILURE" }] }, false],
