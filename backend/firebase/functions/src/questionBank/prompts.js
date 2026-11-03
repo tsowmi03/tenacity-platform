@@ -84,7 +84,7 @@ function sortPrompt() {
 
 ${typeList(TYPE_IDS)}
 
-A data table counts only when a question uses it, under the type of that question (for example a frequency table for a histogram question is data_display). Ignore decoration (cartoons, mascots, icons, photos that only illustrate), blank answer grids, and diagrams of any other kind such as fraction models, number lines, spinners or measuring instruments. Return each type that appears at least once. An empty list is the right answer for a page with none.`;
+A data table counts only when a question uses it, under the type of that question (for example a frequency table for a histogram question is data_display). Ignore decoration (cartoons, mascots, icons, photos that only illustrate), blank answer grids, and diagrams of any other kind such as fraction models, number lines, spinners or measuring instruments. A page of answers or worked solutions to questions printed elsewhere (usually headed "Answers" or "Solutions") has no questions: return an empty list for it. Return each type that appears at least once. An empty list is the right answer for a page with none.`;
 }
 
 function extractPrompt({ sourcePath, pageNumber, width, height, targetTypes, textLayer, previousPageText }) {
@@ -99,7 +99,7 @@ function extractPrompt({ sourcePath, pageNumber, width, height, targetTypes, tex
 Only these kinds of diagram matter:
 ${typeList(targetTypes)}
 
-List each question and worked example on the page that uses at least one of them. Leave out every other unit, and leave out explanations, answers and decoration.
+List each question and worked example on the page that uses at least one of them. Leave out every other unit, and leave out explanations, answers and decoration. Answers or solutions to questions printed elsewhere, such as an answers section at the back of a book, are not questions even when they show a completed diagram: return no units for them.
 - question: the smallest separately answerable part (2b, not 2). Put instructions shared by the parts in "stem" and the part's own content in "text". Label with the printed numbering, prefixed by the exercise heading when one is visible, e.g. "Exercise 7A Q2b".
 - worked_example: a printed example whose full solution is shown, usually headed "Example".
 - skill: what the unit asks the student to do, from the list for its diagram's type ("type/other" when none fits).

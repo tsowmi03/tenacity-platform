@@ -1169,10 +1169,24 @@ const DIAGRAM_SPEC_VALIDATORS = Object.freeze({
   "rect-semicircle": validateRectSemicircleDiagram,
 });
 
+// A crop from the question bank (RES-54). It isn't in the diagram registry,
+// so the model is never offered it; the caller attaches the PNG before the
+// document is built.
+function validateSourceImageDiagram(value, path) {
+  if (!Buffer.isBuffer(value.image) || !value.image.length) fail(`${path}.image must be the diagram's PNG`);
+  assertNumber(value.width, `${path}.width`, { integer: true, min: 1 });
+  assertNumber(value.height, `${path}.height`, { integer: true, min: 1 });
+  optionalText(value.storagePath, `${path}.storagePath`);
+}
+
 function validateDiagram(value, path) {
   if (value === null || value === undefined) return;
   assertObject(value, path);
   const type = assertText(value.type, `${path}.type`);
+  if (type === "source-image") {
+    validateSourceImageDiagram(value, path);
+    return;
+  }
   const definition = getDiagramDefinition(type);
   if (!definition) {
     fail(`${path}.type ${type} is not supported; use null or a supported diagram type`);

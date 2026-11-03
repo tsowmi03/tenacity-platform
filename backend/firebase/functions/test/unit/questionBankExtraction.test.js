@@ -192,3 +192,36 @@ describe("questionBankExtract options", () => {
     assert.notDeepEqual(shuffled(items, randomSource(54)), shuffled(items, randomSource(55)));
   });
 });
+
+describe("answer pages", () => {
+  it("tells both calls that answers sections hold no questions", () => {
+    const sort = buildSortParams({ image: IMAGE }).messages[0].content[1].text;
+    const extract = buildExtractParams({ image: IMAGE, sourcePath: "x.pdf", pageNumber: 1, width: 10, height: 10, targetTypes: ["parabola"] }).messages[0].content[1].text;
+    assert.match(sort, /answers or worked solutions/i);
+    assert.match(extract, /answers section at the back of a book, are not questions/);
+  });
+});
+
+describe("cleanCrop", () => {
+  const sharp = require("sharp");
+  const { cleanCrop } = require("../../src/questionBank/pages");
+
+  // White canvas with black rectangles; returns the cleaned crop's pixels.
+  async function drawn(width, height, rects) {
+    const svg = `<svg width="${width}" height="${height}"><rect width="100%" height="100%" fill="#fff"/>${rects.map(([x, y, w, h, stroke]) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${stroke ? "none" : "#000"}" stroke="#000" stroke-width="${stroke || 0}"/>`).join("")}</svg>`;
+    return sharp(Buffer.from(svg)).png().toBuffer();
+  }
+
+  it("removes a small neighbour's fragment touching the edge", async () => {
+    const png = await drawn(200, 200, [[60, 60, 80, 80, 3], [0, 0, 12, 12]]);
+    const meta = await sharp(await cleanCrop(png)).metadata();
+    assert.ok(meta.width < 200 && meta.height < 200, "crop was trimmed around the figure");
+  });
+
+  it("keeps a large shape that runs to the crop's edge", async () => {
+    const png = await drawn(200, 200, [[0, 0, 200, 200, 4], [80, 80, 40, 40]]);
+    const meta = await sharp(await cleanCrop(png)).metadata();
+    assert.equal(meta.width, 200);
+    assert.equal(meta.height, 200);
+  });
+});

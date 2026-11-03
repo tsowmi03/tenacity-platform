@@ -176,3 +176,36 @@ Agreed with Tom on 2026-11-04.
 | Quality gate before the full run | 200 random Maths pages: at least 95% of crops complete and at least 90% of pages with a target diagram found |
 | Rollout | Built and tested on staging first; the full extraction then writes to production |
 | Drive access | A service account with Viewer access to the Tenacity Tutoring shared drive, read through the Drive API |
+
+## 7. Quality check (RES-58, 2026-11-04)
+
+226 random Maths pages from 60 files were run on staging with
+`questionBankExtract.js --pages-per-source=5`, then checked by eye with
+`questionBankReview.js`.
+
+| Measure | Result |
+|---|---|
+| Pages | 226; 1 blank, 78 with a target diagram, 147 without |
+| Questions | 195, with 228 diagram crops |
+| Crops complete (gate ≥ 95%) | 226 of 228 (99.1%); a cylinder missing its height label was found later by the booklet's answer check |
+| Pages with a target diagram found (gate ≥ 90%) | 100%; none of the 147 unmatched pages had one |
+| Cost | $0.13 at batch rates, about $0.0006 a page |
+
+Two fixes came out of it, and both were checked again on the pages concerned:
+
+- **Crop clean-up:** it could erase a figure that ran right up to its box
+  (a circle and its axes). Large shapes are now never treated as a
+  neighbour's fragment.
+- **Answer pages:** an answers section inside a book was extracted as 8
+  "questions" (completed graphs). Both calls now ignore answer and solution
+  pages, so those pages also skip the extraction call.
+
+Known limits, left as they are:
+
+- Blank axes and tables that a question asks the student to complete are
+  kept as the question's diagram.
+- About 1 in 100 crops picks up a sliver of a neighbouring shape or a word
+  fragment.
+
+Estimate for the full run: about 44,700 pages × $0.0006 ≈ **$27**, inside the
+$100 cap.

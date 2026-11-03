@@ -20,6 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-04 | [Question bank: a proof-of-concept booklet from original diagrams](#2026-11-04--question-bank-a-proof-of-concept-booklet-from-original-diagrams) |
+| 2026-11-04 | [Question bank: quality check passed (RES-58)](#2026-11-04--question-bank-quality-check-passed-res-58) |
 | 2026-11-04 | [Question bank: extracting questions and diagrams through the Batch API (RES-57)](#2026-11-04--question-bank-extracting-questions-and-diagrams-through-the-batch-api-res-57) |
 | 2026-11-04 | [Question bank: which Drive files to extract from (RES-56)](#2026-11-04--question-bank-which-drive-files-to-extract-from-res-56) |
 | 2026-11-03 | [Sizing the Drive resources and testing extraction on random pages (RES-54)](#2026-11-03--sizing-the-drive-resources-and-testing-extraction-on-random-pages-res-54) |
@@ -202,6 +204,55 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-04 — Question bank: a proof-of-concept booklet from original diagrams
+
+**What changed**
+- The DOCX builder accepts a `source-image` diagram: a crop from the question
+  bank, printed at 1.5 times its original size so labels stay readable. It
+  isn't in the diagram registry, so the generator is never offered it.
+- Built a Year 9 volume and surface area worksheet on staging from the bank:
+  11 original textbook questions with their own diagrams and 3 new questions
+  asked about the same diagrams. Claude solved every answer and a second,
+  independent solve checked it. It is saved as a finished resource in staging
+  (job `831aPU6Kn8MHUT6Q8gXI`).
+
+**Why:** To see a real booklet built from bank diagrams before the production
+backfill and RES-60.
+
+**Status:** Proof of concept only, on branch `feat/res-58-quality-check`. The
+builder change is tested; nothing is deployed.
+
+**Next steps**
+- Before the production backfill, extraction should record each part's printed
+  wording separately from its description. For a part that is only a letter
+  and a diagram, `text` holds a description of the diagram, which shouldn't be
+  printed.
+- In RES-60, a bank question goes into a booklet only if the independent
+  answer check agrees. Here it caught a crop missing its height label.
+
+---
+
+## 2026-11-04 — Question bank: quality check passed (RES-58)
+
+**What changed**
+- Ran the extraction on 226 random Maths pages from 60 files on staging and
+  checked every page and crop by eye. 226 of 228 crops were complete (the gate
+  was 95%), and no page with a target diagram was missed (the gate was 90%).
+  It cost $0.13.
+- Fixed the two problems it found. Crop clean-up no longer erases a figure
+  that runs up to its box, and answer pages are no longer read as questions.
+- Added `scripts/questionBankReview.js`, which turns a run into contact sheets
+  for checking by eye.
+- Recorded the results in the spec. The full run is estimated at about $27.
+
+**Why:** RES-58 is the gate before the question bank is built for real.
+
+**Status:** In progress on branch `feat/res-58-quality-check`. The quality
+check passed. The full production backfill hasn't started; it needs Tom's
+approval.
 
 ---
 

@@ -143,7 +143,10 @@ async function cleanCrop(png) {
   const overlap = (c) =>
     Math.max(0, Math.min(c.x1, core.x1) - Math.max(c.x0, core.x0)) *
     Math.max(0, Math.min(c.y1, core.y1) - Math.max(c.y0, core.y0));
-  const stray = new Set(components.filter((c) => c.edge && overlap(c) < 0.5 * (c.x1 - c.x0 + 1) * (c.y1 - c.y0 + 1)));
+  // A neighbour's fragment is small; anything spanning half the crop or more
+  // is the figure itself (a circle or axes drawn right up to a tight box).
+  const small = (c) => c.x1 - c.x0 + 1 < width / 2 && c.y1 - c.y0 + 1 < height / 2;
+  const stray = new Set(components.filter((c) => c.edge && small(c) && overlap(c) < 0.5 * (c.x1 - c.x0 + 1) * (c.y1 - c.y0 + 1)));
   if (!stray.size) return png;
 
   // Whiten each fragment's surroundings, not just its dark pixels: the
