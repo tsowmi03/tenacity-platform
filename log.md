@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-03 | [Sizing the Drive resources and testing extraction on random pages (RES-54)](#2026-11-03--sizing-the-drive-resources-and-testing-extraction-on-random-pages-res-54) |
 | 2026-11-03 | [Pilot: lifting questions and diagrams out of the Drive resources (RES-54)](#2026-11-03--pilot-lifting-questions-and-diagrams-out-of-the-drive-resources-res-54) |
 | 2026-10-29 | [Mobile 3.4.0 (build 523)](#2026-10-29--mobile-340-build-523) |
 | 2026-10-29 | [The app is released to both stores from the command line (MOB-67)](#2026-10-29--the-app-is-released-to-both-stores-from-the-command-line-mob-67) |
@@ -199,6 +200,47 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-03 — Sizing the Drive resources and testing extraction on random pages (RES-54)
+
+**What changed**
+- Added `backend/firebase/functions/scripts/driveCorpusInventory.js`. It reads
+  every file under Resources → Maths and English (Student Docs excluded) and
+  records its type, hash, page count and whether it is scanned. It can also
+  draw a random page sample for the extraction script.
+- The corpus is 4,828 unique documents and 64,907 pages. About 55,000 pages
+  are worth a question pass; answer files, teacher editions with a student
+  twin, PDF/Word pairs and blank pages can be skipped.
+- Ran extraction on 39 random pages: $0.053 a page, accurate transcription,
+  and every Maths diagram cropped whole.
+- Updated `driveExtractionPilot.js`: the check pass is off by default, Word and
+  PowerPoint files are converted with LibreOffice, English passages and
+  worked examples have clearer definitions, and decoration (mascots, icons,
+  blank answer frames) is no longer boxed as a diagram.
+- Narrowed the run to the Maths diagram types the question bank needs (2D
+  shapes, 3D solids, triangles, straight-line and curved graphs, number plane)
+  and tested it on Haiku 5.5. A cheap sorting call picks the pages that have
+  those diagrams, and only those pages are extracted. On the sample, sorting
+  matched a check by eye exactly and 30 of 31 crops were complete. The
+  estimated cost for the whole corpus fell from about $1,450 to about $35
+  (about $17 with the Batch API).
+- Findings are in
+  [`docs/architecture/res-54-phase-1-corpus.md`](docs/architecture/res-54-phase-1-corpus.md).
+- Agreed the question bank spec with Tom: 24 Maths diagram types, questions and
+  worked examples only, which sources to include, and the fields stored with
+  each question (a fixed skill per type plus a free-text description, context
+  and steps), plus the build decisions: how the generator uses the bank,
+  answers, review, search, weekly sync, duplicates and a $100 cap. The spec is in
+  [`docs/architecture/res-54-question-bank-spec.md`](docs/architecture/res-54-question-bank-spec.md).
+
+**Why:** Phase 0 used hand-picked Maths pages. Before the index is built we
+needed the real size of the corpus and evidence that extraction works on
+pages nobody chose, English included.
+
+**Status:** In progress. Scripts and findings are on branch
+`feat/res-54-phase-1`. Nothing is deployed.
 
 ---
 

@@ -1,14 +1,18 @@
 "use strict";
 
-// RES-54 phase 0: can we lift questions and their original diagrams out of the
-// Drive teaching resources reliably enough to build a question bank?
+// RES-54: can we lift questions and their original diagrams out of the Drive
+// teaching resources reliably enough to build a question bank? Phase 0 ran it
+// on hand-picked Maths pages; phase 1 runs it on a random sample of the whole
+// corpus (driveCorpusInventory.js --sample writes that manifest).
 //
 // For each page in the manifest this renders the page, asks Claude to list every
 // question (and worked example, answer block...) with the pixel box of each
-// diagram, crops those diagrams from a high-resolution render, then makes a
-// second call that sees every box drawn on the page and either accepts it or
-// returns a corrected one. It writes the crops, before/after overlays, the
-// extracted units, token usage and a review page to --out.
+// diagram and crops those diagrams from a high-resolution render. With --verify
+// it makes a second call that sees every box drawn on the page and either
+// accepts it or returns a corrected one (phase 0 found it rarely changed a box).
+// Word and PowerPoint files are converted to PDF with LibreOffice first. It
+// writes the crops, overlays, the extracted units, token usage and a review
+// page to --out.
 //
 // Read-only against everything but --out: the PDFs are read from the locally
 // synced shared drive, and the only production access is the optional
@@ -16,10 +20,16 @@
 //
 //   node scripts/driveExtractionPilot.js --out /tmp/res54 [--firebase-secrets]
 //     [--manifest scripts/driveExtractionPilot.manifest.json] [--effort high]
-//     [--only <book id>] [--max-pages 25] [--skip-verify]
+//     [--only <book id>] [--max-pages 25] [--verify] [--model claude-haiku-5-5]
+//     [--diagram-types] [--sort-effort low]
+//
+// --diagram-types narrows the run to the Maths diagrams worth keeping
+// (DIAGRAM_TYPES): a cheap first call lists which of those types a page has,
+// and only pages with one are extracted, keeping only the units that use them.
 
 process.env.POSTHOG_PROJECT_TOKEN = "";
 
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -43,9 +53,32 @@ const MODEL_LONG_EDGE = 1568;
 // across an A4 page).
 const CROP_RENDER_WIDTH = 2400;
 const CROP_PADDING = 0.006;
-// claude-opus-5-5 list prices (USD per million tokens), for the cost estimate
-// only. Thinking tokens are billed as output.
-const PRICE_PER_MTOK = Object.freeze({ input: 4, cachedInput: 0.2, cacheWrite: 5, output: 20 });
+// List prices (USD per million tokens, prompts under 100K tokens), for the cost
+// estimate only. Thinking tokens are billed as output.
+const PRICES_PER_MTOK = Object.freeze({
+  "claude-opus-5-5": { input: 4, cachedInput: 0.2, cacheWrite: 5, output: 20 },
+  "claude-sonnet-5-5": { input: 2, cachedInput: 0.2, cacheWrite: 2.5, output: 10 },
+  "claude-haiku-5-5": { input: 0.1, cachedInput: 0.01, cacheWrite: 0.125, output: 0.5 },
+});
+// The Maths diagrams worth lifting into the question bank. English diagrams
+// are left out entirely.
+const DIAGRAM_TYPES = Object.freeze({
+  shape_2d: "2D shapes and composite shapes, for area and perimeter",
+  solid_3d: "3D solids and nets, for surface area and volume",
+  triangle: "triangles for Pythagoras and trigonometry, including angles of elevation and depression and bearings",
+  graph_line: "straight-line graphs",
+  graph_curve: "graphs of parabolas, polynomials, circles, hyperbolas and exponential, logarithmic or trigonometric functions",
+  number_plane: "points, segments or shapes plotted on the number plane",
+});
+
+const SORT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["types"],
+  properties: {
+    types: { type: "array", items: { type: "string", enum: Object.keys(DIAGRAM_TYPES) } },
+  },
+};
 
 const box = {
   type: "object",
@@ -58,6 +91,16 @@ const box = {
     y1: { type: "integer" },
   },
 };
+
+// With target types, each figure also carries which of them it is.
+function extractionSchema(targetTypes) {
+  if (!targetTypes) return EXTRACTION_SCHEMA;
+  const schema = JSON.parse(JSON.stringify(EXTRACTION_SCHEMA));
+  const figure = schema.properties.units.items.properties.figures.items;
+  figure.required.push("type");
+  figure.properties.type = { type: "string", enum: targetTypes };
+  return schema;
+}
 
 const EXTRACTION_SCHEMA = {
   type: "object",
@@ -74,7 +117,7 @@ const EXTRACTION_SCHEMA = {
         properties: {
           kind: {
             type: "string",
-            enum: ["question", "worked_example", "explanation", "answers", "other"],
+            enum: ["question", "worked_example", "passage", "explanation", "answers", "other"],
           },
           label: { type: "string" },
           topic: { type: "string" },
@@ -118,9 +161,18 @@ const VERIFY_SCHEMA = {
   },
 };
 
-const EXTRACTION_SYSTEM = `You index pages of NSW school maths textbooks, workbooks and exam papers so their questions and diagrams can be reused in new booklets. You return exact transcriptions and precise pixel coordinates.`;
+const EXTRACTION_SYSTEM = `You index pages of NSW school maths and English resources (textbooks, workbooks, exam papers, worksheets and study guides) so their questions, texts and diagrams can be reused in new booklets. You return exact transcriptions and precise pixel coordinates.`;
 
-function extractionPrompt({ book, pageNumber, width, height, textLayer }) {
+function sortPrompt() {
+  const types = Object.entries(DIAGRAM_TYPES).map(([key, text]) => `- ${key}: ${text}`).join("\n");
+  return `Which of these kinds of diagram appear on this page as part of a question, worked example or explanation?
+
+${types}
+
+Return each type that appears at least once. Ignore decoration, tables, and diagrams of any other kind (probability, statistics charts, fraction grids, number lines and so on). An empty list is the right answer for a page with none.`;
+}
+
+function extractionPrompt({ book, pageNumber, width, height, textLayer, targetTypes }) {
   const textNote = textLayer
     ? `\n\nThe PDF's own text layer for this page follows. Use it to get wording and numbers exactly right, but it may be out of reading order and has no maths formatting:\n<text_layer>\n${textLayer}\n</text_layer>`
     : "";
@@ -128,10 +180,16 @@ function extractionPrompt({ book, pageNumber, width, height, textLayer }) {
 
 List every unit on the page:
 - question: the smallest separately answerable part (2b, not 2). Put instructions shared by the parts in "stem" and the part's own content in "text". Label with the printed numbering, prefixed by the exercise or unit heading when one is visible, e.g. "Exercise 7A Q2b".
-- worked_example, explanation, answers, other: one unit per block.
-Write all maths in LaTeX between $...$. "topic" is the syllabus topic in a few words.
+- worked_example: a printed example whose full solution is shown on the page, usually headed "Example". A task the student is meant to do is a question even when hints or a model answer appear elsewhere.
+- passage: a reading text, poem, extract or source that questions refer to. Label it with its title, or the questions it serves.
+- explanation, answers, other: one unit per block. "answers" is a block of printed answers or solutions to questions elsewhere.
+Write all maths in LaTeX between $...$. "topic" is the syllabus topic in a few words; for English, the text studied or the skill.
 
-"box" covers the whole unit. "figures" lists every diagram, graph, picture or drawn table that belongs to the unit. Each figure box must contain the entire figure with all of its labels, measurements and arrows, and nothing from neighbouring questions or answer lines. A figure shared by several parts belongs to the first of them. Units without a figure have an empty "figures" list. On a two-page spread, cover both pages.${textNote}`;
+"box" covers the whole unit. "figures" lists every diagram, graph, picture or drawn table that belongs to the unit and that a student needs to answer or follow it. Leave out decoration: cartoon characters and mascots, clip-art and photos that only illustrate, logos, icons, theme keys and legends, and blank grids, organisers or writing frames meant for answers. A table counts when it holds the question's data or is the table the question asks the student to complete. Each figure box must contain the entire figure with all of its labels, measurements and arrows, and nothing from neighbouring questions or answer lines. A figure shared by several parts belongs to the first of them. Units without a figure have an empty "figures" list. On a two-page spread, cover both pages.${targetTypes ? `
+
+Only these kinds of diagram matter:
+${targetTypes.map((key) => `- ${key}: ${DIAGRAM_TYPES[key]}`).join("\n")}
+List only the units that have at least one of them, and only those figures, each with its "type". Leave out every other unit and figure.` : ""}${textNote}`;
 }
 
 function verifyPrompt({ width, height, count }) {
@@ -148,22 +206,28 @@ function parseArgs(argv) {
     resourcesRoot: DEFAULT_RESOURCES_ROOT,
     out: null,
     effort: "high",
+    sortEffort: "low",
+    model: null,
+    diagramTypes: false,
     only: null,
     maxPages: 25,
-    verify: true,
+    verify: false,
     firebaseSecrets: false,
     concurrency: 3,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--firebase-secrets") options.firebaseSecrets = true;
-    else if (arg === "--skip-verify") options.verify = false;
+    else if (arg === "--verify") options.verify = true;
+    else if (arg === "--diagram-types") options.diagramTypes = true;
     else {
       const key = {
         "--manifest": "manifest",
         "--resources-root": "resourcesRoot",
         "--out": "out",
         "--effort": "effort",
+        "--sort-effort": "sortEffort",
+        "--model": "model",
         "--only": "only",
         "--max-pages": "maxPages",
         "--concurrency": "concurrency",
@@ -302,12 +366,14 @@ function addUsage(total, usage = {}) {
   return total;
 }
 
-function costOf(usage) {
+function costOf(usage, model) {
+  const price = PRICES_PER_MTOK[model];
+  if (!price) throw new Error(`No price for ${model}; add it to PRICES_PER_MTOK`);
   return (
-    (usage.inputTokens || 0) * PRICE_PER_MTOK.input +
-    (usage.cachedInputTokens || 0) * PRICE_PER_MTOK.cachedInput +
-    (usage.cacheWriteTokens || 0) * PRICE_PER_MTOK.cacheWrite +
-    (usage.outputTokens || 0) * PRICE_PER_MTOK.output
+    (usage.inputTokens || 0) * price.input +
+    (usage.cachedInputTokens || 0) * price.cachedInput +
+    (usage.cacheWriteTokens || 0) * price.cacheWrite +
+    (usage.outputTokens || 0) * price.output
   ) / 1e6;
 }
 
@@ -346,30 +412,59 @@ async function processPage({ book, pdfBuffer, pageNumber, options, apiKey, model
   const page = await renderPage(pdfBuffer, pageNumber);
   fs.writeFileSync(path.join(dir, `p${pageNumber}.jpg`), page.model);
 
-  const usage = { extract: {}, verify: {} };
+  const usage = { sort: {}, extract: {}, verify: {} };
   const started = Date.now();
+  let targetTypes = null;
+  if (options.diagramTypes) {
+    const sorting = await callAnthropicForResource({
+      apiKey,
+      model,
+      systemPrompt: EXTRACTION_SYSTEM,
+      messages: [{ role: "user", content: [imageBlock(page.model), { type: "text", text: sortPrompt() }] }],
+      maxTokens: 4000,
+      effort: options.sortEffort,
+      responseSchema: SORT_SCHEMA,
+      mathBearing: false,
+    });
+    addUsage(usage.sort, sorting.usage);
+    targetTypes = [...new Set(sorting.parsed.types)];
+    if (!targetTypes.length) {
+      const result = {
+        id, book: book.id, pageNumber, sortedTypes: [], extracted: false,
+        hadTextLayer: Boolean(page.textLayer), seconds: Math.round((Date.now() - started) / 1000),
+        usage, cost: costOf(usage.sort, model), units: [], figures: [], missed: 0,
+      };
+      fs.writeFileSync(path.join(dir, `p${pageNumber}.json`), JSON.stringify(result, null, 2));
+      console.log(`${id}: no target diagrams, $${result.cost.toFixed(4)}`);
+      return result;
+    }
+  }
   const extraction = await callAnthropicForResource({
     apiKey,
     model,
     systemPrompt: EXTRACTION_SYSTEM,
     messages: [{
       role: "user",
-      content: [imageBlock(page.model), { type: "text", text: extractionPrompt({ book, pageNumber, ...page }) }],
+      content: [imageBlock(page.model), { type: "text", text: extractionPrompt({ book, pageNumber, ...page, targetTypes }) }],
     }],
     maxTokens: 32000,
     effort: options.effort,
-    responseSchema: EXTRACTION_SCHEMA,
+    responseSchema: extractionSchema(targetTypes),
     mathBearing: false,
   });
   addUsage(usage.extract, extraction.usage);
-  const units = extraction.parsed.units;
+  // A targeted run only wants units with a target diagram; the model sometimes
+  // lists the rest of the page anyway.
+  const units = targetTypes
+    ? extraction.parsed.units.filter((unit) => unit.figures.length)
+    : extraction.parsed.units;
 
   // Flatten figures so the verify pass and the crops can number them 1..n.
   const figures = [];
   units.forEach((unit, unitIndex) => {
     unit.figures.forEach((figure) => {
       const clamped = clampBox(figure.box, page.width, page.height);
-      if (clamped) figures.push({ unitIndex, description: figure.description, firstBox: clamped, finalBox: clamped });
+      if (clamped) figures.push({ unitIndex, type: figure.type || null, description: figure.description, firstBox: clamped, finalBox: clamped });
     });
   });
   const before = await drawBoxes(page.model, page.width, page.height, figures.map((f) => f.firstBox));
@@ -428,14 +523,16 @@ async function processPage({ book, pdfBuffer, pageNumber, options, apiKey, model
     id,
     book: book.id,
     pageNumber,
+    sortedTypes: targetTypes,
+    extracted: true,
     layout: extraction.parsed.layout,
     hadTextLayer: Boolean(page.textLayer),
     seconds: Math.round((Date.now() - started) / 1000),
     usage,
-    cost: costOf(usage.extract) + costOf(usage.verify),
+    cost: costOf(usage.sort, model) + costOf(usage.extract, model) + costOf(usage.verify, model),
     units,
-    figures: figures.map(({ unitIndex, description, firstBox, finalBox, verdict, n, firstCrop, finalCrop }) => ({
-      n, unit: units[unitIndex].label, description, verdict: verdict || null, firstBox, finalBox, firstCrop, finalCrop: finalCrop || null,
+    figures: figures.map(({ unitIndex, type, description, firstBox, finalBox, verdict, n, firstCrop, finalCrop }) => ({
+      n, unit: units[unitIndex].label, type, description, verdict: verdict || null, firstBox, finalBox, firstCrop, finalCrop: finalCrop || null,
     })),
     missed: missed.length,
   };
@@ -484,6 +581,20 @@ async function mapWithConcurrency(items, limit, fn) {
   return results.filter(Boolean);
 }
 
+// Word and PowerPoint files go through LibreOffice so every page can be
+// rendered the same way; the PDF is kept under --out/converted.
+function loadPdf(options, book) {
+  const source = path.join(options.resourcesRoot, book.path);
+  if (path.extname(source).toLowerCase() === ".pdf") return fs.readFileSync(source);
+  const dir = path.join(options.out, "converted", book.id);
+  const pdf = path.join(dir, `${path.basename(source, path.extname(source))}.pdf`);
+  if (!fs.existsSync(pdf)) {
+    fs.mkdirSync(dir, { recursive: true });
+    execFileSync("soffice", ["--headless", "--convert-to", "pdf", "--outdir", dir, source], { stdio: "ignore" });
+  }
+  return fs.readFileSync(pdf);
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const manifest = JSON.parse(fs.readFileSync(options.manifest, "utf8"));
@@ -492,19 +603,28 @@ async function main() {
     Object.assign(keys, loadFirebaseSecrets({ secretNames: ["ANTHROPIC_API_KEY"] }));
   }
   if (!keys.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is missing; set it locally or pass --firebase-secrets");
-  const model = modelForChoice("anthropic");
+  const model = options.model || modelForChoice("anthropic");
+  if (!PRICES_PER_MTOK[model]) throw new Error(`No price for ${model}; add it to PRICES_PER_MTOK`);
+  fs.mkdirSync(options.out, { recursive: true });
 
   const jobs = [];
+  const unconverted = [];
   for (const book of manifest.books) {
     if (options.only && book.id !== options.only) continue;
-    const pdfBuffer = fs.readFileSync(path.join(options.resourcesRoot, book.path));
+    let pdfBuffer;
+    try {
+      pdfBuffer = loadPdf(options, book);
+    } catch (err) {
+      console.error(`${book.id} skipped: could not convert ${book.path} (${err.message.split("\n")[0]})`);
+      unconverted.push(book.path);
+      continue;
+    }
     for (const pageNumber of book.pages) jobs.push({ book, pdfBuffer, pageNumber });
   }
   if (jobs.length > options.maxPages) {
     throw new Error(`${jobs.length} pages selected; raise --max-pages to run more than ${options.maxPages}`);
   }
-  fs.mkdirSync(options.out, { recursive: true });
-  console.log(`Extracting ${jobs.length} pages with ${model} (effort ${options.effort})`);
+  console.log(`Extracting ${jobs.length} pages with ${model} (effort ${options.effort}${options.diagramTypes ? `, sorting at ${options.sortEffort}` : ""})`);
 
   const results = await mapWithConcurrency(jobs, options.concurrency, (job) =>
     processPage({ ...job, options, apiKey: keys.ANTHROPIC_API_KEY, model })
@@ -514,7 +634,11 @@ async function main() {
     model,
     effort: options.effort,
     pages: results.length,
+    pagesExtracted: results.filter((r) => r.extracted !== false).length,
+    figureTypes: figures.reduce((counts, f) => (f.type ? { ...counts, [f.type]: (counts[f.type] || 0) + 1 } : counts), {}),
+    sortCost: results.reduce((n, r) => n + costOf(r.usage.sort || {}, model), 0),
     failedPages: jobs.length - results.length,
+    unconverted,
     units: results.reduce((n, r) => n + r.units.length, 0),
     figures: figures.length,
     verdicts: figures.reduce((counts, f) => ({ ...counts, [f.verdict || "unchecked"]: (counts[f.verdict || "unchecked"] || 0) + 1 }), {}),
@@ -524,7 +648,7 @@ async function main() {
     secondsPerPage: results.length ? results.reduce((n, r) => n + r.seconds, 0) / results.length : 0,
   };
   fs.writeFileSync(path.join(options.out, "results.json"), JSON.stringify({ summary, results }, null, 2));
-  fs.writeFileSync(path.join(options.out, "review.html"), reviewHtml(results));
+  fs.writeFileSync(path.join(options.out, "review.html"), reviewHtml(results.filter((r) => r.extracted !== false)));
   console.log(JSON.stringify(summary, null, 2));
 }
 
@@ -535,4 +659,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { EXTRACTION_SCHEMA, VERIFY_SCHEMA, clampBox, cleanCrop, costOf, parseArgs };
+module.exports = { DIAGRAM_TYPES, EXTRACTION_SCHEMA, SORT_SCHEMA, VERIFY_SCHEMA, clampBox, cleanCrop, costOf, extractionSchema, parseArgs };
