@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-04 | [Question bank: which Drive files to extract from (RES-56)](#2026-11-04--question-bank-which-drive-files-to-extract-from-res-56) |
 | 2026-11-03 | [Sizing the Drive resources and testing extraction on random pages (RES-54)](#2026-11-03--sizing-the-drive-resources-and-testing-extraction-on-random-pages-res-54) |
 | 2026-11-03 | [Pilot: lifting questions and diagrams out of the Drive resources (RES-54)](#2026-11-03--pilot-lifting-questions-and-diagrams-out-of-the-drive-resources-res-54) |
 | 2026-10-29 | [Mobile 3.4.0 (build 523)](#2026-10-29--mobile-340-build-523) |
@@ -200,6 +201,39 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-04 — Question bank: which Drive files to extract from (RES-56)
+
+**What changed**
+- Added `backend/firebase/functions/src/questionBank/`. `driveSource.js` lists
+  every file under Resources/Maths through the Drive API, as a dedicated
+  read-only service account that callers impersonate (no key file).
+  `sourceRules.js` decides which files the question bank extracts from, and
+  `sourceStore.js` records each file in the `questionBankSources` collection.
+- Files are skipped when they are not documents, are below Year 5, are answer
+  or solution files, are teacher editions with a student edition, are Word
+  copies of a PDF, or are exact copies. On the real listing that leaves 1,420
+  of 8,576 Maths files, about 44,700 pages.
+- Added `scripts/questionBankSync.js` to run the sync (a dry run unless given
+  `--commit --yes`), with unit tests for the rules, the Drive client and the
+  Firestore writes.
+
+**Why:** The question bank (RES-54) needs its own read-only access to the
+Drive resources and a record of which files to extract from, so extraction
+(RES-57) and the weekly sync (RES-62) only work on what is new or changed.
+
+- Created the `question-bank-drive` service account in production. Tom's
+  login and the Functions' runtime account can impersonate it, and it has
+  Viewer access to the shared drive's Resources folder only.
+- Ran the sync against Drive into staging: 8,583 Maths files recorded, 1,422
+  of them to extract. A second run wrote nothing. Listing the 1,200-plus folders
+  takes about a minute and a half.
+
+**Status:** In progress on branch `feat/res-56-drive-source`. Staging has the
+source records; production Firestore hasn't been synced yet. Nothing is
+deployed.
 
 ---
 
