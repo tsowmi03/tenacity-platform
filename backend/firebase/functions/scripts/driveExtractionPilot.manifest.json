@@ -1,0 +1,23 @@
+{
+  "description": "RES-54 phase 0 pilot pages. Paths are relative to the shared drive's Resources folder.",
+  "books": [
+    {
+      "id": "cambridge-y9",
+      "label": "CambridgeMATHS NSW Stage 5 Year 9 Core and Advanced (textbook, text layer)",
+      "path": "Maths/MathsTEXTBOOKS/CMS_NSW_S5_9_CoreAdvanced_book.pdf",
+      "pages": [487, 488, 489, 493, 495, 496, 503, 510]
+    },
+    {
+      "id": "workbook-y9",
+      "label": "Excel Year 9 Mathematics Revision and Exam Workbook (scanned)",
+      "path": "Maths/Revision Workbooks/Year 9 Mathematics Revision and Exam Workbook.pdf",
+      "pages": [33, 35, 39, 40, 42, 43, 45]
+    },
+    {
+      "id": "hsc-adv-y11-tests",
+      "label": "Cambridge Mathematics Advanced Year 11, chapters 1-5 topic tests (two-page spreads)",
+      "path": "Maths/HSC/Advanced/Year 11/Ch 1-5 Topic Tests Cambridge.pdf",
+      "pages": [3, 9, 12, 14, 16]
+    }
+  ]
+}

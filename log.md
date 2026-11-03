@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-03 | [Pilot: lifting questions and diagrams out of the Drive resources (RES-54)](#2026-11-03--pilot-lifting-questions-and-diagrams-out-of-the-drive-resources-res-54) |
 | 2026-10-29 | [Mobile 3.4.0 (build 523)](#2026-10-29--mobile-340-build-523) |
 | 2026-10-29 | [The app is released to both stores from the command line (MOB-67)](#2026-10-29--the-app-is-released-to-both-stores-from-the-command-line-mob-67) |
 | 2026-10-29 | [Parents can respond to feedback (MOB-52)](#2026-10-29--parents-can-respond-to-feedback-mob-52) |
@@ -198,6 +199,32 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-03 — Pilot: lifting questions and diagrams out of the Drive resources (RES-54)
+
+**What changed**
+- Added a local pilot script, `backend/firebase/functions/scripts/driveExtractionPilot.js`.
+  It renders pages from the shared drive's Resources folder and asks Claude to
+  list every question part with its wording, topic and a box around each
+  diagram. It then crops each diagram from a high-resolution render and removes
+  stray marks from neighbouring questions.
+- Ran it on 20 pages from three books: a Cambridge Year 9 textbook, a scanned
+  Excel Year 9 revision workbook and Cambridge Year 11 Advanced topic tests.
+  It found 340 question parts and 179 diagrams. Every diagram was found and
+  cropped whole. The cost was about $0.11 a page.
+- Findings and recommendations for the full build are in
+  [`docs/architecture/res-54-drive-extraction-pilot.md`](docs/architecture/res-54-drive-extraction-pilot.md).
+
+**Why:** RES-54 asks for an index of the Drive resources, so the generator can
+draw on them and build booklets from the original questions and diagrams. The
+pilot was to show whether diagrams can be cropped reliably, and what that
+costs, before the index is built.
+
+**Status:** In progress. The pilot script is on branch
+`feat/res-54-extraction-pilot`. Nothing is deployed, and the generator is
+unchanged.
 
 ---
 
