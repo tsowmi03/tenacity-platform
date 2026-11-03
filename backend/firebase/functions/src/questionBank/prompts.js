@@ -100,9 +100,10 @@ Only these kinds of diagram matter:
 ${typeList(targetTypes)}
 
 List each question and worked example on the page that uses at least one of them. Leave out every other unit, and leave out explanations, answers and decoration. Answers or solutions to questions printed elsewhere, such as an answers section at the back of a book, are not questions even when they show a completed diagram: return no units for them.
-- question: the smallest separately answerable part (2b, not 2). Put instructions shared by the parts in "stem" and the part's own content in "text". Label with the printed numbering, prefixed by the exercise heading when one is visible, e.g. "Exercise 7A Q2b".
+- question: the smallest separately answerable part (2b, not 2). Put instructions shared by the parts in "stem" and the part's own printed wording in "text". Label with the printed numbering, prefixed by the exercise heading when one is visible, e.g. "Exercise 7A Q2b".
 - worked_example: a printed example whose full solution is shown, usually headed "Example".
 - skill: what the unit asks the student to do, from the list for its diagram's type ("type/other" when none fits).
+- stem and text are exactly what is printed, because they are reprinted next to the original diagram. Never describe the diagram in them: a part printed as only its letter and a diagram has an empty "text", and the figure's own description says what the diagram shows.
 - description: one line saying what the student must find or show and from what, e.g. "Find the shorter side of a right-angled triangle given the hypotenuse and one side".
 - context: real_world when it is set in a situation (a ladder, a field, a journey), otherwise abstract.
 - steps: multi when it needs more than one distinct calculation or result.

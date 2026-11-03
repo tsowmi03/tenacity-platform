@@ -225,3 +225,11 @@ describe("cleanCrop", () => {
     assert.equal(meta.height, 200);
   });
 });
+
+describe("printed wording", () => {
+  it("asks for the printed wording only, never a description of the diagram", () => {
+    const prompt = buildExtractParams({ image: IMAGE, sourcePath: "x.pdf", pageNumber: 1, width: 10, height: 10, targetTypes: ["solid_3d"] }).messages[0].content[1].text;
+    assert.match(prompt, /stem and text are exactly what is printed/);
+    assert.match(prompt, /only its letter and a diagram has an empty "text"/);
+  });
+});

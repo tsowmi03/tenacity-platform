@@ -222,14 +222,15 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** To see a real booklet built from bank diagrams before the production
 backfill and RES-60.
 
+- Extraction now stores only the printed wording in `stem` and `text`, so they
+  can be reprinted next to the original diagram. A part printed as only a
+  letter and a diagram has empty `text`; before this, Haiku filled it with a
+  description of the diagram. Rechecked on 5 pages.
+
 **Status:** Proof of concept only, on branch `feat/res-58-quality-check`. The
 builder change is tested; nothing is deployed.
 
 **Next steps**
-- Before the production backfill, extraction should record each part's printed
-  wording separately from its description. For a part that is only a letter
-  and a diagram, `text` holds a description of the diagram, which shouldn't be
-  printed.
 - In RES-60, a bank question goes into a booklet only if the independent
   answer check agrees. Here it caught a crop missing its height label.
 

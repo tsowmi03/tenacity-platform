@@ -53,7 +53,7 @@ Background: [`res-54-phase-1-corpus.md`](res-54-phase-1-corpus.md).
 | `topic` | Model, a few words | "Pythagoras' theorem" |
 | `yearLevel` | Model, from the page and the book's folder | `Year 9` / `Stage 5.2` |
 | `kind` | Model: `question` or `worked_example` | `question` |
-| `stem`, `text` | Model, verbatim, with maths in LaTeX | |
+| `stem`, `text` | Model, exactly as printed, with maths in LaTeX. Never a description of the diagram; `text` is empty for a part printed as only its letter and a diagram | |
 | `diagram` | Crop from the original page | PNG |
 | Source | Pipeline | Book path, page number |
 
