@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-04 | [Question bank: extracting questions and diagrams through the Batch API (RES-57)](#2026-11-04--question-bank-extracting-questions-and-diagrams-through-the-batch-api-res-57) |
 | 2026-11-04 | [Question bank: which Drive files to extract from (RES-56)](#2026-11-04--question-bank-which-drive-files-to-extract-from-res-56) |
 | 2026-11-03 | [Sizing the Drive resources and testing extraction on random pages (RES-54)](#2026-11-03--sizing-the-drive-resources-and-testing-extraction-on-random-pages-res-54) |
 | 2026-11-03 | [Pilot: lifting questions and diagrams out of the Drive resources (RES-54)](#2026-11-03--pilot-lifting-questions-and-diagrams-out-of-the-drive-resources-res-54) |
@@ -204,6 +205,41 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-11-04 — Question bank: extracting questions and diagrams through the Batch API (RES-57)
+
+**What changed**
+- Moved the pilot's extraction into `backend/firebase/functions/src/questionBank/`:
+  the 23 diagram types and their skills (`taxonomy.js`), the sorting and
+  extraction requests on Haiku 5.5 (`prompts.js`), page rendering, blank-page
+  detection and diagram crops (`pages.js`), Message Batches plumbing priced at
+  batch rates (`batches.js`), Word/PowerPoint/Google Docs to PDF
+  (`sourceFiles.js`), and the question records (`extraction.js`).
+- Added `scripts/questionBankExtract.js`. It downloads the pending files,
+  skips blank pages, sorts every page by diagram type, extracts only the pages
+  with a match, and writes each question to the `questionBank` collection with
+  its diagram crops in Storage. It resumes from its work folder, stops at a
+  spending cap, can sample pages for the quality check, and is a dry run
+  unless given `--commit --yes`.
+- Corrected the spec's diagram type count to 23; earlier notes said 24.
+
+**Why:** RES-57 turns the RES-54 pilot into the pipeline that builds the
+question bank from the files RES-56 records.
+
+- Tested on staging with 24 random pages from 8 files: 12 had a target
+  diagram, giving 85 questions. All 86 diagram crops were complete and the
+  skill tags were specific. It cost $0.025 at batch rates and took about 15
+  minutes, mostly waiting on the two batches. A page with no year heading takes
+  its file's most common year level.
+
+**Status:** In progress on branch `feat/res-57-extraction`. Staging has the 85
+test questions; production is untouched. Nothing is deployed.
+
+**Next steps**
+- The 200-page quality check and the full backfill are RES-58. At the measured
+  $0.001 a page, the full run is about $45, under the $100 cap.
+
+---
+
 ## 2026-11-04 — Question bank: which Drive files to extract from (RES-56)
 
 **What changed**
@@ -262,7 +298,7 @@ deployed.
   (about $17 with the Batch API).
 - Findings are in
   [`docs/architecture/res-54-phase-1-corpus.md`](docs/architecture/res-54-phase-1-corpus.md).
-- Agreed the question bank spec with Tom: 24 Maths diagram types, questions and
+- Agreed the question bank spec with Tom: 23 Maths diagram types, questions and
   worked examples only, which sources to include, and the fields stored with
   each question (a fixed skill per type plus a free-text description, context
   and steps), plus the build decisions: how the generator uses the bank,

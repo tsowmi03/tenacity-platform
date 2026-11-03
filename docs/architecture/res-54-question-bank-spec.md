@@ -13,7 +13,7 @@ Background: [`res-54-phase-1-corpus.md`](res-54-phase-1-corpus.md).
 | Content | Questions, worked examples, and data tables a question uses | Explanations, decoration (mascots, icons, photos that only illustrate) and blank answer frames |
 | Sources | NSW textbooks, Victorian textbooks, Mathletics, HSC material, Years 5–6 primary | Years 3–4, teacher editions that have a student edition, answer and solution files (these are for answer linking later) |
 
-## 2. Diagram types (24)
+## 2. Diagram types (23)
 
 | Group | id | Covers |
 |---|---|---|
@@ -45,7 +45,7 @@ Background: [`res-54-phase-1-corpus.md`](res-54-phase-1-corpus.md).
 
 | Field | How it is set | Example |
 |---|---|---|
-| `diagramType` | Model, from the 24 types (one per diagram) | `right_triangle` |
+| `diagramType` | Model, from the 23 types (one per diagram) | `right_triangle` |
 | `skill` | Model, from that type's fixed list in section 5 | `find_shorter_side` |
 | `description` | Model, one line of free text | "Find the shorter side of a right-angled triangle given the hypotenuse and one side" |
 | `context` | Model: `abstract` or `real_world` | `real_world` (a ladder against a wall) |
@@ -65,7 +65,7 @@ captures the nuance either way.
 ## 4. Cost
 
 Per page, the sorting call costs about $0.0003 and extraction about $0.002,
-both on Haiku 5.5. With 24 types, more pages will match than in the 6-type
+both on Haiku 5.5. With 23 types, more pages will match than in the 6-type
 test, perhaps 40–50% of Maths pages. That puts the full run at about $50–60,
 or $25–30 with the Batch API. The extra tags add a few output tokens per
 question.
