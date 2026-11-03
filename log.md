@@ -248,12 +248,22 @@ builder change is tested; nothing is deployed.
 - Added `scripts/questionBankReview.js`, which turns a run into contact sheets
   for checking by eye.
 - Recorded the results in the spec. The full run is estimated at about $27.
+- Made `questionBankExtract.js` fit the whole corpus (about 45,000 pages):
+  - each PDF is opened once and rendered at the size the model sees;
+  - page text lives in its own files and the state is saved every few seconds;
+  - files are prepared four at a time;
+  - batches are built and submitted one slice at a time, so only one slice of
+    page images is in memory.
+- Timed a run on 8 random whole files on staging (84 pages). Preparing took 12
+  seconds and the run took 8½ minutes in all, mostly waiting on the two
+  batches. It wrote 177 questions for $0.045, and every file was marked as
+  extracted.
 
 **Why:** RES-58 is the gate before the question bank is built for real.
 
 **Status:** In progress on branch `feat/res-58-quality-check`. The quality
-check passed. The full production backfill hasn't started; it needs Tom's
-approval.
+check passed and the script is ready for the full run. The production
+backfill hasn't started; it needs Tom's approval.
 
 ---
 

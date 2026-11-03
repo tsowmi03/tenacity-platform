@@ -24,19 +24,6 @@ const INK_THRESHOLD = 170;
 // a little speckle, so it isn't zero.
 const BLANK_INK_SHARE = 0.002;
 
-async function withParser(pdfBuffer, fn) {
-  const parser = new PDFParse({ data: pdfBuffer });
-  try {
-    return await fn(parser);
-  } finally {
-    await parser.destroy();
-  }
-}
-
-async function pageCount(pdfBuffer) {
-  return withParser(pdfBuffer, async (parser) => (await parser.getInfo()).total);
-}
-
 // Share of pixels darker than the ink threshold.
 async function inkShare(image) {
   const { data } = await sharp(image).greyscale().raw().toBuffer({ resolveWithObject: true });
@@ -45,45 +32,61 @@ async function inkShare(image) {
   return inked / data.length;
 }
 
+function usableText(text) {
+  const trimmed = (text || "").trim();
+  return trimmed.replace(/\s+/g, "").length >= TEXT_LAYER_MIN_CHARS ? trimmed : null;
+}
+
 /**
- * Renders a page at the size the model sees. Returns the JPEG, its pixel size,
- * the page's own text when it has a usable text layer, and whether it is blank.
+ * Opens a PDF once for many page operations: loading a 900-page textbook for
+ * every page would dominate a full run. Call close() when done.
  */
-async function renderModelPage(pdfBuffer, pageNumber) {
-  return withParser(pdfBuffer, async (parser) => {
-    const shot = await parser.getScreenshot({ partial: [pageNumber], desiredWidth: CROP_RENDER_WIDTH, imageBuffer: true });
-    const text = await parser.getText({ partial: [pageNumber] });
-    const image = await sharp(Buffer.from(shot.pages[0].data))
-      .flatten({ background: "#ffffff" })
-      .resize({ width: MODEL_LONG_EDGE, height: MODEL_LONG_EDGE, fit: "inside" })
-      .jpeg({ quality: 88 })
-      .toBuffer();
-    const { width, height } = await sharp(image).metadata();
-    const pageText = (text.pages?.[0]?.text || "").trim();
-    return {
-      image,
-      width,
-      height,
-      textLayer: pageText.replace(/\s+/g, "").length >= TEXT_LAYER_MIN_CHARS ? pageText : null,
-      blank: (await inkShare(image)) < BLANK_INK_SHARE,
-    };
-  });
+async function openPdf(pdfBuffer) {
+  const parser = new PDFParse({ data: pdfBuffer });
+  const shot = async (pageNumber, desiredWidth) => {
+    const result = await parser.getScreenshot({ partial: [pageNumber], desiredWidth, imageBuffer: true });
+    return sharp(Buffer.from(result.pages[0].data)).flatten({ background: "#ffffff" });
+  };
+  return {
+    pageCount: async () => (await parser.getInfo()).total,
+
+    // The page at the size the model sees, its own text when it has a usable
+    // text layer, and whether it is blank.
+    async renderModelPage(pageNumber) {
+      const image = await (await shot(pageNumber, MODEL_LONG_EDGE))
+        .resize({ width: MODEL_LONG_EDGE, height: MODEL_LONG_EDGE, fit: "inside" })
+        .jpeg({ quality: 88 })
+        .toBuffer();
+      const { width, height } = await sharp(image).metadata();
+      const text = await parser.getText({ partial: [pageNumber] });
+      return { image, width, height, textLayer: usableText(text.pages?.[0]?.text), blank: (await inkShare(image)) < BLANK_INK_SHARE };
+    },
+
+    async pageText(pageNumber) {
+      return usableText((await parser.getText({ partial: [pageNumber] })).pages?.[0]?.text);
+    },
+
+    async renderHiResPage(pageNumber) {
+      return (await shot(pageNumber, CROP_RENDER_WIDTH)).png().toBuffer();
+    },
+
+    close: () => parser.destroy(),
+  };
 }
 
-// A page's own text when it has a usable text layer, else null.
-async function pageText(pdfBuffer, pageNumber) {
-  return withParser(pdfBuffer, async (parser) => {
-    const text = (await parser.getText({ partial: [pageNumber] })).pages?.[0]?.text?.trim() || "";
-    return text.replace(/\s+/g, "").length >= TEXT_LAYER_MIN_CHARS ? text : null;
-  });
+async function withPdf(pdfBuffer, fn) {
+  const pdf = await openPdf(pdfBuffer);
+  try {
+    return await fn(pdf);
+  } finally {
+    await pdf.close();
+  }
 }
 
-async function renderHiResPage(pdfBuffer, pageNumber) {
-  return withParser(pdfBuffer, async (parser) => {
-    const shot = await parser.getScreenshot({ partial: [pageNumber], desiredWidth: CROP_RENDER_WIDTH, imageBuffer: true });
-    return sharp(Buffer.from(shot.pages[0].data)).flatten({ background: "#ffffff" }).png().toBuffer();
-  });
-}
+const pageCount = (pdfBuffer) => withPdf(pdfBuffer, (pdf) => pdf.pageCount());
+const renderModelPage = (pdfBuffer, pageNumber) => withPdf(pdfBuffer, (pdf) => pdf.renderModelPage(pageNumber));
+const pageText = (pdfBuffer, pageNumber) => withPdf(pdfBuffer, (pdf) => pdf.pageText(pageNumber));
+const renderHiResPage = (pdfBuffer, pageNumber) => withPdf(pdfBuffer, (pdf) => pdf.renderHiResPage(pageNumber));
 
 function clampBox(b, width, height) {
   const x0 = Math.max(0, Math.min(b.x0, b.x1));
@@ -197,6 +200,7 @@ module.exports = {
   cleanCrop,
   cropFigure,
   inkShare,
+  openPdf,
   pageCount,
   pageText,
   renderHiResPage,

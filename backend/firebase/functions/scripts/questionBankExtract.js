@@ -12,13 +12,20 @@
  * Usage:
  *   node scripts/questionBankExtract.js --projectId=tenacity-tutoring-staging \
  *     --work-dir=/tmp/qb-run [--limit-sources=40] [--pages-per-source=5] \
- *     [--seed=54] [--cap=100] [--firebase-secrets] [--commit --yes]
+ *     [--seed=54] [--cap=100] [--concurrency=4] [--firebase-secrets] \
+ *     [--commit --yes]
  *
  * Without --commit --yes it only prepares pages and prints the plan: no API
  * calls and no writes. Rerunning with the same --work-dir resumes: prepared
  * files and finished pages are kept, and submitted batches are awaited.
  * --pages-per-source samples pages (the RES-58 quality check); a sampled file
  * is never marked as extracted.
+ *
+ * RES-58 made it fit the whole corpus (about 45,000 pages): each PDF is opened
+ * once, page text lives in its own files rather than the state file, the state
+ * is saved at most every few seconds, files are prepared --concurrency at a
+ * time, and batches are built and submitted one slice at a time so only one
+ * slice of page images is ever held in memory.
  *
  * Auth: Application Default Credentials for Firestore and Storage, and the
  * Token Creator role on the Drive account (see questionBankSync.js). The
@@ -32,29 +39,30 @@ const fs = require("node:fs");
 const path = require("node:path");
 const admin = require("firebase-admin");
 
-const { batchCostOf, chunkRequests, collectResults, submitBatch, waitForBatch } = require("../src/questionBank/batches");
+const { MAX_BATCH_BYTES, batchCostOf, collectResults, submitBatch, waitForBatch } = require("../src/questionBank/batches");
 const { createDriveClient, createImpersonatedTokenProvider } = require("../src/questionBank/driveSource");
 const { QUESTIONS_COLLECTION, majorityYearLevel, parseRequestId, requestId, toQuestionDocs } = require("../src/questionBank/extraction");
-const { cropFigure, pageCount, pageText, renderHiResPage, renderModelPage } = require("../src/questionBank/pages");
+const { cropFigure, openPdf } = require("../src/questionBank/pages");
 const { EXTRACT_MAX_TOKENS, QUESTION_BANK_MODEL, SORT_MAX_TOKENS, buildExtractParams, buildSortParams, readMessage } = require("../src/questionBank/prompts");
 const { fetchSourcePdf } = require("../src/questionBank/sourceFiles");
 const { SOURCES_COLLECTION } = require("../src/questionBank/sourceStore");
 const { loadFirebaseSecrets, loadLocalSecrets } = require("./liveResourceSmoke");
 
-// Rough per-page batch prices, measured in RES-54 phase 1 and halved for
-// batches, used to check a batch fits under the cap before it is submitted.
-const ESTIMATE = { sort: 0.00017, extract: 0.001 };
+// Per-page batch prices measured in the RES-58 quality check, with headroom,
+// used to check a batch fits under the cap before it is submitted.
+const ESTIMATE = { sort: 0.0002, extract: 0.0015 };
 const TERMINAL_STAGES = new Set(["blank", "no_target", "done", "failed"]);
+const SAVE_EVERY_MS = 10 * 1000;
 
 function parseArgs(argv) {
-  const options = { projectId: "", workDir: "", limitSources: Infinity, pagesPerSource: null, seed: 54, cap: 100, firebaseSecrets: false, commit: false, yes: false };
+  const options = { projectId: "", workDir: "", limitSources: Infinity, pagesPerSource: null, seed: 54, cap: 100, concurrency: 4, firebaseSecrets: false, commit: false, yes: false };
   for (const arg of argv) {
     if (arg === "--commit") options.commit = true;
     else if (arg === "--yes") options.yes = true;
     else if (arg === "--firebase-secrets") options.firebaseSecrets = true;
     else {
       const [flag, value] = arg.split(/=(.*)/s);
-      const key = { "--projectId": "projectId", "--work-dir": "workDir", "--limit-sources": "limitSources", "--pages-per-source": "pagesPerSource", "--seed": "seed", "--cap": "cap" }[flag];
+      const key = { "--projectId": "projectId", "--work-dir": "workDir", "--limit-sources": "limitSources", "--pages-per-source": "pagesPerSource", "--seed": "seed", "--cap": "cap", "--concurrency": "concurrency" }[flag];
       if (!key || value === undefined) throw new Error(`Unknown argument: ${arg}`);
       options[key] = ["projectId", "workDir"].includes(key) ? value : Number(value);
     }
@@ -84,16 +92,40 @@ function shuffled(items, random) {
   return copy;
 }
 
+async function mapWithConcurrency(items, limit, fn) {
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) await fn(items[next++]);
+  }));
+}
+
 function createRun(workDir) {
   const statePath = path.join(workDir, "state.json");
   const state = fs.existsSync(statePath)
     ? JSON.parse(fs.readFileSync(statePath, "utf8"))
     : { runId: `qb-${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}`, spentUsd: 0, sources: null, pages: {}, batches: [] };
-  const save = () => {
+  let lastSaved = 0;
+  // Saves at most every few seconds unless forced: with tens of thousands of
+  // pages, writing the state after every page would dominate the run.
+  const save = ({ force = false } = {}) => {
+    if (!force && Date.now() - lastSaved < SAVE_EVERY_MS) return;
     fs.writeFileSync(`${statePath}.tmp`, JSON.stringify(state));
     fs.renameSync(`${statePath}.tmp`, statePath);
+    lastSaved = Date.now();
   };
-  return { state, save, pdfPath: (id) => path.join(workDir, "pdf", `${id}.pdf`), imagePath: (key) => path.join(workDir, "pages", `${key}.jpg`) };
+  for (const dir of ["pdf", "pages", "text"]) fs.mkdirSync(path.join(workDir, dir), { recursive: true });
+  return {
+    state,
+    save,
+    pdfPath: (id) => path.join(workDir, "pdf", `${id}.pdf`),
+    imagePath: (key) => path.join(workDir, "pages", `${key}.jpg`),
+    textPath: (key) => path.join(workDir, "text", `${key}.json`),
+  };
+}
+
+function readText(run, key) {
+  const file = run.textPath(key);
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
 }
 
 async function selectSources(db, options) {
@@ -108,95 +140,116 @@ async function selectSources(db, options) {
 
 async function prepareSource(run, drive, source, options) {
   const { state } = run;
+  let pdf;
   try {
-    const pdf = await fetchSourcePdf({ drive, source });
-    fs.mkdirSync(path.dirname(run.pdfPath(source.id)), { recursive: true });
-    fs.writeFileSync(run.pdfPath(source.id), pdf);
-    source.pageCount = await pageCount(pdf);
+    const buffer = await fetchSourcePdf({ drive, source });
+    fs.writeFileSync(run.pdfPath(source.id), buffer);
+    pdf = await openPdf(buffer);
+    source.pageCount = await pdf.pageCount();
     const all = Array.from({ length: source.pageCount }, (_, i) => i + 1);
     source.sampled = Boolean(options.pagesPerSource && options.pagesPerSource < all.length);
     const pages = source.sampled ? shuffled(all, randomSource(options.seed + source.pageCount)).slice(0, options.pagesPerSource).sort((a, b) => a - b) : all;
-    fs.mkdirSync(path.dirname(run.imagePath("x")), { recursive: true });
+    const chosen = new Set(pages);
     let previousText = null;
     for (const pageNumber of pages) {
       const key = requestId("page", source.id, pageNumber);
-      const page = await renderModelPage(pdf, pageNumber);
+      const page = await pdf.renderModelPage(pageNumber);
       fs.writeFileSync(run.imagePath(key), page.image);
-      const previousPageText = pageNumber > 1
-        ? (pages.includes(pageNumber - 1) ? previousText : await pageText(pdf, pageNumber - 1))
-        : null;
-      state.pages[key] = {
-        sourceId: source.id, pageNumber, width: page.width, height: page.height,
-        textLayer: page.textLayer, previousPageText, stage: page.blank ? "blank" : "sort",
-      };
+      const previousPageText = pageNumber > 1 ? (chosen.has(pageNumber - 1) ? previousText : await pdf.pageText(pageNumber - 1)) : null;
+      if (page.textLayer || previousPageText) {
+        fs.writeFileSync(run.textPath(key), JSON.stringify({ textLayer: page.textLayer, previousPageText }));
+      }
+      state.pages[key] = { sourceId: source.id, pageNumber, width: page.width, height: page.height, stage: page.blank ? "blank" : "sort" };
       previousText = page.textLayer;
     }
   } catch (err) {
     source.error = err.message.slice(0, 300);
+  } finally {
+    if (pdf) await pdf.close();
   }
   source.prepared = true;
   run.save();
 }
 
-function pendingRequests(run, stage) {
-  const queued = new Set(run.state.batches.filter((b) => b.status === "submitted").flatMap((b) => b.keys));
-  return Object.entries(run.state.pages)
-    .filter(([key, page]) => page.stage === stage && !queued.has(key))
-    .map(([key, page]) => {
-      const source = run.state.sources[page.sourceId];
-      const image = fs.readFileSync(run.imagePath(key));
-      const params = stage === "sort"
-        ? buildSortParams({ image })
-        : buildExtractParams({ image, sourcePath: source.path, pageNumber: page.pageNumber, width: page.width, height: page.height, targetTypes: page.targetTypes, textLayer: page.textLayer, previousPageText: page.previousPageText });
-      return { key, request: { custom_id: requestId(stage, page.sourceId, page.pageNumber), params } };
-    });
+function buildRequest(run, key, page, stage) {
+  const source = run.state.sources[page.sourceId];
+  const image = fs.readFileSync(run.imagePath(key));
+  const params = stage === "sort"
+    ? buildSortParams({ image })
+    : buildExtractParams({ image, sourcePath: source.path, pageNumber: page.pageNumber, width: page.width, height: page.height, targetTypes: page.targetTypes, ...readText(run, key) });
+  return { custom_id: requestId(stage, page.sourceId, page.pageNumber), params };
 }
 
-// Submits what fits under the cap; returns false when the cap stopped it.
+// Builds and submits one batch at a time, so only one batch's page images are
+// in memory. Returns false when the spending cap stopped it.
 async function submitStage(run, client, stage, options) {
-  const pending = pendingRequests(run, stage);
-  const outstanding = run.state.batches.filter((b) => b.status === "submitted").reduce((sum, b) => sum + b.estimateUsd, 0);
-  for (const chunk of chunkRequests(pending.map((p) => p.request))) {
+  const queued = new Set(run.state.batches.filter((b) => b.status === "submitted").flatMap((b) => b.keys));
+  const pending = Object.entries(run.state.pages).filter(([key, page]) => page.stage === stage && !queued.has(key));
+  let outstanding = run.state.batches.filter((b) => b.status === "submitted").reduce((sum, b) => sum + b.estimateUsd, 0);
+  let chunk = [];
+  let bytes = 0;
+
+  const flush = async () => {
+    if (!chunk.length) return true;
     const estimateUsd = chunk.length * ESTIMATE[stage];
     if (run.state.spentUsd + outstanding + estimateUsd > options.cap) {
-      console.log(`Spending cap $${options.cap} reached: $${run.state.spentUsd.toFixed(2)} spent; ${chunk.length} ${stage} requests not submitted.`);
+      console.log(`Spending cap $${options.cap} reached: $${run.state.spentUsd.toFixed(2)} spent; ${stage} requests from here on are not submitted.`);
       return false;
     }
-    const id = await submitBatch(client, chunk);
-    const keys = chunk.map((request) => {
-      const { sourceId, pageNumber } = parseRequestId(request.custom_id);
-      return requestId("page", sourceId, pageNumber);
-    });
-    run.state.batches.push({ id, stage, keys, estimateUsd, status: "submitted" });
-    run.save();
+    const id = await submitBatch(client, chunk.map((entry) => entry.request));
+    run.state.batches.push({ id, stage, keys: chunk.map((entry) => entry.key), estimateUsd, status: "submitted" });
+    outstanding += estimateUsd;
+    run.save({ force: true });
     console.log(`Submitted ${stage} batch ${id}: ${chunk.length} pages`);
+    chunk = [];
+    bytes = 0;
+    return true;
+  };
+
+  for (const [key, page] of pending) {
+    const request = buildRequest(run, key, page, stage);
+    const size = Buffer.byteLength(JSON.stringify(request));
+    if (chunk.length && bytes + size > (options.maxBatchBytes || MAX_BATCH_BYTES) && !(await flush())) return false;
+    chunk.push({ key, request });
+    bytes += size;
   }
-  return true;
+  return flush();
 }
 
-async function writeQuestions({ run, bucket, db, key, page, units }) {
-  const source = run.state.sources[page.sourceId];
-  const docs = toQuestionDocs({ source, pageNumber: page.pageNumber, width: page.width, height: page.height, units, runId: run.state.runId, model: QUESTION_BANK_MODEL });
-  if (!docs.length) return 0;
-  const hiRes = await renderHiResPage(fs.readFileSync(run.pdfPath(page.sourceId)), page.pageNumber);
-  const batch = db.batch();
-  for (const doc of docs) {
-    for (const figure of doc.data.figures) {
-      const png = await cropFigure(hiRes, figure.box, page.width);
-      await bucket.file(figure.storagePath).save(png, { contentType: "image/png", resumable: false });
+async function writeSourceQuestions({ run, db, bucket, sourceId, entries }) {
+  const source = run.state.sources[sourceId];
+  const pdf = await openPdf(fs.readFileSync(run.pdfPath(sourceId)));
+  try {
+    for (const { page, units } of entries) {
+      const docs = toQuestionDocs({ source, pageNumber: page.pageNumber, width: page.width, height: page.height, units, runId: run.state.runId, model: QUESTION_BANK_MODEL });
+      if (docs.length) {
+        const hiRes = await pdf.renderHiResPage(page.pageNumber);
+        const batch = db.batch();
+        for (const doc of docs) {
+          for (const figure of doc.data.figures) {
+            const png = await cropFigure(hiRes, figure.box, page.width);
+            await bucket.file(figure.storagePath).save(png, { contentType: "image/png", resumable: false });
+          }
+          batch.set(db.collection(QUESTIONS_COLLECTION).doc(doc.id), { ...doc.data, extractedAt: admin.firestore.FieldValue.serverTimestamp() });
+        }
+        await batch.commit();
+      }
+      page.questionCount = docs.length;
+      page.stage = "done";
     }
-    batch.set(db.collection(QUESTIONS_COLLECTION).doc(doc.id), { ...doc.data, extractedAt: admin.firestore.FieldValue.serverTimestamp() });
+  } finally {
+    await pdf.close();
   }
-  await batch.commit();
-  return docs.length;
 }
 
 async function collectBatch(run, client, batch, { db, bucket }) {
   await waitForBatch(client, batch.id, { onPoll: (b) => console.log(`Waiting on ${batch.stage} batch ${batch.id}: ${b.request_counts.processing} processing`) });
+  // Extract results are grouped by file so each PDF is opened once for its
+  // high-resolution crops.
+  const extracted = new Map();
   for (const result of await collectResults(client, batch.id)) {
     const { stage, sourceId, pageNumber } = parseRequestId(result.customId);
-    const key = requestId("page", sourceId, pageNumber);
-    const page = run.state.pages[key];
+    const page = run.state.pages[requestId("page", sourceId, pageNumber)];
     if (result.type !== "succeeded") {
       Object.assign(page, { stage: "failed", error: `${result.type}${result.error ? `: ${JSON.stringify(result.error).slice(0, 200)}` : ""}` });
       continue;
@@ -208,15 +261,23 @@ async function collectBatch(run, client, batch, { db, bucket }) {
         page.targetTypes = [...new Set(parsed.types)];
         page.stage = page.targetTypes.length ? "extract" : "no_target";
       } else {
-        page.questionCount = await writeQuestions({ run, bucket, db, key, page, units: parsed.units });
-        page.stage = "done";
+        if (!extracted.has(sourceId)) extracted.set(sourceId, []);
+        extracted.get(sourceId).push({ page, units: parsed.units });
       }
     } catch (err) {
       Object.assign(page, { stage: "failed", error: err.message.slice(0, 300) });
     }
   }
+  for (const [sourceId, entries] of extracted) {
+    try {
+      await writeSourceQuestions({ run, db, bucket, sourceId, entries });
+    } catch (err) {
+      for (const { page } of entries) if (page.stage !== "done") Object.assign(page, { stage: "failed", error: err.message.slice(0, 300) });
+    }
+    run.save();
+  }
   batch.status = "collected";
-  run.save();
+  run.save({ force: true });
 }
 
 async function collectAll(run, client, io) {
@@ -236,30 +297,35 @@ async function fillYearLevels(db, sourceId, runId) {
 // A file is extracted once every one of its pages has finished; sampled files
 // never are, so the full run still covers them.
 async function markExtractedSources(run, db) {
-  const pages = Object.values(run.state.pages);
+  const pagesBySource = new Map();
+  for (const page of Object.values(run.state.pages)) {
+    if (!pagesBySource.has(page.sourceId)) pagesBySource.set(page.sourceId, []);
+    pagesBySource.get(page.sourceId).push(page);
+  }
   for (const source of Object.values(run.state.sources)) {
     if (!source.prepared || source.marked) continue;
-    const own = pages.filter((page) => page.sourceId === source.id);
+    const own = pagesBySource.get(source.id) || [];
     if (source.error) {
       await db.collection(SOURCES_COLLECTION).doc(source.id).set({ extractionError: source.error, extractionRunId: run.state.runId }, { merge: true });
     } else if (!own.every((page) => TERMINAL_STAGES.has(page.stage))) {
       continue;
-    } else if (source.sampled) {
-      await fillYearLevels(db, source.id, run.state.runId);
     } else {
       await fillYearLevels(db, source.id, run.state.runId);
-      await db.collection(SOURCES_COLLECTION).doc(source.id).set({
-        extractedVersion: source.version,
-        extractedAt: admin.firestore.FieldValue.serverTimestamp(),
-        extractionRunId: run.state.runId,
-        questionCount: own.reduce((sum, page) => sum + (page.questionCount || 0), 0),
-        failedPages: own.filter((page) => page.stage === "failed").map((page) => page.pageNumber),
-        extractionError: null,
-      }, { merge: true });
+      if (!source.sampled) {
+        await db.collection(SOURCES_COLLECTION).doc(source.id).set({
+          extractedVersion: source.version,
+          extractedAt: admin.firestore.FieldValue.serverTimestamp(),
+          extractionRunId: run.state.runId,
+          questionCount: own.reduce((sum, page) => sum + (page.questionCount || 0), 0),
+          failedPages: own.filter((page) => page.stage === "failed").map((page) => page.pageNumber),
+          extractionError: null,
+        }, { merge: true });
+      }
     }
     source.marked = true;
+    run.save();
   }
-  run.save();
+  run.save({ force: true });
 }
 
 function summary(run) {
@@ -286,19 +352,25 @@ async function main() {
 
   if (!run.state.sources) {
     run.state.sources = await selectSources(db, options);
-    run.save();
+    run.save({ force: true });
   }
   const drive = createDriveClient({ getAccessToken: createImpersonatedTokenProvider() });
-  for (const source of Object.values(run.state.sources).filter((s) => !s.prepared)) {
+  const toPrepare = Object.values(run.state.sources).filter((s) => !s.prepared);
+  const started = Date.now();
+  let prepared = 0;
+  await mapWithConcurrency(toPrepare, options.concurrency, async (source) => {
     await prepareSource(run, drive, source, options);
-    console.log(`Prepared ${source.path}: ${source.error || `${source.pageCount} pages`}`);
-  }
+    prepared += 1;
+    const minutes = ((Date.now() - started) / 60000).toFixed(1);
+    console.log(`Prepared ${prepared}/${toPrepare.length} (${minutes} min) ${source.path}: ${source.error || `${source.pageCount} pages`}`);
+  });
+  run.save({ force: true });
   const plan = summary(run);
   console.log(JSON.stringify(plan, null, 2));
 
   if (!(options.commit && options.yes)) {
     const toSort = plan.stages.sort || 0;
-    console.log(`Dry run: ${toSort} pages to sort, about $${(toSort * (ESTIMATE.sort + 0.3 * ESTIMATE.extract)).toFixed(2)} in all. Pass --commit --yes to run.`);
+    console.log(`Dry run: ${toSort} pages to sort, about $${(toSort * (ESTIMATE.sort + 0.35 * ESTIMATE.extract)).toFixed(2)} in all. Pass --commit --yes to run.`);
     return;
   }
 
@@ -327,4 +399,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, randomSource, shuffled };
+module.exports = { createRun, parseArgs, randomSource, shuffled, submitStage };

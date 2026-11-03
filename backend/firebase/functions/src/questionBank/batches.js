@@ -82,6 +82,7 @@ async function collectResults(client, batchId) {
 
 module.exports = {
   BATCH_DISCOUNT,
+  MAX_BATCH_BYTES,
   PRICES_PER_MTOK,
   batchCostOf,
   chunkRequests,

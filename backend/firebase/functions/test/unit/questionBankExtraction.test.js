@@ -233,3 +233,44 @@ describe("printed wording", () => {
     assert.match(prompt, /only its letter and a diagram has an empty "text"/);
   });
 });
+
+describe("submitStage", () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { createRun, submitStage } = require("../../scripts/questionBankExtract");
+
+  function runWithPages(count) {
+    const run = createRun(fs.mkdtempSync(path.join(os.tmpdir(), "qb-submit-")));
+    run.state.sources = { src: { id: "src", path: "Maths/x.pdf" } };
+    for (let n = 1; n <= count; n++) {
+      const key = requestId("page", "src", n);
+      fs.writeFileSync(run.imagePath(key), Buffer.alloc(2000, n));
+      run.state.pages[key] = { sourceId: "src", pageNumber: n, width: 10, height: 10, stage: "sort" };
+    }
+    return run;
+  }
+
+  function fakeClient() {
+    const batches = [];
+    return { batches, messages: { batches: { create: async ({ requests }) => { batches.push(requests.map((r) => r.custom_id)); return { id: `b${batches.length}` }; } } } };
+  }
+
+  it("submits one size-limited batch at a time and records each", async () => {
+    const run = runWithPages(3);
+    const client = fakeClient();
+    const finished = await submitStage(run, client, "sort", { cap: 100, maxBatchBytes: 4000 });
+    assert.equal(finished, true);
+    assert.deepEqual(client.batches.map((b) => b.length), [1, 1, 1]);
+    assert.deepEqual(run.state.batches.map((b) => b.status), ["submitted", "submitted", "submitted"]);
+    assert.equal(await submitStage(run, client, "sort", { cap: 100, maxBatchBytes: 4000 }), true);
+    assert.equal(client.batches.length, 3, "pages already in a batch are not sent again");
+  });
+
+  it("stops before a batch that would pass the spending cap", async () => {
+    const run = runWithPages(3);
+    const client = fakeClient();
+    assert.equal(await submitStage(run, client, "sort", { cap: 0.0001 }), false);
+    assert.deepEqual(client.batches, []);
+  });
+});
