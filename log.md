@@ -334,6 +334,11 @@ and searchable, so the generator can use them.
   rejected vector fields outright; they now accept a flat vector index as a
   composite index's last field, with `__name__` placed before it as Firestore
   does.
+- The two indexes are listed as pending additions in
+  `pending-index-deployment-exceptions.json`, as the notifications index was
+  in #123; without that, the first production deploy stopped at its
+  before-deploy check (nothing was deployed). Close the entries once they
+  are live.
 - `questionBankDedupe.js` merges copies of one question from different
   files: the copy with the latest year in its path, then the most recently
   modified file, stays live and lists every source; the others are marked
