@@ -43,7 +43,11 @@ async function main() {
     .collection(QUESTIONS_COLLECTION)
     .select("status", "sourceId", "sourcePath", "pageNumber", "label", "kind", "diagramType", "skill", "stem", "text", "figures", "duplicateOf", "sources")
     .get();
-  const questions = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data(), sourceModifiedTime: modified.get(doc.get("sourceId")) || null }));
+  // A retired question belongs to a removed or replaced file (RES-62); it is
+  // never a copy to keep.
+  const questions = snapshot.docs
+    .filter((doc) => doc.get("status") !== "retired")
+    .map((doc) => ({ id: doc.id, ...doc.data(), sourceModifiedTime: modified.get(doc.get("sourceId")) || null }));
 
   const groups = findDuplicateGroups(questions);
   const writes = planDuplicateWrites(questions, groups);

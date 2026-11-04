@@ -1,0 +1,69 @@
+# RES-62. Weekly question bank update: new and changed Maths files in Drive go
+# through the same skip rules and extraction as the November 2026 backfill,
+# with their own $10 spending cap. Questions from removed or replaced files are
+# retired. See backend/firebase/functions/scripts/questionBankWeekly.js.
+#
+# Runs as tenacity-prod-question-bank, which needs (one-time setup):
+#   - roles/iam.workloadIdentityUser for this repository's principal set
+#   - roles/datastore.user and roles/storage.objectAdmin on the default bucket
+#   - roles/secretmanager.secretAccessor on ANTHROPIC_API_KEY and OPENAI_API_KEY
+#   - roles/iam.serviceAccountTokenCreator on question-bank-drive (Drive reads)
+name: Question bank weekly update
+
+on:
+  schedule:
+    # 02:00 Sydney on Sunday in AEDT (01:00 in AEST).
+    - cron: "0 15 * * 6"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Count what would change without writing anything"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenacity-question-bank-weekly
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Sync, extract, embed and merge
+    runs-on: ubuntu-24.04
+    # Batch results usually return within an hour; the cap is GitHub's.
+    timeout-minutes: 360
+    environment: tenacity-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.23.1
+      - run: npm ci --prefix backend/firebase/functions
+      - name: Install LibreOffice and the Firebase CLI
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends libreoffice-writer libreoffice-impress
+          npm install --global "firebase-tools@15.20.0"
+      - name: Authenticate question bank runner
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: projects/398065992407/locations/global/workloadIdentityPools/github/providers/tenacity-platform
+          service_account: tenacity-prod-question-bank@tenacity-tutoring-b8eb2.iam.gserviceaccount.com
+          create_credentials_file: true
+      - name: Update the question bank
+        env:
+          GOOGLE_CLOUD_PROJECT: tenacity-tutoring-b8eb2
+          GCLOUD_PROJECT: tenacity-tutoring-b8eb2
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        working-directory: backend/firebase/functions
+        run: |
+          flags="--commit --yes"
+          if [ "$DRY_RUN" = "true" ]; then flags=""; fi
+          node scripts/questionBankWeekly.js --projectId=tenacity-tutoring-b8eb2 --work-dir="$RUNNER_TEMP/question-bank" --cap=10 $flags
