@@ -46,7 +46,7 @@ function extractSchema(targetTypes) {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["kind", "label", "skill", "description", "context", "steps", "topic", "yearLevel", "stem", "text", "box", "figures"],
+          required: ["kind", "label", "skill", "description", "context", "steps", "difficulty", "topic", "yearLevel", "stem", "text", "box", "figures"],
           properties: {
             kind: { type: "string", enum: ["question", "worked_example"] },
             label: { type: "string" },
@@ -54,6 +54,7 @@ function extractSchema(targetTypes) {
             description: { type: "string" },
             context: { type: "string", enum: ["abstract", "real_world"] },
             steps: { type: "string", enum: ["single", "multi"] },
+            difficulty: { type: "string", enum: ["easy", "medium", "hard"] },
             topic: { type: "string" },
             yearLevel: { type: ["string", "null"] },
             stem: { type: ["string", "null"] },
@@ -107,6 +108,7 @@ List each question and worked example on the page that uses at least one of them
 - description: one line saying what the student must find or show and from what, e.g. "Find the shorter side of a right-angled triangle given the hypotenuse and one side".
 - context: real_world when it is set in a situation (a ladder, a field, a journey), otherwise abstract.
 - steps: multi when it needs more than one distinct calculation or result.
+- difficulty: easy, medium or hard for a student in the year the page is written for. Use the book's own signals first: questions later in an exercise are harder, and sections headed Problem solving, Reasoning, Challenge, Extension or Enrichment hold the hard ones; in a test or exam paper, later questions and those worth more marks are harder. Then the question itself: more steps, an unfamiliar or worded setting, a missing step the student must see (such as using Pythagoras first), awkward numbers, exact answers or proofs make it harder.
 - topic: the syllabus topic in a few words. yearLevel: the year or stage the page is written for, e.g. "Year 9" or "Stage 5.2", using the file path and the page; null if neither says.
 Write all maths in LaTeX between $...$.
 

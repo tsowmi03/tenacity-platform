@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-04 | [Question bank: difficulty ratings, THSC past papers, Years 9-10 first](#2026-11-04--question-bank-difficulty-ratings-thsc-past-papers-years-9-10-first) |
 | 2026-11-04 | [Question bank: a proof-of-concept booklet from original diagrams](#2026-11-04--question-bank-a-proof-of-concept-booklet-from-original-diagrams) |
 | 2026-11-04 | [Question bank: quality check passed (RES-58)](#2026-11-04--question-bank-quality-check-passed-res-58) |
 | 2026-11-04 | [Question bank: extracting questions and diagrams through the Batch API (RES-57)](#2026-11-04--question-bank-extracting-questions-and-diagrams-through-the-batch-api-res-57) |
@@ -204,6 +205,34 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-04 — Question bank: difficulty ratings, THSC past papers, Years 9-10 first
+
+**What changed**
+- Each extracted question is now rated easy, medium or hard for its year
+  level, so a practice paper can end on hard questions. The rating uses the
+  book's own signals first (position in the exercise; Problem solving,
+  Reasoning and Challenge sections; marks in a paper). On three Cambridge
+  Year 9 pages it rose from easy to hard as expected.
+- Added `scripts/thscPastPapers.js`, which copies school past papers from THSC
+  Online into Resources/Maths/Past Papers, filed by year and kind. THSC
+  Online's maintainers gave permission for Tenacity to store and use them for
+  tutoring. It starts with Years 9 and 10: 265 papers, 221 of them with
+  solutions. It goes one paper at a time with a pause, resumes if stopped,
+  and records each file's source in `THSC sources.json`. File names never say
+  "solutions", so the question bank doesn't skip them.
+- The extraction script now picks up files synced after a run began, and
+  `--priority-only` runs just the Year 9-10 files first: about 290 Drive files
+  plus the THSC papers.
+
+**Why:** Tom asked for difficulty so the generator can grade a paper, and for
+Year 9-10 material, including the THSC past papers, to go into the bank first.
+
+**Status:** In progress on branch `feat/res-58-quality-check`. The THSC Year
+9-10 download is running. The production backfill restarts with the Year 9-10
+pass once it finishes.
 
 ---
 

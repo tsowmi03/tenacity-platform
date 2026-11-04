@@ -45,7 +45,14 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const drive = createDriveClient({ getAccessToken: createImpersonatedTokenProvider({ targetPrincipal: options.impersonate }) });
 
-  const files = await listTree(drive);
+  let lastProgress = 0;
+  const files = await listTree(drive, undefined, undefined, {
+    onProgress: ({ folders, files: found }) => {
+      if (Date.now() - lastProgress < 5000) return;
+      lastProgress = Date.now();
+      console.log(`Listing Drive: ${folders} folders, ${found} files so far`);
+    },
+  });
   const plans = planSources(files);
   const skipped = plans.filter((plan) => plan.status === "skipped");
   console.log(`${files.length} files: ${plans.length - skipped.length} to extract, ${skipped.length} skipped`);

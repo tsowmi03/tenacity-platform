@@ -12,7 +12,7 @@
  * Usage:
  *   node scripts/questionBankExtract.js --projectId=tenacity-tutoring-staging \
  *     --work-dir=/tmp/qb-run [--limit-sources=40] [--pages-per-source=5] \
- *     [--seed=54] [--cap=100] [--concurrency=4] [--firebase-secrets] \
+ *     [--seed=54] [--cap=100] [--concurrency=4] [--priority-only] [--firebase-secrets] \
  *     [--commit --yes]
  *
  * Without --commit --yes it only prepares pages and prints the plan: no API
@@ -53,11 +53,13 @@ const { loadFirebaseSecrets, loadLocalSecrets } = require("./liveResourceSmoke")
 const ESTIMATE = { sort: 0.0002, extract: 0.0015 };
 const TERMINAL_STAGES = new Set(["blank", "no_target", "done", "failed"]);
 const SAVE_EVERY_MS = 10 * 1000;
+const PREPARE_TIMEOUT_MS = 20 * 60 * 1000;
 
 function parseArgs(argv) {
-  const options = { projectId: "", workDir: "", limitSources: Infinity, pagesPerSource: null, seed: 54, cap: 100, concurrency: 4, firebaseSecrets: false, commit: false, yes: false };
+  const options = { projectId: "", workDir: "", limitSources: Infinity, pagesPerSource: null, seed: 54, cap: 100, concurrency: 4, priorityOnly: false, firebaseSecrets: false, commit: false, yes: false };
   for (const arg of argv) {
     if (arg === "--commit") options.commit = true;
+    else if (arg === "--priority-only") options.priorityOnly = true;
     else if (arg === "--yes") options.yes = true;
     else if (arg === "--firebase-secrets") options.firebaseSecrets = true;
     else {
@@ -126,6 +128,25 @@ function createRun(workDir) {
 function readText(run, key) {
   const file = run.textPath(key);
   return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+}
+
+// Years 9 and 10 come first (Tom, November 2026): a file whose path names
+// Year 9 or 10 or Stage 5, the Mathletics 09 and 10 folders, or the Cambridge
+// Stage 5 books.
+const PRIORITY_PATH = /\b(year|yr|y)\s*(9|10)(?!\d)|stage\s*5|\/Mathletics\/(09|10)\/|CMS_NSW_S5|Past Papers\/Year (9|10)\//i;
+
+function isPriority(source) {
+  return PRIORITY_PATH.test(source.path);
+}
+
+// Pending files not yet in this run's state, e.g. papers added to Drive and
+// synced after the run began.
+async function selectNewSources(db, existing) {
+  const snapshot = await db.collection(SOURCES_COLLECTION).where("status", "==", "pending").get();
+  return snapshot.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .filter((source) => source.extractedVersion !== source.version && !existing[source.id])
+    .map(({ id, name, path: sourcePath, mimeType, version }) => ({ id, name, path: sourcePath, mimeType, version, prepared: false }));
 }
 
 async function selectSources(db, options) {
@@ -243,7 +264,9 @@ async function writeSourceQuestions({ run, db, bucket, sourceId, entries }) {
 }
 
 async function collectBatch(run, client, batch, { db, bucket }) {
-  await waitForBatch(client, batch.id, { onPoll: (b) => console.log(`Waiting on ${batch.stage} batch ${batch.id}: ${b.request_counts.processing} processing`) });
+  await waitForBatch(client, batch.id, {
+    onPoll: (b) => console.log(`${new Date().toLocaleTimeString()} Waiting on ${batch.stage} batch ${batch.id}: ${b.request_counts.succeeded + b.request_counts.errored} done, ${b.request_counts.processing} processing`),
+  });
   // Extract results are grouped by file so each PDF is opened once for its
   // high-resolution crops.
   const extracted = new Map();
@@ -268,16 +291,32 @@ async function collectBatch(run, client, batch, { db, bucket }) {
       Object.assign(page, { stage: "failed", error: err.message.slice(0, 300) });
     }
   }
+  let written = 0;
   for (const [sourceId, entries] of extracted) {
     try {
       await writeSourceQuestions({ run, db, bucket, sourceId, entries });
     } catch (err) {
       for (const { page } of entries) if (page.stage !== "done") Object.assign(page, { stage: "failed", error: err.message.slice(0, 300) });
     }
+    written += 1;
+    const questions = entries.reduce((sum, { page }) => sum + (page.questionCount || 0), 0);
+    console.log(`  Wrote ${questions} questions from ${run.state.sources[sourceId].path} (${written}/${extracted.size} files in this batch)`);
     run.save();
   }
   batch.status = "collected";
   run.save({ force: true });
+  console.log(`Collected ${batch.stage} batch ${batch.id}. ${progressLine(run)}`);
+}
+
+// One line on where the whole run stands, printed after every batch.
+function progressLine(run) {
+  const pages = Object.values(run.state.pages);
+  const count = (stage) => pages.filter((page) => page.stage === stage).length;
+  const batches = run.state.batches;
+  return `Run so far: ${pages.length} pages (${count("sort")} to sort, ${count("extract")} to extract, ` +
+    `${count("done")} done, ${count("no_target")} no target, ${count("blank")} blank, ${count("failed")} failed), ` +
+    `${pages.reduce((sum, page) => sum + (page.questionCount || 0), 0)} questions, ` +
+    `${batches.filter((b) => b.status === "collected").length}/${batches.length} batches collected, $${run.state.spentUsd.toFixed(2)} spent.`;
 }
 
 async function collectAll(run, client, io) {
@@ -352,14 +391,34 @@ async function main() {
 
   if (!run.state.sources) {
     run.state.sources = await selectSources(db, options);
-    run.save({ force: true });
+  } else if (!Number.isFinite(options.limitSources)) {
+    const added = await selectNewSources(db, run.state.sources);
+    for (const source of added) run.state.sources[source.id] = source;
+    if (added.length) console.log(`Added ${added.length} files synced since this run began`);
   }
+  run.save({ force: true });
   const drive = createDriveClient({ getAccessToken: createImpersonatedTokenProvider() });
-  const toPrepare = Object.values(run.state.sources).filter((s) => !s.prepared);
+  const toPrepare = Object.values(run.state.sources)
+    .filter((s) => !s.prepared && (!options.priorityOnly || isPriority(s)))
+    .sort((a, b) => Number(isPriority(b)) - Number(isPriority(a)));
+  if (options.priorityOnly) console.log(`Year 9-10 pass: ${toPrepare.length} files to prepare; the rest wait for a run without --priority-only`);
   const started = Date.now();
   let prepared = 0;
   await mapWithConcurrency(toPrepare, options.concurrency, async (source) => {
-    await prepareSource(run, drive, source, options);
+    // A download or render can stall without ever settling; on its own that
+    // left nothing for Node to wait on, so the run exited quietly before
+    // sending anything (RES-58, November 2026). The timer keeps the run alive
+    // and moves on; the file stays unprepared and is retried next run.
+    let timer;
+    const outcome = await Promise.race([
+      prepareSource(run, drive, source, options).then(() => "done"),
+      new Promise((resolve) => { timer = setTimeout(() => resolve("timeout"), PREPARE_TIMEOUT_MS); }),
+    ]);
+    clearTimeout(timer);
+    if (outcome === "timeout") {
+      console.log(`Timed out preparing ${source.path} after ${PREPARE_TIMEOUT_MS / 60000} min; it will be retried next run`);
+      return;
+    }
     prepared += 1;
     const minutes = ((Date.now() - started) / 60000).toFixed(1);
     console.log(`Prepared ${prepared}/${toPrepare.length} (${minutes} min) ${source.path}: ${source.error || `${source.pageCount} pages`}`);
@@ -393,10 +452,23 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((err) => {
-    console.error(err);
-    process.exitCode = 1;
+  let finished = false;
+  // If Node runs out of things to wait on before main() settles, it exits
+  // with code 0 and a chained command would carry on as if the run had
+  // finished. Fail loudly instead.
+  process.on("exit", (code) => {
+    if (!finished && code === 0) {
+      console.error("Stopped before finishing: something never completed. Rerun with the same --work-dir to resume.");
+      process.exitCode = 1;
+    }
   });
+  main()
+    .then(() => { finished = true; })
+    .catch((err) => {
+      finished = true;
+      console.error(err);
+      process.exitCode = 1;
+    });
 }
 
-module.exports = { createRun, parseArgs, randomSource, shuffled, submitStage };
+module.exports = { createRun, isPriority, parseArgs, randomSource, shuffled, submitStage };

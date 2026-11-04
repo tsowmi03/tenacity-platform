@@ -274,3 +274,39 @@ describe("submitStage", () => {
     assert.deepEqual(client.batches, []);
   });
 });
+
+describe("difficulty", () => {
+  it("is a required rating of easy, medium or hard, kept on the question", () => {
+    const unit = extractSchema(["right_triangle"]).properties.units.items;
+    assert.ok(unit.required.includes("difficulty"));
+    assert.deepEqual(unit.properties.difficulty.enum, ["easy", "medium", "hard"]);
+    const [doc] = toQuestionDocs({
+      source: { id: "s", path: "p", version: "v" }, pageNumber: 1, width: 1000, height: 1000, runId: "r", model: "m",
+      units: [{
+        kind: "question", label: "Q9", skill: "right_triangle/two_triangles_multi_step", description: "d", context: "real_world", steps: "multi",
+        difficulty: "hard", topic: "Pythagoras", yearLevel: "Year 9", stem: null, text: "Find x.", box: { x0: 0, y0: 0, x1: 500, y1: 500 },
+        figures: [{ type: "right_triangle", box: { x0: 10, y0: 10, x1: 300, y1: 300 }, description: "two triangles" }],
+      }],
+    });
+    assert.equal(doc.data.difficulty, "hard");
+  });
+});
+
+describe("Year 9-10 priority", () => {
+  const { isPriority } = require("../../scripts/questionBankExtract");
+  it("puts Year 9-10 and Stage 5 files first", () => {
+    for (const path of [
+      "Maths/Past Papers/Year 9/Yearly Papers/Baulkham Hills 2010 - Year 9 Yearly.pdf",
+      "Maths/Mathletics/10/exam revision/Circles student.pdf",
+      "Maths/MathsTEXTBOOKS/CMS_NSW_S5_9_CoreAdvanced_book.pdf",
+      "Maths/Revision Workbooks/Year 10 Mathematics revision and exam.pdf",
+      "Maths/MathsTEXTBOOKS/About Maths-Y9_5.3/x.pdf",
+      "Maths/MathsTEXTBOOKS/Insight/Stage 5.3/ch1.pdf",
+    ]) assert.equal(isPriority({ path }), true, path);
+    for (const path of [
+      "Maths/HSC/Advanced/Year 11/Ch 1-5 Topic Tests Cambridge.pdf",
+      "Maths/Mathletics/07/exam/Algebra student.pdf",
+      "Maths/Upper Primary/Measurement/Area.pdf",
+    ]) assert.equal(isPriority({ path }), false, path);
+  });
+});

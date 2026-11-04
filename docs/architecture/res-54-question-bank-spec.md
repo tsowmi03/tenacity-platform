@@ -11,7 +11,7 @@ Background: [`res-54-phase-1-corpus.md`](res-54-phase-1-corpus.md).
 |---|---|---|
 | Subject | Maths | English diagrams. English stays searchable through its text |
 | Content | Questions, worked examples, and data tables a question uses | Explanations, decoration (mascots, icons, photos that only illustrate) and blank answer frames |
-| Sources | NSW textbooks, Victorian textbooks, Mathletics, HSC material, Years 5–6 primary | Years 3–4, teacher editions that have a student edition, answer and solution files (these are for answer linking later) |
+| Sources | NSW textbooks, Victorian textbooks, Mathletics, HSC material, Years 5–6 primary, and school past papers from THSC Online in Resources/Maths/Past Papers (Years 9–10 first; permission from THSC Online's maintainers, November 2026) | Years 3–4, teacher editions that have a student edition, answer and solution files (these are for answer linking later) |
 
 ## 2. Diagram types (23)
 
@@ -50,6 +50,7 @@ Background: [`res-54-phase-1-corpus.md`](res-54-phase-1-corpus.md).
 | `description` | Model, one line of free text | "Find the shorter side of a right-angled triangle given the hypotenuse and one side" |
 | `context` | Model: `abstract` or `real_world` | `real_world` (a ladder against a wall) |
 | `steps` | Model: `single` or `multi` | `single` |
+| `difficulty` | Model: `easy`, `medium` or `hard` for the year the page is written for. Uses the book's signals first (position in the exercise; Problem solving, Reasoning or Challenge sections; marks in a paper), then the question itself. Added 2026-11-04 so a practice paper can end on hard questions | `hard` |
 | `topic` | Model, a few words | "Pythagoras' theorem" |
 | `yearLevel` | Model, from the page and the book's folder | `Year 9` / `Stage 5.2` |
 | `kind` | Model: `question` or `worked_example` | `question` |

@@ -94,8 +94,9 @@ function createDriveClient({ getAccessToken, fetchImpl = globalThis.fetch }) {
  * not walked. Each level of folders is listed `concurrency` at a time: Maths
  * alone has over 1,200 folders, mostly from textbook CD-ROMs.
  */
-async function listTree(drive, rootFolderId = MATHS_FOLDER_ID, rootName = "Maths", { concurrency = 8 } = {}) {
+async function listTree(drive, rootFolderId = MATHS_FOLDER_ID, rootName = "Maths", { concurrency = 8, onProgress = () => {} } = {}) {
   const files = [];
+  let folders = 0;
   let level = [{ id: rootFolderId, path: rootName }];
   while (level.length) {
     const next = [];
@@ -104,6 +105,8 @@ async function listTree(drive, rootFolderId = MATHS_FOLDER_ID, rootName = "Maths
         folder,
         items: await drive.listChildren(folder.id),
       })));
+      folders += listings.length;
+      onProgress({ folders, files: files.length });
       for (const { folder, items } of listings) {
         for (const item of items) {
           const path = `${folder.path}/${item.name}`;

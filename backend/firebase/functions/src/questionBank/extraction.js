@@ -57,6 +57,7 @@ function toQuestionDocs({ source, pageNumber, width, height, units, runId, model
         description: unit.description,
         context: unit.context,
         steps: unit.steps,
+        difficulty: unit.difficulty || null,
         topic: unit.topic,
         yearLevel: unit.yearLevel || null,
         stem: unit.stem || null,
