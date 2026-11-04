@@ -310,3 +310,41 @@ describe("Year 9-10 priority", () => {
     ]) assert.equal(isPriority({ path }), false, path);
   });
 });
+
+describe("questionBankExtract write failures", () => {
+  const { rewriteTargets, withRetries } = require("../../scripts/questionBankExtract");
+
+  it("retries a failed write, then gives up", async () => {
+    let calls = 0;
+    const slept = [];
+    const result = await withRetries(async () => {
+      calls += 1;
+      if (calls < 3) throw new Error("DEADLINE_EXCEEDED");
+      return "saved";
+    }, { delays: [1, 2, 3], sleep: async (ms) => slept.push(ms) });
+    assert.equal(result, "saved");
+    assert.deepEqual(slept, [1, 2]);
+    await assert.rejects(withRetries(async () => { throw new Error("down"); }, { delays: [1], sleep: async () => {} }), /down/);
+  });
+
+  it("finds pages whose answer came back but could not be saved", () => {
+    const run = {
+      state: {
+        pages: {
+          page_a_p1: { stage: "failed", error: "4 DEADLINE_EXCEEDED: Deadline exceeded after 60.001s" },
+          page_a_p2: { stage: "failed", error: "request to https://storage.googleapis.com/upload/storage/v1/b/x failed" },
+          page_a_p3: { stage: "failed", error: "errored: {\"type\":\"overloaded_error\"}" },
+          page_a_p4: { stage: "done" },
+          page_b_p1: { stage: "failed", writeFailed: true, error: "anything" },
+        },
+        batches: [
+          { id: "b1", stage: "extract", status: "collected", keys: ["page_a_p1", "page_a_p2", "page_a_p3", "page_a_p4"] },
+          { id: "b2", stage: "extract", status: "submitted", keys: ["page_b_p1"] },
+          { id: "b3", stage: "sort", status: "collected", keys: ["page_b_p1"] },
+        ],
+      },
+    };
+    const targets = [...rewriteTargets(run)].map(([batch, keys]) => [batch.id, keys]);
+    assert.deepEqual(targets, [["b1", ["page_a_p1", "page_a_p2"]]], "model failures, unfinished batches and sort batches are left alone");
+  });
+});

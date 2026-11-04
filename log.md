@@ -211,6 +211,9 @@ omitted, and open follow-ups are tracked at the bottom.
 ## 2026-11-04 — Question bank: difficulty ratings, THSC past papers, Years 9-10 first
 
 **What changed**
+- Saving a page's questions now retries three times. A network change
+  during the backfill failed 124 pages' writes; the next run saves them again
+  from Anthropic's stored batch results, without paying twice.
 - Each extracted question is now rated easy, medium or hard for its year
   level, so a practice paper can end on hard questions. The rating uses the
   book's own signals first (position in the exercise; Problem solving,

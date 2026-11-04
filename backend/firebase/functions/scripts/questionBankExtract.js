@@ -263,7 +263,51 @@ async function writeSourceQuestions({ run, db, bucket, sourceId, entries }) {
   }
 }
 
-async function collectBatch(run, client, batch, { db, bucket }) {
+// A network change or a slow Firestore or Storage call failed 124 pages'
+// writes in the November 2026 backfill. Writes overwrite by id, so retrying is
+// safe.
+const WRITE_RETRY_DELAYS_MS = [5000, 20000, 60000];
+
+async function withRetries(fn, { delays = WRITE_RETRY_DELAYS_MS, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), onRetry = () => {} } = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= delays.length) throw err;
+      onRetry(err, attempt + 1);
+      await sleep(delays[attempt]);
+    }
+  }
+}
+
+const WRITE_ERROR = /DEADLINE_EXCEEDED|UNAVAILABLE|RST_STREAM|EADDRNOTAVAIL|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|storage\.googleapis\.com/;
+
+/**
+ * Pages whose model answer came back but could not be saved, by the batch
+ * that holds the answer. Batch results stay available for 29 days, so they are
+ * saved again from there without paying for them twice.
+ */
+function rewriteTargets(run) {
+  const byBatch = new Map();
+  for (const batch of run.state.batches) {
+    if (batch.stage !== "extract" || batch.status !== "collected") continue;
+    const keys = batch.keys.filter((key) => {
+      const page = run.state.pages[key];
+      return page && page.stage === "failed" && (page.writeFailed || WRITE_ERROR.test(page.error || ""));
+    });
+    if (keys.length) byBatch.set(batch, keys);
+  }
+  return byBatch;
+}
+
+async function rewriteFailedPages(run, client, io) {
+  for (const [batch, keys] of rewriteTargets(run)) {
+    console.log(`Saving ${keys.length} pages again from extract batch ${batch.id} (their writes failed)`);
+    await collectBatch(run, client, batch, io, { onlyKeys: new Set(keys) });
+  }
+}
+
+async function collectBatch(run, client, batch, { db, bucket }, { onlyKeys = null } = {}) {
   await waitForBatch(client, batch.id, {
     onPoll: (b) => console.log(`${new Date().toLocaleTimeString()} Waiting on ${batch.stage} batch ${batch.id}: ${b.request_counts.succeeded + b.request_counts.errored} done, ${b.request_counts.processing} processing`),
   });
@@ -272,14 +316,16 @@ async function collectBatch(run, client, batch, { db, bucket }) {
   const extracted = new Map();
   for (const result of await collectResults(client, batch.id)) {
     const { stage, sourceId, pageNumber } = parseRequestId(result.customId);
-    const page = run.state.pages[requestId("page", sourceId, pageNumber)];
+    const key = requestId("page", sourceId, pageNumber);
+    if (onlyKeys && !onlyKeys.has(key)) continue;
+    const page = run.state.pages[key];
     if (result.type !== "succeeded") {
       Object.assign(page, { stage: "failed", error: `${result.type}${result.error ? `: ${JSON.stringify(result.error).slice(0, 200)}` : ""}` });
       continue;
     }
     try {
       const { parsed, usage } = readMessage(result.message, stage === "sort" ? SORT_MAX_TOKENS : EXTRACT_MAX_TOKENS);
-      run.state.spentUsd += batchCostOf(usage, QUESTION_BANK_MODEL);
+      if (!onlyKeys) run.state.spentUsd += batchCostOf(usage, QUESTION_BANK_MODEL);
       if (stage === "sort") {
         page.targetTypes = [...new Set(parsed.types)];
         page.stage = page.targetTypes.length ? "extract" : "no_target";
@@ -294,9 +340,11 @@ async function collectBatch(run, client, batch, { db, bucket }) {
   let written = 0;
   for (const [sourceId, entries] of extracted) {
     try {
-      await writeSourceQuestions({ run, db, bucket, sourceId, entries });
+      await withRetries(() => writeSourceQuestions({ run, db, bucket, sourceId, entries }), {
+        onRetry: (err, attempt) => console.log(`  Retrying ${run.state.sources[sourceId].path} (attempt ${attempt + 1}): ${err.message.slice(0, 120)}`),
+      });
     } catch (err) {
-      for (const { page } of entries) if (page.stage !== "done") Object.assign(page, { stage: "failed", error: err.message.slice(0, 300) });
+      for (const { page } of entries) if (page.stage !== "done") Object.assign(page, { stage: "failed", writeFailed: true, error: err.message.slice(0, 300) });
     }
     written += 1;
     const questions = entries.reduce((sum, { page }) => sum + (page.questionCount || 0), 0);
@@ -443,6 +491,7 @@ async function main() {
 
   // Batches left from an interrupted run first, then each stage in turn.
   await collectAll(run, client, io);
+  await rewriteFailedPages(run, client, io);
   await submitStage(run, client, "sort", options);
   await collectAll(run, client, io);
   await submitStage(run, client, "extract", options);
@@ -471,4 +520,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { createRun, isPriority, parseArgs, randomSource, shuffled, submitStage };
+module.exports = { createRun, isPriority, parseArgs, randomSource, rewriteTargets, shuffled, submitStage, withRetries };
