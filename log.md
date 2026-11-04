@@ -277,6 +277,11 @@ the Functions.
   only to build the DOCX, so stored resources stay small and revisions
   rebuild them.
 - Each job records which bank questions it used.
+- Tuned on production after launch: choosing and checking run at medium
+  effort (one high-effort slot had taken the step to 133 of its 150 seconds;
+  medium took 17–31 s with the same choices), and every search is capped at
+  20 seconds inside the step's budget, after one Firestore call hung for
+  328 seconds.
 
 **Why:** Tutors wanted real textbook questions and diagrams in generated
 resources, not only newly drawn ones.
