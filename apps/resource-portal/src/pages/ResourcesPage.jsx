@@ -19,6 +19,7 @@ function jobPayload(row) {
     modelChoice: row.modelChoice,
     answerMode: row.answerMode || "none",
     showMarks: row.showMarks === true,
+    questionBank: row.subject === "maths" ? row.questionBank || "none" : "none",
     customPrompt: row.customPrompt || "",
     uploadedFiles,
     uploadedFilePath: firstUploadedFile?.path || null,

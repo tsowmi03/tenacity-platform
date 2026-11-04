@@ -35,6 +35,8 @@ const {
   throwIfCancelled,
 } = require("./cancellation");
 const { repairDiagrams } = require("./diagramRepair");
+const { QUESTION_BANK_MODES, applyQuestionBank } = require("./questionBankFill");
+const { cloneWithSourceImages, loadSourceImages, withoutSourceImageBytes } = require("./sourceImages");
 const {
   buildDiagramFillPrompt,
   buildSystemPrompt,
@@ -270,6 +272,12 @@ function validateSubmitResourceJobPayload(input) {
     showMarks: (value) => {
       if (value === undefined || value === null) return null;
       return assertBoolean(value, "showMarks");
+    },
+    // RES-60. How much of a maths resource comes from the question bank.
+    // Older clients send nothing and get none.
+    questionBank: (value) => {
+      if (value === undefined || value === null || value === "") return "none";
+      return assertEnum(value, "questionBank", QUESTION_BANK_MODES);
     },
     includeWorking: (value) => {
       if (value === undefined || value === null) return false;
@@ -531,6 +539,8 @@ function buildResourceJobDoc({
     answerMode: payload.answerMode,
     showMarks: payload.showMarks,
     includeWorking: payload.answerMode === "worked",
+    questionBank: payload.subject === "maths" ? payload.questionBank || "none" : "none",
+    questionBankUsage: null,
     customPrompt: payload.customPrompt,
     uploadedFiles: payload.uploadedFiles,
     uploadedFilePath: payload.uploadedFilePath,
@@ -1337,7 +1347,9 @@ function outputPathForJob(jobId, outputFileName, attemptId = null) {
 }
 
 function cloneGeneratedResource(resource) {
-  return JSON.parse(JSON.stringify(resource));
+  // Bank diagrams (RES-60) carry PNG bytes, which a plain JSON copy would turn
+  // into an array of numbers.
+  return cloneWithSourceImages(resource);
 }
 
 function omitDiagramReference(value, target) {
@@ -1458,6 +1470,14 @@ async function saveGeneratedResource({ job, parsed, storage, buildDocx, clock, m
   });
   let built;
   try {
+    // A revision or repair reads generatedJson back without the bank diagrams'
+    // bytes; fetch them before the build needs them.
+    await loadSourceImages(parsed, storage.bucket());
+  } catch (err) {
+    err.resourceInfrastructure = "storage";
+    throw err;
+  }
+  try {
     built = await buildDocxWithDiagramReliability({
       resourceType: job.resourceType,
       parsed,
@@ -1528,7 +1548,7 @@ async function saveGeneratedResource({ job, parsed, storage, buildDocx, clock, m
     // The exact JSON the DOCX was built from: after answer verification,
     // omitted diagrams and maths repairs. Revisions and repairs re-read it,
     // so it must match what the tutor downloaded.
-    generatedJson: JSON.stringify(builtResource),
+    generatedJson: JSON.stringify(builtResource, withoutSourceImageBytes),
     extractedTopics: extractJobTopics(parsed),
     warnings,
     model,
@@ -2626,6 +2646,27 @@ async function runGenerationPipeline(job, deps) {
     }
   }
 
+  // RES-60. Swap some diagram questions for bank questions with their
+  // original diagrams. Runs after answer verification: each bank question
+  // carries its own checked answer, and the verifier cannot see the crop.
+  let questionBank = { mode: "none", used: [] };
+  try {
+    questionBank = await (deps.applyQuestionBank || applyQuestionBank)({
+      job,
+      parsed,
+      db: deps.db,
+      bucket: storage.bucket(),
+      callAi: trackedCallAi,
+      openaiApiKey: deps.openaiApiKey,
+      signal: deps.signal,
+      logger,
+    });
+  } catch (err) {
+    if (isCancellationError(err) || err?.resourceControl) throw err;
+    logger.warn("[resource] question bank skipped", { jobId: job.jobId, error: errorMessage(err).slice(0, 300) });
+  }
+  throwIfCancelled(deps);
+
   try {
     const saved = await saveGeneratedResource({
       job,
@@ -2651,6 +2692,9 @@ async function runGenerationPipeline(job, deps) {
         ...sourceWarnings,
       ],
       ...diagramRepairPatch(diagramRepair),
+      ...(questionBank.mode !== "none"
+        ? { questionBankUsage: { mode: questionBank.mode, slots: questionBank.slots || 0, used: questionBank.used, skipped: questionBank.skipped || [] } }
+        : {}),
       effectiveModel: generationModel,
       effectiveProvider: providerForModel(generationModel),
       usageByProvider,
