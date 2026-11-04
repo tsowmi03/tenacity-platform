@@ -168,3 +168,21 @@ describe("source images", () => {
     assert.ok(Buffer.isBuffer(resource.questions[1].diagram.image));
   });
 });
+
+describe("question bank fill: stored records", () => {
+  it("never records an undefined field, which Firestore rejects", async () => {
+    const parsed = worksheet(3);
+    const db = { collection: () => { throw new Error("search down"); } };
+    const result = await applyQuestionBank({ job: { subject: "maths", year: 9, questionBank: "some" }, parsed, db, bucket: {}, callAi: async () => ({}), embed: async (t) => t.map(() => [1]), logger: {} });
+    const hasUndefined = (value) => value === undefined || (value && typeof value === "object" && Object.values(value).some(hasUndefined));
+    assert.ok(result.skipped.length);
+    assert.equal(hasUndefined(result), false);
+  });
+
+  it("omits the detail of a slot that timed out", async () => {
+    const parsed = worksheet(3);
+    const db = { collection: () => { const q = { where: () => q, findNearest: () => ({ get: async () => ({ docs: [{ id: "a", data: () => ({ ...bankQuestion("a"), years: [9] }) }] }) }) }; return q; } };
+    const result = await applyQuestionBank({ job: { subject: "maths", year: 9, questionBank: "some" }, parsed, db, bucket: { file: () => ({ download: () => new Promise(() => {}) }) }, callAi: async () => ({}), embed: async (t) => t.map(() => [1]), budgetMs: 10, logger: {} });
+    assert.deepEqual(result.skipped, [{ questionNumber: 2, reason: "out_of_time" }]);
+  });
+});

@@ -1,5 +1,7 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 // RES-57. Turns one page's extraction result into question bank records. Pure,
 // so the rules are unit tested; the CLI does the I/O.
 
@@ -19,6 +21,14 @@ function parseRequestId(id) {
   const match = /^(sort|extract)_(.+)_p(\d+)$/.exec(id);
   if (!match) throw new Error(`Unrecognised request id: ${id}`);
   return { stage: match[1], sourceId: match[2], pageNumber: Number(match[3]) };
+}
+
+// A crop's path names the file version it was cut from, so re-extracting a
+// changed file writes new crops instead of overwriting the ones resources
+// already built from it still point at.
+function cropPath(id, version, index) {
+  const tag = version ? `_${crypto.createHash("sha256").update(String(version)).digest("hex").slice(0, 8)}` : "";
+  return `questionBank/diagrams/${id}${tag}_${index + 1}.png`;
 }
 
 function questionId(sourceId, pageNumber, index) {
@@ -105,7 +115,7 @@ function toQuestionDocs({ source, pageNumber, width, height, units, runId, model
         text: unit.text,
         box: clampBox(unit.box, width, height),
         pageSize: { width, height },
-        figures: sharedFrom ? figures : figures.map((figure, index) => ({ ...figure, storagePath: `questionBank/diagrams/${id}_${index + 1}.png` })),
+        figures: sharedFrom ? figures : figures.map((figure, index) => ({ ...figure, storagePath: cropPath(id, source.version, index) })),
         runId,
         model,
       },

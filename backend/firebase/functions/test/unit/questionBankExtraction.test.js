@@ -105,7 +105,9 @@ describe("toQuestionDocs", () => {
     assert.equal(doc.data.diagramType, "right_triangle");
     assert.equal(doc.data.skill, "find_hypotenuse");
     assert.equal(doc.data.status, "live");
-    assert.equal(doc.data.figures[0].storagePath, "questionBank/diagrams/src1_p7_1_1.png");
+    assert.match(doc.data.figures[0].storagePath, /^questionBank\/diagrams\/src1_p7_1_[0-9a-f]{8}_1\.png$/);
+    const [changed] = toQuestionDocs({ source: { ...source, version: "m2:t2" }, pageNumber: 7, width: 1109, height: 1568, units: [unit()], runId: "r", model: "m" });
+    assert.notEqual(changed.data.figures[0].storagePath, doc.data.figures[0].storagePath, "a new file version never overwrites an old crop");
   });
 
   it("drops units whose diagrams are all unusable", () => {

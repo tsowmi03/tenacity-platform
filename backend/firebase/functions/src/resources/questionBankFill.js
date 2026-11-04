@@ -291,7 +291,10 @@ async function applyQuestionBank({
     const out = outcomes[index];
     const { owner, answerRow } = plan.slot;
     if (!out || out.skip) {
-      result.skipped.push({ questionNumber: owner.number, reason: out?.skip || "failed", detail: out?.reason ? String(out.reason).slice(0, 200) : undefined });
+      // Firestore rejects undefined fields, so detail is added only when there is one.
+      const skipped = { questionNumber: owner.number, reason: out?.skip || "failed" };
+      if (out?.reason) skipped.detail = String(out.reason).slice(0, 200);
+      result.skipped.push(skipped);
       return;
     }
     const { width, height } = pngSize(out.png);
