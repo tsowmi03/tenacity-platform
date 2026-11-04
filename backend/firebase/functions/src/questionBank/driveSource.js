@@ -81,6 +81,11 @@ function createDriveClient({ getAccessToken, fetchImpl = globalThis.fetch }) {
       return Buffer.from(await response.arrayBuffer());
     },
 
+    async getFile(fileId, fields = "id,name,mimeType,shortcutDetails") {
+      const response = await request(`files/${encodeURIComponent(fileId)}`, { fields, supportsAllDrives: true });
+      return response.json();
+    },
+
     async exportPdf(fileId) {
       const response = await request(`files/${encodeURIComponent(fileId)}/export`, { mimeType: "application/pdf" });
       return Buffer.from(await response.arrayBuffer());

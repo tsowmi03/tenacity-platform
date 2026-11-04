@@ -24,17 +24,56 @@ function questionId(sourceId, pageNumber, index) {
   return `${sourceId}_p${pageNumber}_${index + 1}`;
 }
 
+// The number a printed label ends in: "Exercise 7A Q2b" and "Q2a(ii)" are both 2.
+function questionNumberOf(label) {
+  const match = /(\d+)\s*\(?[a-z]?\)?\s*(?:\(?[ivx]+\)?)?\s*$/i.exec(String(label || "").trim());
+  return match ? match[1] : null;
+}
+
 /**
- * The question records for one page. Units without a usable diagram are
- * dropped; a skill that names a type none of the unit's diagrams has falls
- * back to that diagram type's "other".
+ * The prompt gives a diagram shared by several parts to the first of them, so
+ * 2b and 2c come back with no figure of their own. Each such part takes the
+ * figures of the nearest earlier part with the same instruction or the same
+ * question number. A part with neither has no printed diagram at all (a
+ * "sketch this line" or a word problem) and stays out of the bank.
+ *
+ * In the November 2026 backfill this was 43% of the parts returned; about half
+ * of them had a parent (RES-58).
+ */
+function sharedFigureParents(units) {
+  return units.map((unit, index) => {
+    if (unit.figures?.length) return null;
+    const number = questionNumberOf(unit.label);
+    for (let earlier = index - 1; earlier >= 0; earlier -= 1) {
+      const candidate = units[earlier];
+      if (!candidate.figures?.length) continue;
+      if (unit.stem && candidate.stem && unit.stem === candidate.stem) return earlier;
+      if (number && number === questionNumberOf(candidate.label)) return earlier;
+    }
+    return null;
+  });
+}
+
+/**
+ * The question records for one page. Units without a usable diagram of their
+ * own or a parent's are dropped; a skill that names a type none of the unit's
+ * diagrams has falls back to that diagram type's "other". A unit that shares
+ * its parent's diagram points at the parent's crop (sharedFrom) instead of
+ * having its own cut.
  */
 function toQuestionDocs({ source, pageNumber, width, height, units, runId, model }) {
   const docs = [];
-  for (const unit of units) {
-    const figures = unit.figures
+  const parents = sharedFigureParents(units);
+  const docByUnit = new Map();
+  for (const [unitIndex, unit] of units.entries()) {
+    let figures = (unit.figures || [])
       .map((figure) => ({ type: figure.type, description: figure.description, box: clampBox(figure.box, width, height) }))
       .filter((figure) => figure.box);
+    let sharedFrom = null;
+    if (!figures.length && parents[unitIndex] !== null && docByUnit.has(parents[unitIndex])) {
+      sharedFrom = docByUnit.get(parents[unitIndex]);
+      figures = sharedFrom.data.figures.map((figure) => ({ ...figure, sharedFrom: sharedFrom.id }));
+    }
     if (!figures.length) continue;
     const types = [...new Set(figures.map((figure) => figure.type))];
     const named = splitSkillId(unit.skill);
@@ -64,11 +103,12 @@ function toQuestionDocs({ source, pageNumber, width, height, units, runId, model
         text: unit.text,
         box: clampBox(unit.box, width, height),
         pageSize: { width, height },
-        figures: figures.map((figure, index) => ({ ...figure, storagePath: `questionBank/diagrams/${id}_${index + 1}.png` })),
+        figures: sharedFrom ? figures : figures.map((figure, index) => ({ ...figure, storagePath: `questionBank/diagrams/${id}_${index + 1}.png` })),
         runId,
         model,
       },
     });
+    docByUnit.set(unitIndex, docs[docs.length - 1]);
   }
   return docs;
 }
@@ -83,4 +123,4 @@ function majorityYearLevel(yearLevels) {
   return best;
 }
 
-module.exports = { QUESTIONS_COLLECTION, majorityYearLevel, parseRequestId, questionId, requestId, toQuestionDocs };
+module.exports = { QUESTIONS_COLLECTION, majorityYearLevel, parseRequestId, questionId, questionNumberOf, requestId, sharedFigureParents, toQuestionDocs };

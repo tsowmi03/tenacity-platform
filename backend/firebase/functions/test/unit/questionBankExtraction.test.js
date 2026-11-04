@@ -125,6 +125,33 @@ describe("toQuestionDocs", () => {
     assert.equal(doc.data.skill, "other");
     assert.deepEqual(doc.data.figures[0].box, { x0: 0, y0: 900, x1: 400, y1: 1000 });
   });
+
+  it("gives later parts the diagram they share with an earlier part, without a second crop", () => {
+    const docs = toQuestionDocs({
+      source, pageNumber: 3, width: 1000, height: 1000, runId: "r", model: "m",
+      units: [
+        unit({ label: "Exercise 7A Q2a", stem: "Find each angle.", text: "$x$" }),
+        unit({ label: "Exercise 7A Q2b", stem: "Find each angle.", text: "$y$", figures: [] }),
+        unit({ label: "Q3", stem: null, text: "Sketch $y = 2x - 3$.", figures: [] }),
+        unit({ label: "Q4a", stem: "", text: "Find p.", figures: [{ type: "right_triangle", box: { x0: 20, y0: 500, x1: 300, y1: 800 }, description: "T2" }] }),
+        unit({ label: "Q4b(ii)", stem: "", text: "Find q.", figures: [] }),
+      ],
+    });
+    assert.deepEqual(docs.map((d) => d.data.label), ["Exercise 7A Q2a", "Exercise 7A Q2b", "Q4a", "Q4b(ii)"], "the part with no printed diagram stays out");
+    assert.equal(docs[1].data.figures[0].storagePath, docs[0].data.figures[0].storagePath);
+    assert.equal(docs[1].data.figures[0].sharedFrom, docs[0].id);
+    assert.equal(docs[3].data.figures[0].storagePath, docs[2].data.figures[0].storagePath, "matched by question number");
+    assert.equal(docs[2].data.figures[0].sharedFrom, undefined);
+  });
+
+  it("reads the question number from a printed label", () => {
+    const { questionNumberOf } = require("../../src/questionBank/extraction");
+    assert.equal(questionNumberOf("Exercise 7A Q2b"), "2");
+    assert.equal(questionNumberOf("Q12a(ii)"), "12");
+    assert.equal(questionNumberOf("Q8"), "8");
+    assert.equal(questionNumberOf("Example 3"), "3");
+    assert.equal(questionNumberOf("Investigation"), null);
+  });
 });
 
 describe("majorityYearLevel", () => {
@@ -173,6 +200,17 @@ describe("fetchSourcePdf", () => {
     assert.equal(String(await fetchSourcePdf({ drive, convert, source: { id: "1", name: "a.pdf", mimeType: "application/pdf" } })), "raw");
     assert.equal(String(await fetchSourcePdf({ drive, convert, source: { id: "2", name: "Sheet", mimeType: "application/vnd.google-apps.document" } })), "exported");
     assert.equal(String(await fetchSourcePdf({ drive, convert, source: { id: "3", name: "b.docx", mimeType: "application/msword" } })), "converted b.docx");
+  });
+
+  it("follows a shortcut to the file it points at", async () => {
+    const fetched = [];
+    const shortcutDrive = {
+      getFile: async () => ({ shortcutDetails: { targetId: "target", targetMimeType: "application/pdf" } }),
+      download: async (id) => { fetched.push(id); return Buffer.from("target pdf"); },
+    };
+    const source = { id: "short", name: "NSM.pdf", mimeType: "application/vnd.google-apps.shortcut" };
+    assert.equal(String(await fetchSourcePdf({ drive: shortcutDrive, source })), "target pdf");
+    assert.deepEqual(fetched, ["target"]);
   });
 });
 

@@ -34,11 +34,21 @@ async function convertWithLibreOffice(buffer, name, { run = promisify(execFile),
   }
 }
 
+const SHORTCUT_MIME_TYPE = "application/vnd.google-apps.shortcut";
+
 async function fetchSourcePdf({ drive, source, convert = convertWithLibreOffice }) {
+  // A Drive shortcut has no content of its own; fetch the file it points to
+  // (RES-58: "Advanced Year 11/12 NSM.pdf" was one).
+  if (source.mimeType === SHORTCUT_MIME_TYPE) {
+    const file = await drive.getFile(source.id);
+    const target = file.shortcutDetails;
+    if (!target?.targetId) throw new Error(`Shortcut ${source.name} has no target`);
+    return fetchSourcePdf({ drive, source: { ...source, id: target.targetId, mimeType: target.targetMimeType }, convert });
+  }
   if (GOOGLE_DOCUMENT_MIME_TYPES.has(source.mimeType)) return drive.exportPdf(source.id);
   const buffer = await drive.download(source.id);
   if (extensionOf(source.name) === "pdf") return buffer;
   return convert(buffer, source.name);
 }
 
-module.exports = { convertWithLibreOffice, fetchSourcePdf };
+module.exports = { SHORTCUT_MIME_TYPE, convertWithLibreOffice, fetchSourcePdf };

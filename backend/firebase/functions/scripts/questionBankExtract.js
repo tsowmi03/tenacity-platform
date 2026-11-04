@@ -248,6 +248,7 @@ async function writeSourceQuestions({ run, db, bucket, sourceId, entries }) {
         const batch = db.batch();
         for (const doc of docs) {
           for (const figure of doc.data.figures) {
+            if (figure.sharedFrom) continue; // its parent's crop, cut above
             const png = await cropFigure(hiRes, figure.box, page.width);
             await bucket.file(figure.storagePath).save(png, { contentType: "image/png", resumable: false });
           }
@@ -520,4 +521,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { createRun, isPriority, parseArgs, randomSource, rewriteTargets, shuffled, submitStage, withRetries };
+module.exports = { createRun, isPriority, parseArgs, randomSource, rewriteTargets, shuffled, submitStage, withRetries, writeSourceQuestions };
