@@ -230,12 +230,43 @@ function twoWayTableBlock(spec) {
   return block;
 }
 
+// RES-54/RES-60. A diagram cropped from an original resource in the question
+// bank is placed as it is. Crops are cut from a 2400px-wide render of the
+// source page, so a third of that is the printed size; textbook labels are
+// small, so it is shown at 1.5 times that, and very wide figures are capped
+// to the text width.
+const SOURCE_IMAGE_SCALE = 0.5;
+const SOURCE_IMAGE_MAX_WIDTH = 480;
+
+function sourceImageBlock(spec) {
+  const scale = Math.min(SOURCE_IMAGE_SCALE, SOURCE_IMAGE_MAX_WIDTH / spec.width);
+  return [
+    new Paragraph({
+      spacing: { before: 80, after: 140 },
+      keepNext: true,
+      children: [
+        new ImageRun({
+          data: spec.image,
+          type: "png",
+          transformation: {
+            width: Math.round(spec.width * scale),
+            height: Math.round(spec.height * scale),
+          },
+        }),
+      ],
+    }),
+  ];
+}
+
 async function renderDiagramBlock(spec, context = {}) {
   if (!spec || typeof spec !== "object") return [];
 
   try {
     if (spec.type === "two-way-table") {
       return twoWayTableBlock(spec);
+    }
+    if (spec.type === "source-image") {
+      return sourceImageBlock(spec);
     }
     const diagram = await withMathLocation(context.label, () => generateDiagram(spec));
     if (!diagram?.buffer) {

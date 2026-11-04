@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import {
   canonicalFieldOverride,
   canonicalIndex,
+  assertVectorConfig,
   compareIndexManifests,
   validateIndexManifest,
   validatePendingIndexDeploymentPolicy,
@@ -281,10 +282,7 @@ function canonicalIndexField(field, label) {
     field.arrayConfig === undefined || field.arrayConfig === "CONTAINS",
     `${label} has unsupported arrayConfig ${String(field.arrayConfig)}.`
   );
-  assert(
-    field.vectorConfig === undefined,
-    `${label} uses vectorConfig, which requires a reviewed validator update.`
-  );
+  if (field.vectorConfig !== undefined) assertVectorConfig(field.vectorConfig, label);
   assert(
     field.searchConfig === undefined,
     `${label} uses searchConfig, which requires a reviewed validator update.`
@@ -292,6 +290,7 @@ function canonicalIndexField(field, label) {
   const result = { fieldPath: field.fieldPath };
   if (field.order !== undefined) result.order = field.order;
   if (field.arrayConfig !== undefined) result.arrayConfig = field.arrayConfig;
+  if (field.vectorConfig !== undefined) result.vectorConfig = { dimension: field.vectorConfig.dimension, flat: {} };
   return result;
 }
 
@@ -830,12 +829,16 @@ export function expandSourceIndexManifest(sourceManifest) {
   validateIndexManifest(sourceManifest);
   const indexes = sourceManifest.indexes.map((index) => {
     const fields = index.fields.map((field) => ({ ...field }));
+    // Firestore adds __name__ after the ordered fields: last for an ordinary
+    // index, just before the vector field for a vector index.
+    const vector = fields.at(-1)?.vectorConfig !== undefined ? fields.pop() : null;
     if (fields.at(-1)?.fieldPath !== "__name__") {
       fields.push({
         fieldPath: "__name__",
         order: implicitNameOrder(fields),
       });
     }
+    if (vector) fields.push(vector);
     return { ...index, fields };
   });
   const expanded = {

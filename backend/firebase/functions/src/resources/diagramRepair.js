@@ -456,6 +456,9 @@ async function repairDiagrams({
 
     const spec = entry.owner.diagram;
     const diagramType = String(spec?.type || "unknown");
+    // A bank diagram (RES-60) is the original printed figure: there is no spec
+    // to check or repair, and its question was checked against it.
+    if (diagramType === "source-image") continue;
 
     try {
       await verify(spec, { label: entry.label, required: entry.required });

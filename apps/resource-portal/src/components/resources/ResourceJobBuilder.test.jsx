@@ -53,6 +53,23 @@ describe("resource answer options", () => {
     expect(screen.getByText("Includes final answers with step-by-step working.")).toBeInTheDocument();
   });
 
+  // RES-60.
+  it("offers textbook questions for maths only, defaulting to some", () => {
+    renderBuilder();
+
+    fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
+    const group = screen.getByRole("group", { name: "Textbook questions" });
+    expect(group).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Some" })).toHaveClass("active");
+    fireEvent.click(screen.getByRole("button", { name: "Mostly" }));
+    expect(screen.getByRole("button", { name: "Mostly" })).toHaveClass("active");
+    expect(screen.getByText("Diagram questions come from textbooks wherever a good match exists.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "English" }));
+    fireEvent.click(screen.getByRole("button", { name: "Annotation Task" }));
+    expect(screen.queryByRole("group", { name: "Textbook questions" })).not.toBeInTheDocument();
+  });
+
   it("uses English-specific labels for answer guidance", () => {
     renderBuilder();
 

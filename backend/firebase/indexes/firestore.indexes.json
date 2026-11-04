@@ -241,6 +241,23 @@
         { "fieldPath": "recipientId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "questionBank",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "diagramType", "order": "ASCENDING" },
+        { "fieldPath": "embedding", "vectorConfig": { "dimension": 512, "flat": {} } }
+      ]
+    },
+    {
+      "collectionGroup": "questionBank",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "embedding", "vectorConfig": { "dimension": 512, "flat": {} } }
+      ]
     }
   ],
   "fieldOverrides": [

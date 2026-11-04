@@ -243,6 +243,10 @@
     "./uidLink",
     "linkUsers"
   ],
+  "manageQuestionBank": [
+    "../src/questionBank/review",
+    "manageQuestionBank"
+  ],
   "markInvoicePaidInXero": [
     "./xero_functions",
     "markInvoicePaidInXero"

@@ -88,7 +88,15 @@ describe("validateSubmitResourceJobPayload", () => {
     const out = validateSubmitResourceJobPayload(base);
     // sourceJobId is null for a generation built from scratch; it is only set
     // when this submission replays an existing job (RES-23).
-    assert.deepEqual(out, { ...base, sourceJobId: null });
+    assert.deepEqual(out, { ...base, sourceJobId: null, questionBank: "none" });
+  });
+
+  // RES-60. An older portal sends no question bank setting and gets none.
+  it("accepts a question bank setting of none, some or mostly", () => {
+    for (const mode of ["none", "some", "mostly"]) {
+      assert.equal(validateSubmitResourceJobPayload({ ...base, questionBank: mode }).questionBank, mode);
+    }
+    assert.throws(() => validateSubmitResourceJobPayload({ ...base, questionBank: "all" }), /questionBank must be one of/);
   });
 
   it("defaults missing model choice to OpenAI and accepts only the Anthropic alternative", () => {

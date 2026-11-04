@@ -230,6 +230,7 @@ export function buildResubmitPayload(job = {}) {
   };
   if (job.answerMode) payload.answerMode = job.answerMode;
   if (typeof job.showMarks === "boolean") payload.showMarks = job.showMarks;
+  if (job.questionBank) payload.questionBank = job.questionBank;
   if (uploadedFiles.length) payload.uploadedFiles = uploadedFiles;
   return payload;
 }
@@ -411,4 +412,22 @@ function triggerBrowserDownload(blob, filename) {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+// RES-61. Question bank questions a resource used, and flagging them.
+export function getResourceBankQuestions(jobId) {
+  return callFunction("manageQuestionBank", { action: "forJob", jobId });
+}
+
+export function flagBankQuestion({ jobId, questionId, reason, note }) {
+  return callFunction("manageQuestionBank", { action: "flag", jobId, questionId, reason, note: note || "" });
+}
+
+// Admin only.
+export function listBankFlags() {
+  return callFunction("manageQuestionBank", { action: "listFlags" });
+}
+
+export function resolveBankFlag({ flagId, resolution, updates }) {
+  return callFunction("manageQuestionBank", { action: "resolve", flagId, resolution, ...(updates ? { updates } : {}) });
 }

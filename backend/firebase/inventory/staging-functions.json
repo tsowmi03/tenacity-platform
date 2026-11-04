@@ -76,7 +76,8 @@
         "processResourceFallback",
         "retryResourceJob",
         "deleteResourceJob",
-        "cancelResourceJob"
+        "cancelResourceJob",
+        "manageQuestionBank"
       ],
       "reason": "AI resource generation is tutor/admin-facing and would spend against the attached Anthropic and OpenAI provider keys. Unavailable in staging."
     },

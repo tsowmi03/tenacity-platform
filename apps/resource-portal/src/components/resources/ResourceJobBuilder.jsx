@@ -31,6 +31,17 @@ const YEARS = [5, 6, 7, 8, 9, 10];
 const MAX_REFERENCE_FILES = 5;
 const REFERENCE_FILE_EXTENSIONS = new Set(["pdf", "docx", "md", "txt"]);
 
+// RES-60. Questions taken from the textbooks in Drive, with their original
+// diagrams. "Some" swaps about a third of the diagram questions; "Mostly" all
+// of those with a good match.
+const QUESTION_BANK_MODES = ["none", "some", "mostly"];
+const QUESTION_BANK_LABELS = { none: "None", some: "Some", mostly: "Mostly" };
+const QUESTION_BANK_HINTS = {
+  none: "Every question and diagram is newly generated.",
+  some: "About a third of the diagram questions come from textbooks, with the original diagrams.",
+  mostly: "Diagram questions come from textbooks wherever a good match exists.",
+};
+
 function initialDraft(subject = "maths") {
   return {
     draftId: Math.random().toString(36).slice(2, 10),
@@ -45,6 +56,8 @@ function initialDraft(subject = "maths") {
     modelChoice: DEFAULT_GENERATION_MODEL,
     answerMode: "none",
     showMarks: false,
+    // RES-60. How much of a maths resource comes from the question bank.
+    questionBank: "some",
     customPrompt: "",
     uploadedFiles: [],
     uploadProgress: null,
@@ -67,6 +80,7 @@ function draftFromJob(job) {
     modelChoice: requestedModelForJob(job),
     answerMode: job.answerMode || "none",
     showMarks: job.showMarks === true,
+    questionBank: job.questionBank || "none",
     customPrompt: job.customPrompt || "",
     uploadedFiles: resourceJobUploadedFiles(job),
   };
@@ -562,6 +576,25 @@ export default function ResourceJobBuilder({
                 </div>
               </div>
 
+              {draft.subject === "maths" ? (
+                <div className="field">
+                  <label className="label">Textbook questions</label>
+                  <div className="rg-segments rg-segments-3" role="group" aria-label="Textbook questions">
+                    {QUESTION_BANK_MODES.map((mode) => (
+                      <button
+                        className={draft.questionBank === mode ? "active" : ""}
+                        key={mode}
+                        onClick={() => set({ questionBank: mode })}
+                        type="button"
+                      >
+                        {QUESTION_BANK_LABELS[mode]}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="hint">{QUESTION_BANK_HINTS[draft.questionBank] || QUESTION_BANK_HINTS.none}</div>
+                </div>
+              ) : null}
+
               <div className="rg-option-row">
                 <div className="rg-option-label">Show marks beside questions</div>
                 <button
@@ -761,6 +794,9 @@ export default function ResourceJobBuilder({
                         : null}
                       {RESOURCE_BY_KEY[row.resourceType]?.hasQuestions
                         ? ` · marks ${row.showMarks ? "shown" : "hidden"}`
+                        : null}
+                      {row.subject === "maths" && RESOURCE_BY_KEY[row.resourceType]?.hasQuestions && row.questionBank && row.questionBank !== "none"
+                        ? ` · ${QUESTION_BANK_LABELS[row.questionBank].toLowerCase()} textbook questions`
                         : null}
                       {row.uploadedFiles.length
                         ? ` - ${row.uploadedFiles.map((file) => file.name).join(", ")}`

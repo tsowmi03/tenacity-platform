@@ -2,6 +2,7 @@ import React from "react";
 import Button from "../Button";
 import Icon from "../Icon";
 import Modal from "../Modal";
+import BankQuestionsSection from "./BankQuestionsSection";
 import { answerModeLabel, resourceLabel } from "./resourceTypes";
 
 function capitalise(value) {
@@ -174,6 +175,11 @@ export default function ResourceJobDetailsModal({ job, open, onClose, onDownload
             <span className="muted">No files attached</span>
           )}
         </DetailRow>
+        {job.questionBankUsage?.used?.length ? (
+          <DetailRow label="Textbook questions">
+            <BankQuestionsSection job={job} />
+          </DetailRow>
+        ) : null}
         <DetailRow label="Prompt">
           {prompt ? (
             <pre className="rg-details-prompt">{prompt}</pre>

@@ -20,6 +20,18 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-05 | [Question bank: weekly update from Drive (RES-62)](#2026-11-05--question-bank-weekly-update-from-drive-res-62) |
+| 2026-11-05 | [Question bank: tutors flag textbook questions, admins fix or hide them (RES-61)](#2026-11-05--question-bank-tutors-flag-textbook-questions-admins-fix-or-hide-them-res-61) |
+| 2026-11-05 | [Generator: textbook questions with their original diagrams (RES-60)](#2026-11-05--generator-textbook-questions-with-their-original-diagrams-res-60) |
+| 2026-11-05 | [Question bank: production backfill complete, 73,290 live questions](#2026-11-05--question-bank-production-backfill-complete-73290-live-questions) |
+| 2026-11-04 | [Question bank: search and duplicates across editions (RES-59)](#2026-11-04--question-bank-search-and-duplicates-across-editions-res-59) |
+| 2026-11-04 | [Question bank: difficulty ratings, THSC past papers, Years 9-10 first](#2026-11-04--question-bank-difficulty-ratings-thsc-past-papers-years-9-10-first) |
+| 2026-11-04 | [Question bank: a proof-of-concept booklet from original diagrams](#2026-11-04--question-bank-a-proof-of-concept-booklet-from-original-diagrams) |
+| 2026-11-04 | [Question bank: quality check passed (RES-58)](#2026-11-04--question-bank-quality-check-passed-res-58) |
+| 2026-11-04 | [Question bank: extracting questions and diagrams through the Batch API (RES-57)](#2026-11-04--question-bank-extracting-questions-and-diagrams-through-the-batch-api-res-57) |
+| 2026-11-04 | [Question bank: which Drive files to extract from (RES-56)](#2026-11-04--question-bank-which-drive-files-to-extract-from-res-56) |
+| 2026-11-03 | [Sizing the Drive resources and testing extraction on random pages (RES-54)](#2026-11-03--sizing-the-drive-resources-and-testing-extraction-on-random-pages-res-54) |
+| 2026-11-03 | [Pilot: lifting questions and diagrams out of the Drive resources (RES-54)](#2026-11-03--pilot-lifting-questions-and-diagrams-out-of-the-drive-resources-res-54) |
 | 2026-10-29 | [Mobile 3.4.0 (build 523)](#2026-10-29--mobile-340-build-523) |
 | 2026-10-29 | [The app is released to both stores from the command line (MOB-67)](#2026-10-29--the-app-is-released-to-both-stores-from-the-command-line-mob-67) |
 | 2026-10-29 | [Parents can respond to feedback (MOB-52)](#2026-10-29--parents-can-respond-to-feedback-mob-52) |
@@ -198,6 +210,369 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-05 — Question bank: weekly update from Drive (RES-62)
+
+**What changed**
+- A GitHub Actions workflow, `question-bank-weekly.yml`, runs every Sunday
+  at 02:00 Sydney time (and on demand, as a dry run by default). It syncs the
+  Maths folder, retires the questions of removed files and of changed files
+  about to be re-extracted, extracts new and changed files under a $10 cap,
+  then embeds them and merges copies. The job summary lists files, pages,
+  questions added and cost.
+- A retired question never comes back from a search, and the copy merge
+  ignores it.
+
+**Why:** New resources dropped into Drive should reach the generator without
+anyone running a script.
+
+**Status:** Live once its runner account exists. The workflow runs as
+`tenacity-prod-question-bank` through Workload Identity; creating that account
+and its grants (Firestore, Storage, the two API key secrets, Token Creator on
+`question-bank-drive`) is a one-time setup listed in the workflow file.
+
+---
+
+## 2026-11-05 — Question bank: tutors flag textbook questions, admins fix or hide them (RES-61)
+
+**What changed**
+- A resource's details show its textbook questions with their original
+  diagrams, each with a "Flag a problem" form: diagram cut off, wording wrong,
+  answer wrong, wrong tags, or something else, with an optional note.
+- Admins get "Flagged questions" on the resources page: hide the question,
+  correct its skill, difficulty, year level or wording, or dismiss the flag.
+  Resolving closes every open flag on that question.
+- One new callable, `manageQuestionBank`. Staff can flag only questions a
+  resource actually used; only admins list and resolve flags. A hidden
+  question is never picked again; an edited one is re-embedded on the next
+  embed run.
+
+**Why:** The bank goes live without a review queue, so tutors need a quick
+way to report a bad question and admins a way to deal with it.
+
+**Status:** Live. The portal ships on merge; `manageQuestionBank` deploys with
+the Functions.
+
+---
+
+## 2026-11-05 — Generator: textbook questions with their original diagrams (RES-60)
+
+**What changed**
+- Maths resources have a new "Textbook questions" setting: None, Some (about
+  a third of the diagram questions) or Mostly (every diagram question with a
+  good match). It defaults to Some in the portal; an older portal sends
+  nothing and gets None.
+- After generation, each chosen question searches the bank for the student's
+  year and the difficulty its place in the resource calls for. Sonnet 5.5
+  sees three candidate diagrams, picks one that tests the same skill (or
+  none), restates the original question or, every third time, asks a new one
+  about the same diagram, and solves it. A second, independent solve must
+  agree, or the generated question stays. Nothing about the bank can fail a
+  resource.
+- The diagram is the original crop, placed as printed. Its bytes are loaded
+  only to build the DOCX, so stored resources stay small and revisions
+  rebuild them.
+- Each job records which bank questions it used.
+
+**Why:** Tutors wanted real textbook questions and diagrams in generated
+resources, not only newly drawn ones.
+
+**Status:** Live. The portal ships on merge; the generator deploys with the
+Functions, and search needs the two vector indexes deployed with it. A live
+check on staging's bank swapped 3 of 6 questions in 39 seconds, declined the
+3 it had no same-skill match for, and every answer checked out.
+
+---
+
+## 2026-11-05 — Question bank: production backfill complete, 73,290 live questions
+
+**What changed**
+- The full backfill ran overnight on production: 52,599 pages from 1,687
+  files (Years 9-10 first, then everything else). 21,300 pages had a target
+  diagram. Total model cost $35.35, against the $100 cap.
+- Parts printed under another part's diagram (2b and 2c under 2a's figure)
+  had been dropped: 38,711 of 90,477 parts. Extraction now gives each such
+  part the diagram of the nearest earlier part with the same instruction or
+  question number, pointing at that part's crop. Re-saving the backfill's
+  pages from the stored batch results recovered 25,623 parts with no model
+  calls. The rest had no printed diagram at all and stay out.
+- Writes retry, and a page whose write failed is saved again from the stored
+  batch results (174 pages after a network change, all recovered).
+- Drive shortcuts are followed to their target. Two still fail because their
+  targets are outside what the service account can read: "Advanced Year 11/12
+  NSM.pdf" and "CMNSW8_2ed_book.pdf". "Maths Quest Y11 GenMaths chap12.pdf" is
+  not a valid PDF.
+- Spot check of 200 random questions: 194 crops clean, 5 with a sliver of
+  neighbouring text or a logo edge, 1 possibly missing a label. Shared-diagram
+  parts read correctly.
+- All 85,600 questions are embedded ($0.18). The copy merge found 9,572
+  groups and marked 12,310 copies, mostly the same book saved twice (PC and
+  Mac PDFs of Connections Year 9, two copies of Cambridge Year 9, revision
+  workbooks saved under two names). That leaves 73,290 live questions.
+
+**Why:** RES-54 phase 1: every Maths question with a target diagram, tagged
+and searchable, so the generator can use them.
+
+**Status:** Live in production Firestore and Storage.
+
+---
+
+## 2026-11-04 — Question bank: search and duplicates across editions (RES-59)
+
+**What changed**
+- Each question gets an OpenAI embedding (text-embedding-3-small, 512
+  dimensions) of its topic, description, wording and diagram descriptions,
+  and its school years as numbers, so "Year 9", "Years 9-10" and
+  "Stage 5.2" all match a Year 9 search. `questionBankEmbed.js` fills both
+  in and re-embeds only questions whose text changed.
+- `searchQuestions` finds live questions nearest a free-text brief, filtered
+  by diagram type, skill, year, context, steps, difficulty and kind. Hidden
+  and merged questions never come back.
+- Two Firestore vector indexes on `questionBank`. The index deploy checks
+  rejected vector fields outright; they now accept a flat vector index as a
+  composite index's last field, with `__name__` placed before it as Firestore
+  does.
+- `questionBankDedupe.js` merges copies of one question from different
+  files: the copy with the latest year in its path, then the most recently
+  modified file, stays live and lists every source; the others are marked
+  `duplicate`. Copies must match on type, skill, kind and every number, with
+  nearly the same words. Parts that share an instruction must also share a
+  label, numberless questions must have similar diagrams, and two parts of
+  one file never merge.
+
+**Why:** The generator (RES-60) needs to pull the right bank questions for a
+brief, and the same book stored twice should not offer each question twice.
+
+**Status:** Live. Embeddings and merged copies are in production; the two
+vector indexes deploy with the next index deploy. Staging: 457 questions
+embedded, searches return in 0.3–2.6 s.
+
+---
+
+## 2026-11-04 — Question bank: difficulty ratings, THSC past papers, Years 9-10 first
+
+**What changed**
+- Saving a page's questions now retries three times. A network change
+  during the backfill failed 124 pages' writes; the next run saves them again
+  from Anthropic's stored batch results, without paying twice.
+- Each extracted question is now rated easy, medium or hard for its year
+  level, so a practice paper can end on hard questions. The rating uses the
+  book's own signals first (position in the exercise; Problem solving,
+  Reasoning and Challenge sections; marks in a paper). On three Cambridge
+  Year 9 pages it rose from easy to hard as expected.
+- Added `scripts/thscPastPapers.js`, which copies school past papers from THSC
+  Online into Resources/Maths/Past Papers, filed by year and kind. THSC
+  Online's maintainers gave permission for Tenacity to store and use them for
+  tutoring. It starts with Years 9 and 10: 265 papers, 221 of them with
+  solutions. It goes one paper at a time with a pause, resumes if stopped,
+  and records each file's source in `THSC sources.json`. File names never say
+  "solutions", so the question bank doesn't skip them.
+- The extraction script now picks up files synced after a run began, and
+  `--priority-only` runs just the Year 9-10 files first: about 290 Drive files
+  plus the THSC papers.
+
+**Why:** Tom asked for difficulty so the generator can grade a paper, and for
+Year 9-10 material, including the THSC past papers, to go into the bank first.
+
+**Status:** Live. All 265 THSC Year 9-10 papers are in Drive and went
+through the production backfill first.
+
+---
+
+## 2026-11-04 — Question bank: a proof-of-concept booklet from original diagrams
+
+**What changed**
+- The DOCX builder accepts a `source-image` diagram: a crop from the question
+  bank, printed at 1.5 times its original size so labels stay readable. It
+  isn't in the diagram registry, so the generator is never offered it.
+- Built a Year 9 volume and surface area worksheet on staging from the bank:
+  11 original textbook questions with their own diagrams and 3 new questions
+  asked about the same diagrams. Claude solved every answer and a second,
+  independent solve checked it. It is saved as a finished resource in staging
+  (job `831aPU6Kn8MHUT6Q8gXI`).
+
+**Why:** To see a real booklet built from bank diagrams before the production
+backfill and RES-60.
+
+- Extraction now stores only the printed wording in `stem` and `text`, so they
+  can be reprinted next to the original diagram. A part printed as only a
+  letter and a diagram has empty `text`; before this, Haiku filled it with a
+  description of the diagram. Rechecked on 5 pages.
+
+**Status:** Proof of concept only, on branch `feat/res-58-quality-check`. The
+builder change is tested; nothing is deployed.
+
+**Next steps**
+- In RES-60, a bank question goes into a booklet only if the independent
+  answer check agrees. Here it caught a crop missing its height label.
+
+---
+
+## 2026-11-04 — Question bank: quality check passed (RES-58)
+
+**What changed**
+- Ran the extraction on 226 random Maths pages from 60 files on staging and
+  checked every page and crop by eye. 226 of 228 crops were complete (the gate
+  was 95%), and no page with a target diagram was missed (the gate was 90%).
+  It cost $0.13.
+- Fixed the two problems it found. Crop clean-up no longer erases a figure
+  that runs up to its box, and answer pages are no longer read as questions.
+- Added `scripts/questionBankReview.js`, which turns a run into contact sheets
+  for checking by eye.
+- Recorded the results in the spec. The full run is estimated at about $27.
+- Made `questionBankExtract.js` fit the whole corpus (about 45,000 pages):
+  - each PDF is opened once and rendered at the size the model sees;
+  - page text lives in its own files and the state is saved every few seconds;
+  - files are prepared four at a time;
+  - batches are built and submitted one slice at a time, so only one slice of
+    page images is in memory.
+- Timed a run on 8 random whole files on staging (84 pages). Preparing took 12
+  seconds and the run took 8½ minutes in all, mostly waiting on the two
+  batches. It wrote 177 questions for $0.045, and every file was marked as
+  extracted.
+
+**Why:** RES-58 is the gate before the question bank is built for real.
+
+**Status:** In progress on branch `feat/res-58-quality-check`. The quality
+check passed and the script is ready for the full run. The production
+backfill hasn't started; it needs Tom's approval.
+
+---
+
+## 2026-11-04 — Question bank: extracting questions and diagrams through the Batch API (RES-57)
+
+**What changed**
+- Moved the pilot's extraction into `backend/firebase/functions/src/questionBank/`:
+  the 23 diagram types and their skills (`taxonomy.js`), the sorting and
+  extraction requests on Haiku 5.5 (`prompts.js`), page rendering, blank-page
+  detection and diagram crops (`pages.js`), Message Batches plumbing priced at
+  batch rates (`batches.js`), Word/PowerPoint/Google Docs to PDF
+  (`sourceFiles.js`), and the question records (`extraction.js`).
+- Added `scripts/questionBankExtract.js`. It downloads the pending files,
+  skips blank pages, sorts every page by diagram type, extracts only the pages
+  with a match, and writes each question to the `questionBank` collection with
+  its diagram crops in Storage. It resumes from its work folder, stops at a
+  spending cap, can sample pages for the quality check, and is a dry run
+  unless given `--commit --yes`.
+- Corrected the spec's diagram type count to 23; earlier notes said 24.
+
+**Why:** RES-57 turns the RES-54 pilot into the pipeline that builds the
+question bank from the files RES-56 records.
+
+- Tested on staging with 24 random pages from 8 files: 12 had a target
+  diagram, giving 85 questions. All 86 diagram crops were complete and the
+  skill tags were specific. It cost $0.025 at batch rates and took about 15
+  minutes, mostly waiting on the two batches. A page with no year heading takes
+  its file's most common year level.
+
+**Status:** In progress on branch `feat/res-57-extraction`. Staging has the 85
+test questions; production is untouched. Nothing is deployed.
+
+**Next steps**
+- The 200-page quality check and the full backfill are RES-58. At the measured
+  $0.001 a page, the full run is about $45, under the $100 cap.
+
+---
+
+## 2026-11-04 — Question bank: which Drive files to extract from (RES-56)
+
+**What changed**
+- Added `backend/firebase/functions/src/questionBank/`. `driveSource.js` lists
+  every file under Resources/Maths through the Drive API, as a dedicated
+  read-only service account that callers impersonate (no key file).
+  `sourceRules.js` decides which files the question bank extracts from, and
+  `sourceStore.js` records each file in the `questionBankSources` collection.
+- Files are skipped when they are not documents, are below Year 5, are answer
+  or solution files, are teacher editions with a student edition, are Word
+  copies of a PDF, or are exact copies. On the real listing that leaves 1,420
+  of 8,576 Maths files, about 44,700 pages.
+- Added `scripts/questionBankSync.js` to run the sync (a dry run unless given
+  `--commit --yes`), with unit tests for the rules, the Drive client and the
+  Firestore writes.
+
+**Why:** The question bank (RES-54) needs its own read-only access to the
+Drive resources and a record of which files to extract from, so extraction
+(RES-57) and the weekly sync (RES-62) only work on what is new or changed.
+
+- Created the `question-bank-drive` service account in production. Tom's
+  login and the Functions' runtime account can impersonate it, and it has
+  Viewer access to the shared drive's Resources folder only.
+- Ran the sync against Drive into staging: 8,583 Maths files recorded, 1,422
+  of them to extract. A second run wrote nothing. Listing the 1,200-plus folders
+  takes about a minute and a half.
+
+**Status:** In progress on branch `feat/res-56-drive-source`. Staging has the
+source records; production Firestore hasn't been synced yet. Nothing is
+deployed.
+
+---
+
+## 2026-11-03 — Sizing the Drive resources and testing extraction on random pages (RES-54)
+
+**What changed**
+- Added `backend/firebase/functions/scripts/driveCorpusInventory.js`. It reads
+  every file under Resources → Maths and English (Student Docs excluded) and
+  records its type, hash, page count and whether it is scanned. It can also
+  draw a random page sample for the extraction script.
+- The corpus is 4,828 unique documents and 64,907 pages. About 55,000 pages
+  are worth a question pass; answer files, teacher editions with a student
+  twin, PDF/Word pairs and blank pages can be skipped.
+- Ran extraction on 39 random pages: $0.053 a page, accurate transcription,
+  and every Maths diagram cropped whole.
+- Updated `driveExtractionPilot.js`: the check pass is off by default, Word and
+  PowerPoint files are converted with LibreOffice, English passages and
+  worked examples have clearer definitions, and decoration (mascots, icons,
+  blank answer frames) is no longer boxed as a diagram.
+- Narrowed the run to the Maths diagram types the question bank needs (2D
+  shapes, 3D solids, triangles, straight-line and curved graphs, number plane)
+  and tested it on Haiku 5.5. A cheap sorting call picks the pages that have
+  those diagrams, and only those pages are extracted. On the sample, sorting
+  matched a check by eye exactly and 30 of 31 crops were complete. The
+  estimated cost for the whole corpus fell from about $1,450 to about $35
+  (about $17 with the Batch API).
+- Findings are in
+  [`docs/architecture/res-54-phase-1-corpus.md`](docs/architecture/res-54-phase-1-corpus.md).
+- Agreed the question bank spec with Tom: 23 Maths diagram types, questions and
+  worked examples only, which sources to include, and the fields stored with
+  each question (a fixed skill per type plus a free-text description, context
+  and steps), plus the build decisions: how the generator uses the bank,
+  answers, review, search, weekly sync, duplicates and a $100 cap. The spec is in
+  [`docs/architecture/res-54-question-bank-spec.md`](docs/architecture/res-54-question-bank-spec.md).
+
+**Why:** Phase 0 used hand-picked Maths pages. Before the index is built we
+needed the real size of the corpus and evidence that extraction works on
+pages nobody chose, English included.
+
+**Status:** In progress. Scripts and findings are on branch
+`feat/res-54-phase-1`. Nothing is deployed.
+
+---
+
+## 2026-11-03 — Pilot: lifting questions and diagrams out of the Drive resources (RES-54)
+
+**What changed**
+- Added a local pilot script, `backend/firebase/functions/scripts/driveExtractionPilot.js`.
+  It renders pages from the shared drive's Resources folder and asks Claude to
+  list every question part with its wording, topic and a box around each
+  diagram. It then crops each diagram from a high-resolution render and removes
+  stray marks from neighbouring questions.
+- Ran it on 20 pages from three books: a Cambridge Year 9 textbook, a scanned
+  Excel Year 9 revision workbook and Cambridge Year 11 Advanced topic tests.
+  It found 340 question parts and 179 diagrams. Every diagram was found and
+  cropped whole. The cost was about $0.11 a page.
+- Findings and recommendations for the full build are in
+  [`docs/architecture/res-54-drive-extraction-pilot.md`](docs/architecture/res-54-drive-extraction-pilot.md).
+
+**Why:** RES-54 asks for an index of the Drive resources, so the generator can
+draw on them and build booklets from the original questions and diagrams. The
+pilot was to show whether diagrams can be cropped reliably, and what that
+costs, before the index is built.
+
+**Status:** In progress. The pilot script is on branch
+`feat/res-54-extraction-pilot`. Nothing is deployed, and the generator is
+unchanged.
 
 ---
 
@@ -7305,6 +7680,18 @@ three original repositories.
     with working out" cannot add working there (RES-36 left it alone). Adding
     `workingOut` grows the largest schema sent (~4.4KB), so it needs a live
     check against the API's grammar-size limit first. About an hour.
+
+27. **Two Drive shortcuts point outside the question bank's reach** —
+   "Advanced Year 11/12 NSM.pdf" and "CMNSW8_2ed_book.pdf" in Resources/Maths
+   are shortcuts to files the `question-bank-drive` service account cannot
+   see, so the bank skips them. Sharing the two targets with it (or replacing
+   the shortcuts with copies) lets the next weekly run pick them up. Minutes.
+
+28. **The weekly question bank update needs its runner account** —
+   `question-bank-weekly.yml` runs as `tenacity-prod-question-bank`, which does
+   not exist yet. Creating it and its four grants (listed in the workflow) is
+   a one-time IAM change. Until then the scheduled run fails at sign-in.
+   About 15 minutes.
 
 ---
 
