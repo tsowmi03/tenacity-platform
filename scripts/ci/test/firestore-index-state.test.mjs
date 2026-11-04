@@ -200,6 +200,48 @@ describe("Firestore live index controls", () => {
     assert.equal(expanded.indexes[0].fields.length, 3);
   });
 
+  // Shape copied from the staging questionBank vector index (2026-11-04):
+  // Firestore puts __name__ before the vector field, not last.
+  it("matches a live vector index to its source definition", () => {
+    const vectorField = { fieldPath: "embedding", vectorConfig: { dimension: 512, flat: {} } };
+    const source = sourceManifest();
+    source.indexes.push({
+      collectionGroup: "questionBank",
+      queryScope: "COLLECTION",
+      fields: [{ fieldPath: "status", order: "ASCENDING" }, vectorField],
+    });
+    assert.deepEqual(expandSourceIndexManifest(source).indexes.find((index) => index.collectionGroup === "questionBank").fields, [
+      { fieldPath: "status", order: "ASCENDING" },
+      { fieldPath: "__name__", order: "ASCENDING" },
+      vectorField,
+    ]);
+
+    const live = liveState();
+    live.indexes.push({
+      name: `${databaseName}/collectionGroups/questionBank/indexes/CICAgLjyrJEK`,
+      queryScope: "COLLECTION",
+      density: "SPARSE_ALL",
+      fields: [
+        { fieldPath: "status", order: "ASCENDING" },
+        { fieldPath: "__name__", order: "ASCENDING" },
+        vectorField,
+      ],
+      state: "READY",
+    });
+    const report = verifyLiveIndexSnapshot(
+      canonicalizeLiveIndexState(live, { projectId, databaseId, capturedAt: "2026-11-04T10:00:00.000Z" }),
+      source
+    );
+    assert.equal(report.sourceEqual, true);
+    assert.equal(report.compositeCount, 2);
+
+    live.indexes.at(-1).fields[2].vectorConfig = { dimension: 512, flat: {}, extra: true };
+    assert.throws(
+      () => canonicalizeLiveIndexState(live, { projectId, databaseId }),
+      /vectorConfig must have exactly dimension and flat/
+    );
+  });
+
   it("normalizes Standard defaults and separates TTL-only fields", () => {
     const result = snapshot();
     assert.equal(result.manifest.indexes.length, 1);

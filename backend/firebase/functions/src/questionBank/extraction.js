@@ -5,6 +5,7 @@
 
 const { clampBox } = require("./pages");
 const { splitSkillId } = require("./taxonomy");
+const { yearsOf } = require("./search");
 
 const QUESTIONS_COLLECTION = "questionBank";
 
@@ -99,6 +100,7 @@ function toQuestionDocs({ source, pageNumber, width, height, units, runId, model
         difficulty: unit.difficulty || null,
         topic: unit.topic,
         yearLevel: unit.yearLevel || null,
+        years: yearsOf(unit.yearLevel, source.path),
         stem: unit.stem || null,
         text: unit.text,
         box: clampBox(unit.box, width, height),

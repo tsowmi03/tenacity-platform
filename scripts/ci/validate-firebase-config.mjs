@@ -190,7 +190,25 @@ function assertQueryScope(queryScope, label) {
   );
 }
 
-function assertIndexMode(index, label) {
+// A vector field is only allowed as the last field of a composite index, as a
+// flat index of at most 2048 dimensions: the one shape Firestore supports.
+export function assertVectorConfig(vectorConfig, label) {
+  assert(
+    vectorConfig && typeof vectorConfig === "object" && !Array.isArray(vectorConfig) &&
+      JSON.stringify(Object.keys(vectorConfig).sort()) === JSON.stringify(["dimension", "flat"]),
+    `${label} vectorConfig must have exactly dimension and flat.`
+  );
+  assert(
+    Number.isInteger(vectorConfig.dimension) && vectorConfig.dimension > 0 && vectorConfig.dimension <= 2048,
+    `${label} has unsupported vector dimension ${String(vectorConfig.dimension)}.`
+  );
+  assert(
+    vectorConfig.flat && typeof vectorConfig.flat === "object" && Object.keys(vectorConfig.flat).length === 0,
+    `${label} vectorConfig.flat must be an empty object.`
+  );
+}
+
+function assertIndexMode(index, label, { allowVector = false } = {}) {
   const modes = ["order", "arrayConfig", "vectorConfig"].filter(
     (key) => index[key] !== undefined
   );
@@ -207,10 +225,10 @@ function assertIndexMode(index, label) {
       `${label} has unsupported arrayConfig ${String(index.arrayConfig)}.`
     );
   }
-  assert(
-    index.vectorConfig === undefined,
-    `${label} uses vectorConfig, which requires an explicit validator update.`
-  );
+  if (index.vectorConfig !== undefined) {
+    assert(allowVector, `${label} uses vectorConfig, which is only supported on a composite index's last field.`);
+    assertVectorConfig(index.vectorConfig, label);
+  }
 }
 
 export function canonicalFieldOverride(override) {
@@ -255,7 +273,9 @@ export function validateIndexManifest(manifest) {
         typeof field.fieldPath === "string" && field.fieldPath.length > 0,
         `Index ${indexNumber} field ${fieldNumber} is missing fieldPath.`
       );
-      assertIndexMode(field, `Index ${indexNumber} field ${field.fieldPath}`);
+      assertIndexMode(field, `Index ${indexNumber} field ${field.fieldPath}`, {
+        allowVector: fieldNumber === index.fields.length - 1,
+      });
     }
     const fieldPaths = index.fields.map((field) => field.fieldPath);
     assert(

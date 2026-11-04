@@ -210,3 +210,13 @@ Known limits, left as they are:
 
 Estimate for the full run: about 44,700 pages × $0.0006 ≈ **$27**, inside the
 $100 cap.
+
+## 8. Search and duplicates (RES-59)
+
+| Piece | How it works |
+|---|---|
+| Embedding | `text-embedding-3-small` at 512 dimensions, from topic, description, type/skill, stem, text and figure descriptions. Stored as `embedding` with `embeddingHash`, so only changed questions are re-embedded |
+| Years | `years`: school years as numbers, from the model's year level, else the file path (Mathletics folders, Stage n, HSC courses as 11–12) |
+| Search | `searchQuestions` in `src/questionBank/search.js`. Firestore pre-filters on `status == live` and, when given, `diagramType`; the nearest candidates are then filtered on skill, years, context, steps, difficulty and kind. Narrower filters get more candidates (up to 1,000) |
+| Indexes | Two flat vector indexes on `questionBank`: (status, embedding) and (status, diagramType, embedding) |
+| Duplicates | `questionBankDedupe.js`. Copies come from different files and match on type, skill, kind and every number, with at least 80% of words shared. Parts that share an instruction must share a label too; numberless questions need at least 40% of diagram-description words shared. The newest copy (latest year in its path, then latest Drive modified time) stays live with `sources` listing every copy; the rest get `status: duplicate` and `duplicateOf`. A hidden copy is always the one kept, so hiding it hides all of them |

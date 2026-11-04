@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-04 | [Question bank: search and duplicates across editions (RES-59)](#2026-11-04--question-bank-search-and-duplicates-across-editions-res-59) |
 | 2026-11-04 | [Question bank: difficulty ratings, THSC past papers, Years 9-10 first](#2026-11-04--question-bank-difficulty-ratings-thsc-past-papers-years-9-10-first) |
 | 2026-11-04 | [Question bank: a proof-of-concept booklet from original diagrams](#2026-11-04--question-bank-a-proof-of-concept-booklet-from-original-diagrams) |
 | 2026-11-04 | [Question bank: quality check passed (RES-58)](#2026-11-04--question-bank-quality-check-passed-res-58) |
@@ -205,6 +206,42 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-04 — Question bank: search and duplicates across editions (RES-59)
+
+**What changed**
+- Each question gets an OpenAI embedding (text-embedding-3-small, 512
+  dimensions) of its topic, description, wording and diagram descriptions,
+  and its school years as numbers, so "Year 9", "Years 9-10" and
+  "Stage 5.2" all match a Year 9 search. `questionBankEmbed.js` fills both
+  in and re-embeds only questions whose text changed.
+- `searchQuestions` finds live questions nearest a free-text brief, filtered
+  by diagram type, skill, year, context, steps, difficulty and kind. Hidden
+  and merged questions never come back.
+- Two Firestore vector indexes on `questionBank`. The index deploy checks
+  rejected vector fields outright; they now accept a flat vector index as a
+  composite index's last field, with `__name__` placed before it as Firestore
+  does.
+- `questionBankDedupe.js` merges copies of one question from different
+  files: the copy with the latest year in its path, then the most recently
+  modified file, stays live and lists every source; the others are marked
+  `duplicate`. Copies must match on type, skill, kind and every number, with
+  nearly the same words. Parts that share an instruction must also share a
+  label, numberless questions must have similar diagrams, and two parts of
+  one file never merge.
+
+**Why:** The generator (RES-60) needs to pull the right bank questions for a
+brief, and the same book stored twice should not offer each question twice.
+
+**Status:** In progress. Staging: indexes built, 457 questions embedded
+($0.001), searches return in 0.3–2.6 s. Production dry run on 2,870
+questions found 128 copies, mostly one Year 6 book stored under two names.
+
+**Next steps**
+- After the backfill: deploy the indexes to production, embed (~$0.05), then
+  run the duplicate merge.
 
 ---
 

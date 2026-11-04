@@ -73,6 +73,44 @@ describe("Firebase configuration validation", () => {
     );
   });
 
+  it("accepts a flat vector field only as a composite index's last field", () => {
+    const vectorField = { fieldPath: "embedding", vectorConfig: { dimension: 512, flat: {} } };
+    const manifest = (fields) => ({
+      indexes: [{ collectionGroup: "questionBank", queryScope: "COLLECTION", fields }],
+      fieldOverrides: [],
+    });
+    validateIndexManifest(manifest([{ fieldPath: "status", order: "ASCENDING" }, vectorField]));
+    assert.throws(
+      () => validateIndexManifest(manifest([vectorField, { fieldPath: "status", order: "ASCENDING" }])),
+      /only supported on a composite index's last field/
+    );
+    for (const vectorConfig of [
+      { dimension: 4096, flat: {} },
+      { dimension: 512.5, flat: {} },
+      { dimension: 512 },
+      { dimension: 512, flat: { tree: true } },
+    ]) {
+      assert.throws(
+        () => validateIndexManifest(manifest([{ fieldPath: "status", order: "ASCENDING" }, { fieldPath: "embedding", vectorConfig }])),
+        /vector dimension|vectorConfig/
+      );
+    }
+    assert.throws(
+      () =>
+        validateIndexManifest({
+          indexes: [],
+          fieldOverrides: [
+            {
+              collectionGroup: "questionBank",
+              fieldPath: "embedding",
+              indexes: [{ queryScope: "COLLECTION", vectorConfig: { dimension: 512, flat: {} } }],
+            },
+          ],
+        }),
+      /only supported on a composite index's last field/
+    );
+  });
+
   it("rejects duplicate field overrides", () => {
     const override = {
       collectionGroup: "attendance",
