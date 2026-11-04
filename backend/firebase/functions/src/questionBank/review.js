@@ -14,7 +14,9 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
-const { QUESTIONS_COLLECTION } = require("./extraction");
+// extraction.js loads the PDF libraries; a callable must not pay for them at
+// cold start (see lazyRequire.test.js).
+const QUESTIONS_COLLECTION = "questionBank";
 const { DIAGRAM_TYPES, skillsFor } = require("./taxonomy");
 
 const FLAGS_COLLECTION = "questionBankFlags";
