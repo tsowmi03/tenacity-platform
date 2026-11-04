@@ -13,6 +13,7 @@
  */
 
 const admin = require("firebase-admin");
+const { adminAppOptions } = require("./lib/questionBankAuth");
 
 const { QUESTIONS_COLLECTION } = require("../src/questionBank/extraction");
 const { findDuplicateGroups, planDuplicateWrites } = require("../src/questionBank/dedupe");
@@ -34,7 +35,7 @@ function parseArgs(argv) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  admin.initializeApp({ projectId: options.projectId });
+  admin.initializeApp(adminAppOptions({ projectId: options.projectId }));
   const db = admin.firestore();
 
   const sources = await db.collection(SOURCES_COLLECTION).select("modifiedTime").get();

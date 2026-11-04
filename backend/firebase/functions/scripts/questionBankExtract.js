@@ -38,6 +38,7 @@ process.env.POSTHOG_PROJECT_TOKEN = "";
 const fs = require("node:fs");
 const path = require("node:path");
 const admin = require("firebase-admin");
+const { adminAppOptions, loadApiKeys } = require("./lib/questionBankAuth");
 
 const { MAX_BATCH_BYTES, batchCostOf, collectResults, submitBatch, waitForBatch } = require("../src/questionBank/batches");
 const { createDriveClient, createImpersonatedTokenProvider } = require("../src/questionBank/driveSource");
@@ -435,7 +436,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   fs.mkdirSync(options.workDir, { recursive: true });
   const run = createRun(options.workDir);
-  admin.initializeApp({ projectId: options.projectId, storageBucket: `${options.projectId}.firebasestorage.app` });
+  admin.initializeApp(adminAppOptions({ projectId: options.projectId, storageBucket: `${options.projectId}.firebasestorage.app` }));
   const db = admin.firestore();
 
   if (!run.state.sources) {
@@ -484,7 +485,7 @@ async function main() {
 
   const keys = loadLocalSecrets().values;
   if (!keys.ANTHROPIC_API_KEY && options.firebaseSecrets) {
-    Object.assign(keys, loadFirebaseSecrets({ secretNames: ["ANTHROPIC_API_KEY"] }));
+    Object.assign(keys, await loadApiKeys(["ANTHROPIC_API_KEY"], { loadFirebaseSecrets }));
   }
   if (!keys.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is missing; set it locally or pass --firebase-secrets");
   const client = new (require("@anthropic-ai/sdk").default)({ apiKey: keys.ANTHROPIC_API_KEY });

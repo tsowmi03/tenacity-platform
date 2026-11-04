@@ -16,6 +16,7 @@
 
 const crypto = require("node:crypto");
 const admin = require("firebase-admin");
+const { adminAppOptions, loadApiKeys } = require("./lib/questionBankAuth");
 
 const { loadFirebaseSecrets, loadLocalSecrets } = require("./liveResourceSmoke");
 const { QUESTIONS_COLLECTION } = require("../src/questionBank/extraction");
@@ -56,7 +57,7 @@ function planEmbeddings(questions) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  admin.initializeApp({ projectId: options.projectId });
+  admin.initializeApp(adminAppOptions({ projectId: options.projectId }));
   const db = admin.firestore();
 
   const snapshot = await db
@@ -74,7 +75,7 @@ async function main() {
   }
 
   const keys = loadLocalSecrets().values;
-  if (!keys.OPENAI_API_KEY && options.firebaseSecrets) Object.assign(keys, loadFirebaseSecrets({ secretNames: ["OPENAI_API_KEY"] }));
+  if (!keys.OPENAI_API_KEY && options.firebaseSecrets) Object.assign(keys, await loadApiKeys(["OPENAI_API_KEY"], { loadFirebaseSecrets }));
   if (!keys.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is missing; set it locally or pass --firebase-secrets");
   const embed = createEmbedder({ client: new (require("openai").default)({ apiKey: keys.OPENAI_API_KEY }) });
 
