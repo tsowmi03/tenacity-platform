@@ -133,6 +133,7 @@ async function buildPracticePaperDocx(resource, options = {}) {
   }
 
   return packDocument({
+    reviewNotice: options.reviewNotice,
     title,
     subject,
     year,

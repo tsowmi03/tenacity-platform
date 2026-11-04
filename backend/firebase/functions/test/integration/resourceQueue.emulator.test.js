@@ -8,6 +8,7 @@ const {
   finalizeResourceJobAttempt,
   recoverStuckResourceJobsImpl,
 } = require("../../src/resources");
+const { createDurableCaller } = require("../../src/resources/durableStages");
 const { getAdmin, clearCollection } = require("../helpers/emulator");
 
 const clock = () => new Date("2026-06-11T00:00:00.000Z");
@@ -104,6 +105,60 @@ describe("resource queue concurrency (firestore emulator)", () => {
     assert.equal(live.status, "processing");
     assert.equal(recovered.recoveryCount, 1);
     assert.equal(recovered.status, "pending");
+  });
+
+  it("persists planned-stage recovery transactionally and rejects superseded recovery", async () => {
+    const ref = db.collection("resourceJobs").doc("planned");
+    const base = { jobId: "planned", generationVersion: 1, status: "processing", attemptId: "old" };
+    await ref.set(base);
+    const saved = [];
+    const storage = { bucket: () => ({ file: () => ({ download: async () => { throw Object.assign(new Error("missing"), { code: 404 }); }, save: async (data) => saved.push(data) }) }) };
+    const events = [];
+    const make = (job, callAi) => createDurableCaller({ job: { ...job, ref, resourceLogSink: (_m, data) => events.push(data) }, db, storage, callAi, timeoutMs: 10 });
+    const req = { model: "gpt-test", userMessage: "batch", stageId: "questions.1", splitAllowed: true };
+    await assert.rejects(make(base, () => new Promise(() => {}))(req), { code: "RESOURCE_STAGE_YIELD" });
+    const recovered = (await ref.get()).data();
+    assert.equal(recovered.stageRecoveryCount, 1);
+    assert.ok(Object.values(recovered.stageRecovery)[0].split);
+    await assert.rejects(make(recovered, () => { throw new Error("must not call"); })(req), { code: "RESOURCE_STAGE_SPLIT" });
+
+    let started;
+    const ready = new Promise((resolve) => { started = resolve; });
+    let fail;
+    const waiting = make(base, () => { started(); return new Promise((_resolve, reject) => { fail = reject; }); })({ ...req, userMessage: "next stage" });
+    await ready;
+    await ref.update({ attemptId: "new" });
+    fail(Object.assign(new Error("provider failure"), { modelFailure: true }));
+    await assert.rejects(waiting, { code: "RESOURCE_SUPERSEDED" });
+    assert.equal((await ref.get()).data().stageRecoveryCount, 1);
+    assert.equal(saved.length, 0);
+    assert.equal(events.filter((e) => e.event === "recovery.decided").length, 1);
+  });
+
+  it("persists optional-review failures once and fences a superseded reviewer", async () => {
+    const ref = db.collection("resourceJobs").doc("optional-review");
+    const base = { jobId: "optional-review", generationVersion: 1, status: "processing", attemptId: "owned" };
+    await ref.set(base);
+    const storage = { bucket: () => ({ file: () => ({ download: async () => { throw Object.assign(new Error("missing"), { code: 404 }); }, save: async () => {} }) }) };
+    const make = (job, callAi) => createDurableCaller({ job: { ...job, ref, resourceLogSink: () => {} }, db, storage, callAi });
+    const request = { model: "gpt-test", stageId: "content.review", optionalReview: true, userMessage: "synthetic" };
+    let calls = 0;
+    await assert.rejects(make(base, async () => { calls++; throw Object.assign(new Error("provider unavailable"), { modelFailure: true }); })(request), { code: "RESOURCE_REVIEW_UNAVAILABLE" });
+    const current = (await ref.get()).data();
+    await assert.rejects(make(current, async () => { calls++; return { parsed: {} }; })(request), { code: "RESOURCE_REVIEW_UNAVAILABLE" });
+    assert.equal(calls, 1);
+    assert.equal(current.providerCallCount, 1);
+    assert.equal(Object.keys(current.optionalReviewFailures).length, 1);
+
+    let begin;
+    let fail;
+    const ready = new Promise((resolve) => { begin = resolve; });
+    const pending = make(current, () => { begin(); return new Promise((_resolve, reject) => { fail = reject; }); })({ ...request, stageId: "answers.review", userMessage: "another check" });
+    await ready;
+    await ref.update({ attemptId: "new" });
+    fail(Object.assign(new Error("provider unavailable"), { modelFailure: true }));
+    await assert.rejects(pending, { code: "RESOURCE_SUPERSEDED" });
+    assert.equal(Object.keys((await ref.get()).data().optionalReviewFailures).length, 1);
   });
 
 });

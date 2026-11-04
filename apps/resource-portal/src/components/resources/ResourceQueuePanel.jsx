@@ -609,7 +609,11 @@ function ResourceJobRow({
   versionLabel = "",
   versionNumber = null,
 }) {
-  const status = STATUS_BADGES[job.status] || STATUS_BADGES.pending;
+  const status = job.status === "complete" && job.reviewStatus === "draft"
+    ? { tone: "warn", label: "Draft available", icon: "alert" }
+    : job.status === "complete" && job.reviewStatus === "warnings"
+    ? { tone: "warn", label: "Review recommended", icon: "alert" }
+    : STATUS_BADGES[job.status] || STATUS_BADGES.pending;
   const statusLabel = job.status === "fallback_pending"
     ? "Retrying generation\u2026"
     : status.label;

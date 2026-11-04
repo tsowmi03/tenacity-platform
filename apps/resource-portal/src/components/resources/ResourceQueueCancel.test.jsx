@@ -217,3 +217,19 @@ it("shows saved generation progress while a job continues", () => {
   }]} loading={false} />);
   expect(screen.getByText("Checking answers 16–30")).toBeInTheDocument();
 });
+
+describe("completed resources with review notes", () => {
+  for (const [reviewStatus, label] of [["draft", "Draft available"], ["warnings", "Review recommended"]]) {
+    it(`keeps downloads available for ${reviewStatus}`, () => {
+      renderWithToast(<ResourceQueuePanel jobs={[]} historyJobs={[{ id: "review-job", jobId: "review-job", createdBy: "tutor-1", status: "complete", reviewStatus,
+        studentName: "Ann", resourceType: "worksheet", outputPath: "output.docx", warnings: [{ code: "RESOURCE_TIMING_WARNING", message: "Check the workload." }] }]} loading={false} />);
+      fireEvent.click(screen.getByRole("button", { name: /History/ }));
+      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /\.docx/ })).not.toBeDisabled();
+      expect(screen.getByText("Check the workload.")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "View generation details" }));
+      expect(screen.getByText("Review notes")).toBeInTheDocument();
+      expect(screen.getAllByText("Check the workload.")).toHaveLength(2);
+    });
+  }
+});
