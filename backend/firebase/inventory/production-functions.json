@@ -118,6 +118,7 @@
       "invoiceReminderScheduler",
       "joinWaitlist",
       "linkUsers",
+      "manageQuestionBank",
       "notifyStudentAbsence",
       "onAnnouncementCreated",
       "onAttendanceChangeNotifyAdmins",

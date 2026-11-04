@@ -24,6 +24,8 @@ const {
   submitResourceJob,
   submitResourceRevision,
 } = require("../src/resources");
+// RES-61. Flagging and reviewing question bank questions.
+const { manageQuestionBank } = require("../src/questionBank/review");
 
 // Phase 2 portal admin functions (user management). Each module exports the
 // onCall handler under the canonical function name.
@@ -183,6 +185,7 @@ module.exports.generateResourcePreviewOnComplete = generateResourcePreviewOnComp
 module.exports.retryResourceJob = retryResourceJob;
 module.exports.deleteResourceJob = deleteResourceJob;
 module.exports.cancelResourceJob = cancelResourceJob;
+module.exports.manageQuestionBank = manageQuestionBank;
 module.exports.recoverStuckResourceJobs = recoverStuckResourceJobs;
 
 // The legacy onRequest `acceptPendingEnrolment` defined in

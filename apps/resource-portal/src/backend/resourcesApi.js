@@ -413,3 +413,21 @@ function triggerBrowserDownload(blob, filename) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+// RES-61. Question bank questions a resource used, and flagging them.
+export function getResourceBankQuestions(jobId) {
+  return callFunction("manageQuestionBank", { action: "forJob", jobId });
+}
+
+export function flagBankQuestion({ jobId, questionId, reason, note }) {
+  return callFunction("manageQuestionBank", { action: "flag", jobId, questionId, reason, note: note || "" });
+}
+
+// Admin only.
+export function listBankFlags() {
+  return callFunction("manageQuestionBank", { action: "listFlags" });
+}
+
+export function resolveBankFlag({ flagId, resolution, updates }) {
+  return callFunction("manageQuestionBank", { action: "resolve", flagId, resolution, ...(updates ? { updates } : {}) });
+}

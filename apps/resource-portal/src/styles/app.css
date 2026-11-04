@@ -2595,3 +2595,9 @@ input, select, textarea {
 @media (prefers-reduced-motion: reduce) {
   .rg-chat-drawer, .rg-prompt-flash, .rg-chat-dots i { animation: none; }
 }
+
+/* RES-61. Textbook (question bank) questions in a resource, and the admin review list. */
+.rg-bank-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.rg-bank-item { border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 12px; }
+.rg-bank-image { display: block; max-width: 100%; max-height: 260px; margin: 8px 0; background: #fff; }
+.rg-bank-flag-form { margin-top: 8px; display: flex; flex-direction: column; }
