@@ -20,6 +20,10 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-05 | [Question bank: weekly update from Drive (RES-62)](#2026-11-05--question-bank-weekly-update-from-drive-res-62) |
+| 2026-11-05 | [Question bank: tutors flag textbook questions, admins fix or hide them (RES-61)](#2026-11-05--question-bank-tutors-flag-textbook-questions-admins-fix-or-hide-them-res-61) |
+| 2026-11-05 | [Generator: textbook questions with their original diagrams (RES-60)](#2026-11-05--generator-textbook-questions-with-their-original-diagrams-res-60) |
+| 2026-11-05 | [Question bank: production backfill complete, 73,290 live questions](#2026-11-05--question-bank-production-backfill-complete-73290-live-questions) |
 | 2026-11-04 | [Question bank: search and duplicates across editions (RES-59)](#2026-11-04--question-bank-search-and-duplicates-across-editions-res-59) |
 | 2026-11-04 | [Question bank: difficulty ratings, THSC past papers, Years 9-10 first](#2026-11-04--question-bank-difficulty-ratings-thsc-past-papers-years-9-10-first) |
 | 2026-11-04 | [Question bank: a proof-of-concept booklet from original diagrams](#2026-11-04--question-bank-a-proof-of-concept-booklet-from-original-diagrams) |
@@ -209,6 +213,112 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-11-05 — Question bank: weekly update from Drive (RES-62)
+
+**What changed**
+- A GitHub Actions workflow, `question-bank-weekly.yml`, runs every Sunday
+  at 02:00 Sydney time (and on demand, as a dry run by default). It syncs the
+  Maths folder, retires the questions of removed files and of changed files
+  about to be re-extracted, extracts new and changed files under a $10 cap,
+  then embeds them and merges copies. The job summary lists files, pages,
+  questions added and cost.
+- A retired question never comes back from a search, and the copy merge
+  ignores it.
+
+**Why:** New resources dropped into Drive should reach the generator without
+anyone running a script.
+
+**Status:** Live once its runner account exists. The workflow runs as
+`tenacity-prod-question-bank` through Workload Identity; creating that account
+and its grants (Firestore, Storage, the two API key secrets, Token Creator on
+`question-bank-drive`) is a one-time setup listed in the workflow file.
+
+---
+
+## 2026-11-05 — Question bank: tutors flag textbook questions, admins fix or hide them (RES-61)
+
+**What changed**
+- A resource's details show its textbook questions with their original
+  diagrams, each with a "Flag a problem" form: diagram cut off, wording wrong,
+  answer wrong, wrong tags, or something else, with an optional note.
+- Admins get "Flagged questions" on the resources page: hide the question,
+  correct its skill, difficulty, year level or wording, or dismiss the flag.
+  Resolving closes every open flag on that question.
+- One new callable, `manageQuestionBank`. Staff can flag only questions a
+  resource actually used; only admins list and resolve flags. A hidden
+  question is never picked again; an edited one is re-embedded on the next
+  embed run.
+
+**Why:** The bank goes live without a review queue, so tutors need a quick
+way to report a bad question and admins a way to deal with it.
+
+**Status:** Live. The portal ships on merge; `manageQuestionBank` deploys with
+the Functions.
+
+---
+
+## 2026-11-05 — Generator: textbook questions with their original diagrams (RES-60)
+
+**What changed**
+- Maths resources have a new "Textbook questions" setting: None, Some (about
+  a third of the diagram questions) or Mostly (every diagram question with a
+  good match). It defaults to Some in the portal; an older portal sends
+  nothing and gets None.
+- After generation, each chosen question searches the bank for the student's
+  year and the difficulty its place in the resource calls for. Sonnet 5.5
+  sees three candidate diagrams, picks one that tests the same skill (or
+  none), restates the original question or, every third time, asks a new one
+  about the same diagram, and solves it. A second, independent solve must
+  agree, or the generated question stays. Nothing about the bank can fail a
+  resource.
+- The diagram is the original crop, placed as printed. Its bytes are loaded
+  only to build the DOCX, so stored resources stay small and revisions
+  rebuild them.
+- Each job records which bank questions it used.
+
+**Why:** Tutors wanted real textbook questions and diagrams in generated
+resources, not only newly drawn ones.
+
+**Status:** Live. The portal ships on merge; the generator deploys with the
+Functions, and search needs the two vector indexes deployed with it. A live
+check on staging's bank swapped 3 of 6 questions in 39 seconds, declined the
+3 it had no same-skill match for, and every answer checked out.
+
+---
+
+## 2026-11-05 — Question bank: production backfill complete, 73,290 live questions
+
+**What changed**
+- The full backfill ran overnight on production: 52,599 pages from 1,687
+  files (Years 9-10 first, then everything else). 21,300 pages had a target
+  diagram. Total model cost $35.35, against the $100 cap.
+- Parts printed under another part's diagram (2b and 2c under 2a's figure)
+  had been dropped: 38,711 of 90,477 parts. Extraction now gives each such
+  part the diagram of the nearest earlier part with the same instruction or
+  question number, pointing at that part's crop. Re-saving the backfill's
+  pages from the stored batch results recovered 25,623 parts with no model
+  calls. The rest had no printed diagram at all and stay out.
+- Writes retry, and a page whose write failed is saved again from the stored
+  batch results (174 pages after a network change, all recovered).
+- Drive shortcuts are followed to their target. Two still fail because their
+  targets are outside what the service account can read: "Advanced Year 11/12
+  NSM.pdf" and "CMNSW8_2ed_book.pdf". "Maths Quest Y11 GenMaths chap12.pdf" is
+  not a valid PDF.
+- Spot check of 200 random questions: 194 crops clean, 5 with a sliver of
+  neighbouring text or a logo edge, 1 possibly missing a label. Shared-diagram
+  parts read correctly.
+- All 85,600 questions are embedded ($0.18). The copy merge found 9,572
+  groups and marked 12,310 copies, mostly the same book saved twice (PC and
+  Mac PDFs of Connections Year 9, two copies of Cambridge Year 9, revision
+  workbooks saved under two names). That leaves 73,290 live questions.
+
+**Why:** RES-54 phase 1: every Maths question with a target diagram, tagged
+and searchable, so the generator can use them.
+
+**Status:** Live in production Firestore and Storage.
+
+---
+
 ## 2026-11-04 — Question bank: search and duplicates across editions (RES-59)
 
 **What changed**
@@ -235,13 +345,9 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** The generator (RES-60) needs to pull the right bank questions for a
 brief, and the same book stored twice should not offer each question twice.
 
-**Status:** In progress. Staging: indexes built, 457 questions embedded
-($0.001), searches return in 0.3–2.6 s. Production dry run on 2,870
-questions found 128 copies, mostly one Year 6 book stored under two names.
-
-**Next steps**
-- After the backfill: deploy the indexes to production, embed (~$0.05), then
-  run the duplicate merge.
+**Status:** Live. Embeddings and merged copies are in production; the two
+vector indexes deploy with the next index deploy. Staging: 457 questions
+embedded, searches return in 0.3–2.6 s.
 
 ---
 
@@ -270,9 +376,8 @@ questions found 128 copies, mostly one Year 6 book stored under two names.
 **Why:** Tom asked for difficulty so the generator can grade a paper, and for
 Year 9-10 material, including the THSC past papers, to go into the bank first.
 
-**Status:** In progress on branch `feat/res-58-quality-check`. The THSC Year
-9-10 download is running. The production backfill restarts with the Year 9-10
-pass once it finishes.
+**Status:** Live. All 265 THSC Year 9-10 papers are in Drive and went
+through the production backfill first.
 
 ---
 
@@ -7575,6 +7680,18 @@ three original repositories.
     with working out" cannot add working there (RES-36 left it alone). Adding
     `workingOut` grows the largest schema sent (~4.4KB), so it needs a live
     check against the API's grammar-size limit first. About an hour.
+
+27. **Two Drive shortcuts point outside the question bank's reach** —
+   "Advanced Year 11/12 NSM.pdf" and "CMNSW8_2ed_book.pdf" in Resources/Maths
+   are shortcuts to files the `question-bank-drive` service account cannot
+   see, so the bank skips them. Sharing the two targets with it (or replacing
+   the shortcuts with copies) lets the next weekly run pick them up. Minutes.
+
+28. **The weekly question bank update needs its runner account** —
+   `question-bank-weekly.yml` runs as `tenacity-prod-question-bank`, which does
+   not exist yet. Creating it and its four grants (listed in the workflow) is
+   a one-time IAM change. Until then the scheduled run fails at sign-in.
+   About 15 minutes.
 
 ---
 

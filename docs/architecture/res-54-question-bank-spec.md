@@ -220,3 +220,50 @@ $100 cap.
 | Search | `searchQuestions` in `src/questionBank/search.js`. Firestore pre-filters on `status == live` and, when given, `diagramType`; the nearest candidates are then filtered on skill, years, context, steps, difficulty and kind. Narrower filters get more candidates (up to 1,000) |
 | Indexes | Two flat vector indexes on `questionBank`: (status, embedding) and (status, diagramType, embedding) |
 | Duplicates | `questionBankDedupe.js`. Copies come from different files and match on type, skill, kind and every number, with at least 80% of words shared. Parts that share an instruction must share a label too; numberless questions need at least 40% of diagram-description words shared. The newest copy (latest year in its path, then latest Drive modified time) stays live with `sources` listing every copy; the rest get `status: duplicate` and `duplicateOf`. A hidden copy is always the one kept, so hiding it hides all of them |
+
+## 9. Parts that share a diagram (RES-58)
+
+The extraction prompt gives a diagram shared by several parts to the first of
+them, so 2b and 2c came back with no figure of their own and were dropped:
+38,711 of the 90,477 parts the backfill returned. About half of those were
+parts with no printed diagram at all (a "sketch this line" or a word problem),
+which rightly stay out. For the rest, `sharedFigureParents` gives each part the
+figures of the nearest earlier part with the same instruction or the same
+question number, and the record points at that part's crop (`sharedFrom`)
+rather than a second copy. `questionBankSharedFigures.js` re-saved the
+backfill's pages from the stored batch results, with no model calls.
+
+## 10. The generator (RES-60)
+
+| Piece | How it works |
+|---|---|
+| Tutor setting | "Textbook questions" on a maths resource: None, Some (about a third of the diagram questions, spread through the resource) or Mostly (every diagram question with a good match, up to 8). An older portal sends nothing and gets None |
+| Slots | Numbered questions with a diagram, no sub-parts, not multiple choice, and an answer row that can be found unambiguously. Topic booklets, whose numbering restarts by section, are left out |
+| Search | Per slot: the bank questions nearest "topic: generated stem", for the student's year and the difficulty its position calls for (first third easy, then medium, then hard), falling back to any difficulty. No question is offered to two slots |
+| Choose and solve | Sonnet 5.5 sees three candidate crops and picks one that tests the same skill, is complete and suits the year, or none. It restates the original question, or every third time asks something new about the same diagram, and solves it |
+| Check | A second, independent solve from the crop must agree with the answer, or the generated question stays |
+| Budget | 150 s for the whole step, four slots at a time; a slot still running then keeps its generated question. A live run took 39–50 s for six slots |
+| Storage | A bank diagram is a `source-image` with its Storage path; its bytes are loaded only to build the DOCX, so `generatedJson` stays small and a revision rebuilds it. The diagram repair pass leaves it alone |
+| Record | The job's `questionBankUsage` lists each bank question used, its question number and whether it was the original or a new question |
+
+## 11. Flags (RES-61)
+
+Tutors open a resource's details, show its textbook questions with their
+original diagrams, and flag one (diagram cut off, wording wrong, answer wrong,
+wrong tags, other) with an optional note. Admins see open flags under
+"Flagged questions" and hide the question, correct its skill, difficulty, year
+level or wording (the skill must belong to its diagram type), or dismiss the
+flag. Resolving closes every open flag on that question. A hidden question is
+never searched again; an edited one is re-embedded on the next embed run.
+All of this goes through one callable, `manageQuestionBank`.
+
+## 12. Weekly update (RES-62)
+
+`.github/workflows/question-bank-weekly.yml` runs every Sunday at 02:00 Sydney
+time, and on demand (a dry run by default). It syncs Drive, retires the
+questions of removed files and of changed files about to be re-extracted,
+extracts new and changed files under a $10 cap, then embeds and merges copies.
+A retired question never comes back from a search, and the merge ignores it.
+It runs as `tenacity-prod-question-bank` through Workload Identity; that
+account and its grants (Firestore, Storage, the two API key secrets, and
+Token Creator on `question-bank-drive`) are a one-time setup.
