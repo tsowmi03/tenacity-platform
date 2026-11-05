@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-06 | [English bank: passages, questions, guides and set texts extracted (RES-66, RES-67)](#2026-11-06--english-bank-passages-questions-guides-and-set-texts-extracted-res-66-res-67) |
 | 2026-11-06 | [Question bank matching follows the brief: difficulty, year ±1, restate or adapt (RES-76)](#2026-11-06--question-bank-matching-follows-the-brief-difficulty-year-1-restate-or-adapt-res-76) |
 | 2026-11-06 | [Question bank: THSC Year 11-12 papers (RES-69)](#2026-11-06--question-bank-thsc-year-11-12-papers-res-69) |
 | 2026-11-05 | [Resource portal: progress bar, steps and ETA while generating (RES-73)](#2026-11-05--resource-portal-progress-bar-steps-and-eta-while-generating-res-73) |
@@ -219,6 +220,43 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-06 — English bank: passages, questions, guides and set texts extracted (RES-66, RES-67)
+
+**What changed**
+- `englishBankExtract.js` builds the English bank from the RES-65 Drive
+  sources through the Batch API on Haiku 5.5: one call per page, a file's
+  records written once all its pages are back, and stimulus crops cut from
+  a high-resolution render. Passages that run across pages are joined into
+  one stimulus. A visual that a published paper blanked out for copyright is
+  left out. `--local` writes to the work folder for checking, and a rerun
+  with the same `--work-dir` resumes.
+- The production run read 8,051 pages from 627 of the 628 files for $3.58:
+  2,766 stimuli (284 of them joined across pages), 9,684 questions and 1,273
+  marking-guide entries. Those 627 files are marked extracted.
+- 54 pages failed because the API refused to repeat the passage word for
+  word ("Output blocked by content filtering policy"). They're mostly Year 12
+  trial unseen-text pages. Each file lists its failed pages.
+- `englishSetTextsExtract.js` builds `englishSetTexts` (RES-67): one record
+  for each of the 37 LitCharts guides, holding themes, characters, symbols
+  and key quotes. Any quote not found in the guide is dropped. Cost: $2.79.
+- Transcription spot check against the PDFs' own text: half the passages
+  match word for word, and 9 in 10 match at least 98% of four-word runs.
+  The low scorers are passages printed as pictures, where the PDF has no
+  text to compare. One checked by eye was transcribed exactly.
+
+**Why:** The generator and tutors need real exam passages with their
+questions and marking guides, reprinted exactly as published.
+
+**Status:** Live in production Firestore and Storage. Nothing uses it yet:
+tutor search is RES-68, and the generator needs a ticket of its own.
+
+**Next steps**
+- Extract the one file that timed out while being prepared ("AOS Discovery
+  Unseen Texts Booklet", 55 pages). Rerun with the same work folder, a few
+  cents.
 
 ---
 
