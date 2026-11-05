@@ -120,6 +120,20 @@ describe("English bank records", () => {
     assert.deepEqual(stimuli[0].data.techniques, [{ technique: "salience", evidence: "the red sun", pageNumber: 1, box: box(120, 300) }]);
   });
 
+  it("leaves out an image a published paper withheld for copyright", () => {
+    const { stimuli, withheldVisuals } = toPaperDocs({
+      source,
+      pages: [page(12, { stimuli: [
+        piece({ label: "Item 2", type: "other_visual", text: null, visualDescription: "Blank area with only the heading 'Item 2'; no visible image is shown on this page." }),
+        piece({ label: "Item 4", type: "photograph", text: null, visualDescription: "Large empty bordered box under the heading 'Item 4'. No image or text is displayed." }),
+        piece({ label: "Item 5", type: "poster", text: null, visualDescription: "A poster of a lighthouse at dusk with the words KEEP WATCH." }),
+        piece({ label: "Item 6", type: "cartoon", text: "Caption: not shown here", visualDescription: "Blank box" }),
+      ] })],
+    });
+    assert.equal(withheldVisuals, 2);
+    assert.deepEqual(stimuli.map((doc) => doc.data.label), ["Item 5", "Item 6"]);
+  });
+
   it("links questions to the stimuli they name, or the one on their page", () => {
     const { questions } = toPaperDocs({
       source,

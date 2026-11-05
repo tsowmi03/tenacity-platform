@@ -58,6 +58,18 @@ function quoteKey(text) {
   return normaliseWhitespace(text).toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/^["']+|["'.,;:!?]+$/g, "");
 }
 
+// A published paper often prints a blank box where an image was withheld for
+// copyright. The model may still describe it ("Empty bordered box under the
+// heading Item 4"); such a visual has nothing to reuse and is left out.
+const WITHHELD_VISUAL = /\b(no (visible )?(image|picture|photograph)|(image|picture|photograph|stimulus)( itself)?( content)? (is |was )?not (shown|displayed|included|reproduced)|(removed|withheld) for copyright|blank (area|box|space|frame)|empty (bordered )?(box|frame|area))\b/i;
+
+function isWithheldVisual(group) {
+  const first = group.pieces[0].piece;
+  if (mediumOf(first.type) !== "visual") return false;
+  if (group.pieces.some(({ piece }) => piece.text && piece.text.trim())) return false;
+  return group.pieces.every(({ piece }) => piece.visualDescription && WITHHELD_VISUAL.test(piece.visualDescription));
+}
+
 function joinPieces(pieces) {
   return pieces.filter((piece) => piece && piece.trim()).map((piece) => piece.trim()).join("\n");
 }
@@ -177,7 +189,9 @@ function stimuliForQuestion(question, page, stimuli, stimulusPages) {
  */
 function toPaperDocs({ source, pages, runId = null, model = null }) {
   const ordered = [...pages].sort((a, b) => a.pageNumber - b.pageNumber);
-  const built = groupStimuli(ordered).map((group, index) => stimulusDoc({ source, group, index, runId, model }));
+  const groups = groupStimuli(ordered);
+  const kept = groups.filter((group) => !isWithheldVisual(group));
+  const built = kept.map((group, index) => stimulusDoc({ source, group, index, runId, model }));
   const stimuli = built.map(({ id, data }) => ({ id, data }));
   const stimulusPages = stimuli.map((doc) => ({ id: doc.id, firstPage: Math.min(...doc.data.pages) }));
 
@@ -220,7 +234,12 @@ function toPaperDocs({ source, pages, runId = null, model = null }) {
       });
     }
   }
-  return { stimuli, questions: [...questions.values()], droppedTechniques: built.reduce((sum, doc) => sum + doc.droppedTechniques, 0) };
+  return {
+    stimuli,
+    questions: [...questions.values()],
+    droppedTechniques: built.reduce((sum, doc) => sum + doc.droppedTechniques, 0),
+    withheldVisuals: groups.length - kept.length,
+  };
 }
 
 /**
@@ -268,6 +287,7 @@ module.exports = {
   GUIDES_COLLECTION,
   QUESTIONS_COLLECTION,
   STIMULI_COLLECTION,
+  WITHHELD_VISUAL,
   cropPath,
   groupStimuli,
   labelKey,
