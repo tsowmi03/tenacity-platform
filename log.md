@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-05 | [English bank: stimulus taxonomy, page schema and records (RES-64)](#2026-11-05--english-bank-stimulus-taxonomy-page-schema-and-records-res-64) |
 | 2026-11-05 | [English bank: which Drive files to extract, with guides paired to papers (RES-65)](#2026-11-05--english-bank-which-drive-files-to-extract-with-guides-paired-to-papers-res-65) |
 | 2026-11-05 | [Resource generation: diagrams work on GPT, failures stop repeating (RES-70)](#2026-11-05--resource-generation-diagrams-work-on-gpt-failures-stop-repeating-res-70) |
 | 2026-11-05 | [English bank: THSC and NESA Year 12 English papers in Drive (RES-65)](#2026-11-05--english-bank-thsc-and-nesa-year-12-english-papers-in-drive-res-65) |
@@ -213,6 +214,35 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-05 — English bank: stimulus taxonomy, page schema and records (RES-64)
+
+**What changed**
+- `src/englishBank/taxonomy.js`: the stimulus types (7 written, 8 visual),
+  written and visual techniques, question types and skills the English bank
+  tags with. Every list has an "other".
+- `src/englishBank/schema.js`: the structured output for one page of an
+  English source, built from the taxonomy: its stimuli (verbatim text or a
+  visual's description, with a box, techniques with quoted evidence, themes,
+  year level and difficulty), its questions (marks, type, skill, the stimuli
+  they're about) and any marking-guide entries. Checked against the live
+  API on Haiku 5.5.
+- `src/englishBank/records.js`: turns a source's page results into
+  `englishStimuli`, `englishQuestions` and `englishGuides` records. A passage
+  split across pages becomes one stimulus. A technique whose quote isn't in
+  the passage, or that doesn't fit its medium, is dropped rather than kept
+  as a made-up quote. Questions link to the stimuli they name (or the one on
+  their page), and guide entries to the paper's question by label.
+- No Firestore rules or indexes change: the new collections are covered by
+  the catch-all deny like the maths bank, and search indexes come with
+  RES-68.
+
+**Why:** RES-66 extraction needs a fixed shape to extract into, and the
+generator must only ever reprint passages exactly as stored.
+
+**Status:** Merged. Nothing to deploy; extraction (RES-66) uses it next.
 
 ---
 
