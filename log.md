@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-05 | [English bank: which Drive files to extract, with guides paired to papers (RES-65)](#2026-11-05--english-bank-which-drive-files-to-extract-with-guides-paired-to-papers-res-65) |
 | 2026-11-05 | [Resource generation: diagrams work on GPT, failures stop repeating (RES-70)](#2026-11-05--resource-generation-diagrams-work-on-gpt-failures-stop-repeating-res-70) |
 | 2026-11-05 | [English bank: THSC and NESA Year 12 English papers in Drive (RES-65)](#2026-11-05--english-bank-thsc-and-nesa-year-12-english-papers-in-drive-res-65) |
 | 2026-11-05 | [Question bank: weekly update from Drive (RES-62)](#2026-11-05--question-bank-weekly-update-from-drive-res-62) |
@@ -212,6 +213,31 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-05 — English bank: which Drive files to extract, with guides paired to papers (RES-65)
+
+**What changed**
+- `scripts/englishBankSync.js` lists Resources/English in the shared drive
+  and records each file the English bank will extract in a new
+  `englishBankSources` collection. It is kept apart from the maths
+  `questionBankSources`, which the maths extraction and weekly job read.
+- Only Past Papers, Practice Papers, Comprehension and Creative are taken.
+  LitCharts (RES-67) and the other folders are left out.
+- Each file is a paper, a guide (marking guidelines, sample answers, NESA
+  sample writing booklets) or an image (the Creative pictures, used as
+  visual stimuli). Each guide is paired with its paper by the words their
+  names share, preferring its own folder.
+- Copies are skipped as in the maths bank (shared helper `skipCopies`).
+
+**Why:** Extraction (RES-66) needs one list of English sources, and the
+marking guides linked to their papers.
+
+**Status:** Live. 635 records on production: 628 to extract (544 papers and
+59 guides in Past Papers; 18 papers and 1 guide in Comprehension; 2 PDFs and
+4 images in Creative), 5 copies and 2 sources files skipped. All 60 guides
+are paired and were checked by eye.
 
 ---
 
