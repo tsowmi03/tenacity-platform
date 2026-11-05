@@ -23,6 +23,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const admin = require("firebase-admin");
+const { adminAppOptions } = require("./lib/questionBankAuth");
 
 const { QUESTIONS_COLLECTION } = require("../src/questionBank/extraction");
 
@@ -92,7 +93,7 @@ async function main() {
   const flags = write ? ["--commit", "--yes"] : [];
   const project = `--projectId=${options.projectId}`;
   fs.mkdirSync(options.workDir, { recursive: true });
-  admin.initializeApp({ projectId: options.projectId });
+  admin.initializeApp(adminAppOptions({ projectId: options.projectId }));
   const db = admin.firestore();
 
   runScript("questionBankSync.js", [project, ...flags]);

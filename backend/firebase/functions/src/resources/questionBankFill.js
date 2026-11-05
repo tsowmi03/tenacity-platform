@@ -30,6 +30,12 @@ const CANDIDATES = 3;
 const CONCURRENCY = 4;
 const BANK_MODEL = "claude-sonnet-5-5";
 const BANK_MAX_TOKENS = 16000;
+// Measured on production (2026-11-05): at high effort one slow slot took the
+// whole step to 133 s of its 150 s; medium keeps the choice and the solve
+// within budget, and the independent check still guards every answer.
+const CHOOSE_EFFORT = "medium";
+const CHECK_EFFORT = "medium";
+const SEARCH_TIMEOUT_MS = 20000;
 // The job has a fixed 540s budget and generation has already used much of it.
 // Slots still running when this runs out keep their generated question.
 const DEFAULT_BUDGET_MS = 150000;
@@ -226,10 +232,21 @@ async function applyQuestionBank({
     const index = slots.indexOf(slot);
     const brief = `${topic}: ${slot.owner.stem}`;
     const base = { years: [job.year], excludeIds: [...used] };
+    if (now() >= deadline) {
+      result.skipped.push({ questionNumber: slot.owner.number, reason: "out_of_time" });
+      continue;
+    }
+    // A Firestore call once hung for 328 s on production (2026-11-05); every
+    // search is bounded by the step's budget and its own cap.
+    const search = async (filters) => {
+      const out = await withDeadline(searchQuestions({ db, embed: embedText, brief, filters, limit: CANDIDATES * 2 }), Math.min(deadline, now() + SEARCH_TIMEOUT_MS));
+      if (out?.timedOut) throw new Error("search timed out");
+      return out;
+    };
     try {
-      let candidates = await searchQuestions({ db, embed: embedText, brief, filters: { ...base, difficulty: difficultyAt(index, slots.length) }, limit: CANDIDATES * 2 });
+      let candidates = await search({ ...base, difficulty: difficultyAt(index, slots.length) });
       if (candidates.length < CANDIDATES) {
-        const more = await searchQuestions({ db, embed: embedText, brief, filters: base, limit: CANDIDATES * 2 });
+        const more = await search(base);
         candidates = [...candidates, ...more.filter((q) => !candidates.some((c) => c.id === q.id))];
       }
       candidates = candidates.filter((q) => (q.figures || []).length === 1 && q.figures[0].storagePath).slice(0, CANDIDATES);
@@ -264,7 +281,7 @@ async function applyQuestionBank({
       const chosenOut = await call(
         [...crops.map(imageBlock), { type: "text", text: choosePrompt({ job, topic, slot: plan.slot, candidates: plan.candidates, askNew: plan.askNew }) }],
         CHOOSE_SCHEMA,
-        "high"
+        CHOOSE_EFFORT
       );
       const pick = Number(chosenOut?.choice);
       if (!Number.isInteger(pick) || pick < 1 || pick > plan.candidates.length || !chosenOut.stem || !chosenOut.answer) {
@@ -273,7 +290,7 @@ async function applyQuestionBank({
       const stem = tidy(chosenOut.stem);
       const answer = tidy(chosenOut.answer);
       const png = crops[pick - 1];
-      const check = await call([imageBlock(png), { type: "text", text: checkPrompt({ stem, answer }) }], CHECK_SCHEMA, "medium");
+      const check = await call([imageBlock(png), { type: "text", text: checkPrompt({ stem, answer }) }], CHECK_SCHEMA, CHECK_EFFORT);
       if (!check?.agrees) return { skip: "check_disagreed", reason: check?.note };
       return { candidate: plan.candidates[pick - 1], png, stem, answer, workingOut: tidy(chosenOut.workingOut) };
     };

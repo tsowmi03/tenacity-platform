@@ -228,10 +228,12 @@ omitted, and open follow-ups are tracked at the bottom.
 **Why:** New resources dropped into Drive should reach the generator without
 anyone running a script.
 
-**Status:** Live once its runner account exists. The workflow runs as
-`tenacity-prod-question-bank` through Workload Identity; creating that account
-and its grants (Firestore, Storage, the two API key secrets, Token Creator on
-`question-bank-drive`) is a one-time setup listed in the workflow file.
+**Status:** Live. It runs as `tenacity-prod-question-bank` through Workload
+Identity, with Firestore, Storage, the two API key secrets and Token Creator
+on `question-bank-drive` (granted 2026-11-05). Firebase Admin cannot read
+GitHub's keyless credential file, so the scripts give it an
+application-default credential and read the API keys from Secret Manager
+directly when running under Workload Identity.
 
 ---
 
@@ -275,6 +277,11 @@ the Functions.
   only to build the DOCX, so stored resources stay small and revisions
   rebuild them.
 - Each job records which bank questions it used.
+- Tuned on production after launch: choosing and checking run at medium
+  effort (one high-effort slot had taken the step to 133 of its 150 seconds;
+  medium took 17–31 s with the same choices), and every search is capped at
+  20 seconds inside the step's budget, after one Firestore call hung for
+  328 seconds.
 
 **Why:** Tutors wanted real textbook questions and diagrams in generated
 resources, not only newly drawn ones.
@@ -300,9 +307,9 @@ check on staging's bank swapped 3 of 6 questions in 39 seconds, declined the
   calls. The rest had no printed diagram at all and stay out.
 - Writes retry, and a page whose write failed is saved again from the stored
   batch results (174 pages after a network change, all recovered).
-- Drive shortcuts are followed to their target. Two still fail because their
-  targets are outside what the service account can read: "Advanced Year 11/12
-  NSM.pdf" and "CMNSW8_2ed_book.pdf". "Maths Quest Y11 GenMaths chap12.pdf" is
+- Drive shortcuts are followed to their target. Two shortcuts whose targets are
+  outside the bank's reach ("Advanced Year 11/12 NSM.pdf" and
+  "CMNSW8_2ed_book.pdf") are left out by choice. "Maths Quest Y11 GenMaths chap12.pdf" is
   not a valid PDF.
 - Spot check of 200 random questions: 194 crops clean, 5 with a sliver of
   neighbouring text or a logo edge, 1 possibly missing a label. Shared-diagram
@@ -7686,17 +7693,7 @@ three original repositories.
     `workingOut` grows the largest schema sent (~4.4KB), so it needs a live
     check against the API's grammar-size limit first. About an hour.
 
-27. **Two Drive shortcuts point outside the question bank's reach** —
-   "Advanced Year 11/12 NSM.pdf" and "CMNSW8_2ed_book.pdf" in Resources/Maths
-   are shortcuts to files the `question-bank-drive` service account cannot
-   see, so the bank skips them. Sharing the two targets with it (or replacing
-   the shortcuts with copies) lets the next weekly run pick them up. Minutes.
 
-28. **The weekly question bank update needs its runner account** —
-   `question-bank-weekly.yml` runs as `tenacity-prod-question-bank`, which does
-   not exist yet. Creating it and its four grants (listed in the workflow) is
-   a one-time IAM change. Until then the scheduled run fails at sign-in.
-   About 15 minutes.
 
 ---
 

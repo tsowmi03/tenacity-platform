@@ -186,3 +186,16 @@ describe("question bank fill: stored records", () => {
     assert.deepEqual(result.skipped, [{ questionNumber: 2, reason: "out_of_time" }]);
   });
 });
+
+describe("question bank fill: time limits", () => {
+  it("bounds a search that never returns by the step's budget", async () => {
+    const parsed = worksheet(3);
+    const db = { collection: () => { const q = { where: () => q, findNearest: () => ({ get: () => new Promise(() => {}) }) }; return q; } };
+    const started = Date.now();
+    const result = await applyQuestionBank({ job: { subject: "maths", year: 9, questionBank: "mostly" }, parsed, db, bucket: {}, callAi: async () => ({}), embed: async (t) => t.map(() => [1]), budgetMs: 50, logger: {} });
+    assert.ok(Date.now() - started < 1000, "returns within the budget");
+    assert.equal(result.used.length, 0);
+    assert.ok(result.skipped.every((s) => /timed out|out_of_time/.test(s.reason)));
+    assert.equal(JSON.stringify(parsed), JSON.stringify(worksheet(3)), "every generated question stays");
+  });
+});

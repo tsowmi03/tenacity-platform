@@ -19,6 +19,7 @@
  */
 
 const admin = require("firebase-admin");
+const { adminAppOptions } = require("./lib/questionBankAuth");
 
 const { createDriveClient, createImpersonatedTokenProvider, listTree, QUESTION_BANK_DRIVE_ACCOUNT } = require("../src/questionBank/driveSource");
 const { planSources } = require("../src/questionBank/sourceRules");
@@ -58,7 +59,7 @@ async function main() {
   console.log(`${files.length} files: ${plans.length - skipped.length} to extract, ${skipped.length} skipped`);
   console.log("Skipped by reason:", countBy(skipped, "skipReason"));
 
-  admin.initializeApp({ projectId: options.projectId });
+  admin.initializeApp(adminAppOptions({ projectId: options.projectId }));
   const db = admin.firestore();
   const writes = planSourceWrites(await loadSources(db), plans);
   console.log(`${writes.length} docs to write in ${options.projectId}:`, countBy(writes, "change"));
