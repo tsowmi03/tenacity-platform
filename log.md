@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-05 | [Resource portal: progress bar, steps and ETA while generating (RES-73)](#2026-11-05--resource-portal-progress-bar-steps-and-eta-while-generating-res-73) |
 | 2026-11-05 | [Every maths diagram comes from the question bank first (RES-71)](#2026-11-05--every-maths-diagram-comes-from-the-question-bank-first-res-71) |
 | 2026-11-05 | [Resource generation: topic quotes and labels no longer fail a paper (RES-72)](#2026-11-05--resource-generation-topic-quotes-and-labels-no-longer-fail-a-paper-res-72) |
 | 2026-11-05 | [English bank: stimulus taxonomy, page schema and records (RES-64)](#2026-11-05--english-bank-stimulus-taxonomy-page-schema-and-records-res-64) |
@@ -216,6 +217,35 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-05 — Resource portal: progress bar, steps and ETA while generating (RES-73)
+
+**What changed**
+- A generating resource now shows a progress bar, five plain steps (Planning,
+  Writing questions with "42 of 120", Drawing diagrams for maths, Checking
+  quality, Building the PDF) and an ETA such as "About 5 min left". Internal
+  messages like "Saving stage 14" are no longer shown; a retry reads "Taking a
+  little longer — retrying a step".
+- The ETA comes from history plus this run's pace. Every completed resource
+  adds its time and question count to a per-kind fit (time = a + b ×
+  questions) and records how its time split across the steps
+  (`resourceTimingStats` in Firestore, server-only). While a run goes, the
+  remaining time is stretched or shrunk by how fast this run has actually
+  been, which counts for more the further it gets. A range ("About 4–6 min")
+  is shown while the estimate is uncertain and narrows as history agrees.
+- The worker writes the estimate with each stage; between stages the portal
+  counts down and moves the bar locally.
+- `scripts/backfillResourceTiming.js` seeds the history from runs in Cloud
+  Logging. Only the current pipeline's runs are used (6 at launch); the 141
+  older resources ran on the previous pipeline and would skew it.
+
+**Why:** Long resources (up to ~17 min) gave tutors no idea how far along they
+were or when to come back.
+
+**Status:** Live. Merged; resource portal deployed on merge, Functions deployed,
+history seeded in production.
 
 ---
 

@@ -5,6 +5,7 @@ const { buildResponseSchema } = require("./responseSchema");
 const { buildSystemPrompt } = require("./promptBuilder");
 const { sourceScope, validatePlannedCoverage, verifyPlannedContent } = require("./contentVerification");
 const { resourceEvent, resourceStage } = require("./resourceLog");
+const { noteProgress } = require("./progressModel");
 const obj = (properties) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
 const str = { type: "string" };
 const int = { type: "integer" };
@@ -198,6 +199,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
   const { plan, reassigned, added } = reconcilePlanTopics(modelPlan);
   const planWarnings = evidenceWarnings(plan, planMessage);
   if (job.resourceType === "practice-paper") plan.timeAllowed = plannedTimeAllowed(plan);
+  noteProgress(job, { questionCount: plan.questions.length });
   resourceEvent(job, "plan.resolved", { stageId: "plan.v2", questionCount: plan.questions.length, generationVersion: 1,
     topicsReassigned: reassigned.length, topicsAdded: added.length, unmatchedEvidence: unmatchedEvidenceTopics(plan, planMessage).length });
   const contentOptions = { year: job.year, subject: job.subject, answerMode: "none", hasStimulus, stimulusImages };
@@ -233,6 +235,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
       part[answerKey] = answers;
     }
     chunks.push(part);
+    noteProgress(job, { questionsWritten: specs.length });
   }
 
   async function solutionBatch(questions, path) {
@@ -274,4 +277,4 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     warnings: [...planWarnings, ...validatePlannedCoverage(plan, scope), ...review.warnings] };
 }
 
-module.exports = { usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };
+module.exports = { questionRows, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };

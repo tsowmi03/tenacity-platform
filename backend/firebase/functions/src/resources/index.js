@@ -12,7 +12,8 @@ const admin = require("firebase-admin");
 const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSHEET_BATCH_SIZE, MAX_RECOVERIES } = require("./durableStages");
 const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
 const { canKeepDraftAfterReview, unavailableReviewWarning } = require("./contentVerification");
-const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
+const { generatePlannedResource, usesPlannedGeneration, questionRows } = require("./plannedGeneration");
+const { noteProgress, phaseDurations, recordTimingSample } = require("./progressModel");
 const { callAiForResource } = require("./aiClient");
 const {
   ANSWER_MODES,
@@ -1499,6 +1500,10 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
   } : null;
   let built;
   let mathRepairUsed = false;
+  // RES-73. Unplanned resources learn their question count only here; history
+  // needs it either way. Then the display moves on to the last step.
+  if (!job.progressTracker?.questionCount) noteProgress(job, { questionCount: (questionRows(parsed, job.resourceType) || []).length });
+  await job.progressTracker?.markPhase?.("finish", "Building the PDF");
   try {
     // A revision or repair reads generatedJson back without the bank diagrams'
     // bytes (RES-60); fetch them before the build needs them.
@@ -2334,6 +2339,7 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
     const optionalGroup = group.every((target) => target.diagramRequired === false);
     try {
       const { parsed: filled } = await callAi({
+        progressPhase: "diagrams",
         apiKey,
         model,
         maxTokens: diagramFillMaxTokens(group.length),
@@ -3623,6 +3629,24 @@ async function emitResourceTerminal({ db, job, outcome, errorCode, clock }) {
   try { const snap = await db.collection("resourceJobs").doc(job.jobId).get(); if (snap.exists) current = snap.data(); }
   catch { resourceEvent(job, "summary.unavailable", { reason: "job_read_failed" }, "warn"); }
   resourceEvent(job, `job.${outcome === "complete" ? "completed" : outcome}`, { ...terminalFields(current, outcome, clock ? clock() : new Date()), errorCode, reviewStatus: current.reviewStatus || "not_requested", warningCount: current.warnings?.length || 0 }, outcome === "failed" ? "error" : "info");
+  if (outcome === "complete") await recordResourceTiming({ db, job: current });
+}
+
+// RES-73. Every completed resource teaches the ETA. Revisions and repairs are
+// a different amount of work from a fresh generation, so they are left out.
+async function recordResourceTiming({ db, job }) {
+  const progress = job.progress || {};
+  if (isRevisionJob(job) || !(job.activeElapsedMs > 0) || !(progress.questionCount > 0)) return;
+  try {
+    await recordTimingSample(db, job, {
+      questions: progress.questionCount,
+      activeMs: job.activeElapsedMs,
+      phaseMs: phaseDurations(progress.phaseStarts, job.activeElapsedMs),
+      predictedMs: progress.initialEstimateMs,
+    });
+  } catch (err) {
+    resourceEvent(job, "timing.unrecorded", { reason: String(err?.code || "write_failed") }, "warn");
+  }
 }
 
 async function runQueueForTutor(createdBy, deps) {

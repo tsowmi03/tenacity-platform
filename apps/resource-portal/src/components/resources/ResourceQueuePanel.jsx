@@ -18,6 +18,7 @@ import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
 import ResourceJobDetailsModal from "./ResourceJobDetailsModal";
 import ResourcePreviewModal from "./ResourcePreviewModal";
+import ResourceProgress from "./ResourceProgress";
 import ResourceReviseModal from "./ResourceReviseModal";
 import { useResourcePreview } from "./useResourcePreview";
 import { resourceLabel } from "./resourceTypes";
@@ -689,9 +690,7 @@ function ResourceJobRow({
             </Badge>
           </div>
         </div>
-        {isActive && job.progress?.message ? (
-          <p className="muted" role="status">{job.progress.message}</p>
-        ) : null}
+        {isActive ? <ResourceProgress job={job} /> : null}
         {job.status === "failed" && job.error ? (
           job.errorDetail ? (
             <div className="rg-error">

@@ -2601,3 +2601,79 @@ input, select, textarea {
 .rg-bank-item { border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 12px; }
 .rg-bank-image { display: block; max-width: 100%; max-height: 260px; margin: 8px 0; background: #fff; }
 .rg-bank-flag-form { margin-top: 8px; display: flex; flex-direction: column; }
+
+/* RES-73: generation progress — bar, steps and ETA. */
+.rg-gen-progress {
+  margin-top: 8px;
+  max-width: 520px;
+}
+
+.rg-gen-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--fs-sm);
+}
+
+.rg-gen-progress .rg-progress > div {
+  transition: width 1s linear;
+}
+
+.rg-gen-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  color: var(--ink-500);
+}
+
+.rg-gen-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rg-gen-step-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--ink-300);
+  border-radius: var(--r-full);
+  flex: none;
+}
+
+.rg-gen-step-done { color: var(--ink-700); }
+.rg-gen-step-done .rg-gen-step-mark {
+  border-color: var(--success-500);
+  background: var(--success-500);
+  color: #fff;
+}
+
+.rg-gen-step-active { color: var(--ink-900, var(--ink-700)); font-weight: 600; }
+.rg-gen-step-active .rg-gen-step-mark {
+  border-color: var(--brand-blue);
+  border-top-color: transparent;
+  animation: rg-gen-spin 0.9s linear infinite;
+}
+
+@keyframes rg-gen-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .rg-gen-step-active .rg-gen-step-mark { animation: none; border-top-color: var(--brand-blue); }
+  .rg-gen-progress .rg-progress > div { transition: none; }
+}
+
+.rg-gen-progress .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
