@@ -2,7 +2,7 @@
 const { it } = require("node:test");
 const assert = require("node:assert/strict");
 const { createDurableCaller, requestedQuestionCount } = require("../../src/resources/durableStages");
-const { generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers } = require("../../src/resources/plannedGeneration");
+const { generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings } = require("../../src/resources/plannedGeneration");
 const { resourceEvent, resourceStage } = require("../../src/resources/resourceLog");
 
 function harness(extra = {}) {
@@ -49,7 +49,7 @@ it("resolves per-topic quantities without treating them as a total", () => {
   assert.equal(requestedQuestionCount("20 quadratic questions"), 20);
   assert.throws(() => validatePlan({ parsed: plan(7) }, { customPrompt: prompt }, prompt), { code: "RESOURCE_PLAN_INVALID" });
   assert.throws(() => validatePlan({ parsed: { ...plan(), clarification: "Need contents" } }, {}, ""), { code: "RESOURCE_SCOPE_CLARIFICATION" });
-  assert.throws(() => validatePlan({ parsed: plan() }, {}, "textbook title only"), { code: "RESOURCE_PLAN_INVALID" });
+  assert.doesNotThrow(() => validatePlan({ parsed: plan() }, {}, "textbook title only"));
 });
 
 for (const type of ["worksheet", "practice-paper"]) it(`plans and resumes a ${type} without repeating completed calls`, async () => {
@@ -249,7 +249,8 @@ it("names the plan check that failed, so the retry knows what to correct", () =>
   const reasonFor = (parsed) => { try { validatePlan({ parsed }, job, "Algebra Geometry"); } catch (err) { return err.reason; } return null; };
   const base = plan(4);
   assert.equal(reasonFor({ ...base, questions: base.questions.map((q, i) => ({ ...q, number: i + 2 })) }), "questions_not_numbered_1_to_n");
-  assert.equal(reasonFor({ ...base, questions: base.questions.map((q) => ({ ...q, topic: "Trigonometry" })) }), "question_topic_not_in_topics");
+  assert.equal(reasonFor({ ...base, questions: base.questions.map((q) => ({ ...q, topic: "Trigonometry" })) }), null);
+  assert.equal(reasonFor({ ...base, topics: [...base.topics, { name: "Algebra", evidence: "Algebra" }] }), "topic_names_duplicated");
   assert.equal(reasonFor({ ...base, questions: base.questions.map((q) => ({ ...q, marks: 40 })) }), "question_marks_outside_1_to_30");
   assert.equal(reasonFor({ ...base, questions: base.questions.map((q, i) => ({ ...q, section: i % 2 ? "A" : "B" })) }), "section_questions_not_consecutive");
   assert.equal(reasonFor({ ...base, questions: [] }), "plan_questions_empty");
@@ -265,4 +266,49 @@ it("tells the tutor what to add when a plan never validates (RES-70)", async () 
   assert.equal(last.code, "RESOURCE_RECOVERY_EXHAUSTED");
   assert.match(last.message, /Add the topics, number of questions/);
   assert.equal(last.reason, "plan_topics_empty");
+});
+
+// Joshua's Year 10 paper (Nov 2026) failed three plans in a row: the quotes were
+// real lines of the school's notification, retyped with plain apostrophes.
+it("matches topic evidence across curly quotes and dashes, and only warns when it cannot", () => {
+  const notification = "MA5-TRG-P-01 \u2013 applies Pythagoras\u2019 theorem and trigonometry to solve 3-dimensional\nproblems";
+  const quoted = { ...plan(4), topics: [{ name: "Trigonometry", evidence: "MA5-TRG-P-01 - applies Pythagoras' theorem and trigonometry to solve 3-dimensional problems" }, { name: "Networks", evidence: "Chapter 12 - Geometry and networks" }] };
+  assert.deepEqual(unmatchedEvidenceTopics(quoted, notification), ["Networks"]);
+  const [warning, ...rest] = evidenceWarnings(quoted, notification);
+  assert.equal(rest.length, 0);
+  assert.equal(warning.code, "RESOURCE_PLAN_EVIDENCE_WARNING");
+  assert.match(warning.message, /Topic "Networks" couldn't be matched/);
+  assert.deepEqual(evidenceWarnings({ ...quoted, topics: [quoted.topics[0]] }, notification), []);
+});
+
+it("reassigns a question labelled with an unlisted topic instead of failing the plan", () => {
+  const base = { ...plan(4), topics: [{ name: "Chapter 8 - Further trigonometry", evidence: "x" }, { name: "Chapter 11 - Probability", evidence: "x" }] };
+  const labels = ["chapter 8 \u2013 further trigonometry", "Probability", "Trigonometry: bearings", "Linear programming"];
+  const { plan: fixed, reassigned, added } = reconcilePlanTopics({ ...base, questions: base.questions.map((q, i) => ({ ...q, topic: labels[i] })) });
+  assert.deepEqual(fixed.questions.map((q) => q.topic), ["Chapter 8 - Further trigonometry", "Chapter 11 - Probability", "Chapter 8 - Further trigonometry", "Linear programming"]);
+  assert.equal(reassigned.length, 3);
+  assert.deepEqual(added, ["Linear programming"]);
+  assert.deepEqual(fixed.topics.at(-1), { name: "Linear programming", evidence: "" });
+  assert.deepEqual(unmatchedEvidenceTopics(fixed, "x"), ["Linear programming"]);
+});
+
+it("reassigns to the most specific overlapping topic", () => {
+  const base = { ...plan(3), topics: [{ name: "Linear equations", evidence: "x" }, { name: "Non-linear equations", evidence: "x" }] };
+  const labels = ["Non-linear equations and graphs", "Linear equations with fractions", "equations"];
+  const { plan: fixed } = reconcilePlanTopics({ ...base, questions: base.questions.map((q, i) => ({ ...q, topic: labels[i] })) });
+  assert.deepEqual(fixed.questions.map((q) => q.topic), ["Non-linear equations", "Linear equations", "Linear equations"]);
+});
+
+it("delivers a paper whose topic quotes cannot be matched, with a review warning", async () => {
+  const h = harness({ resourceType: "practice-paper", year: "10", subject: "maths", answerMode: "worked", customPrompt: "Write a paper for a 90-minute sitting." });
+  const unquoted = { ...plan(4), topics: [{ name: "Algebra", evidence: "Algebra chapter" }, { name: "Geometry", evidence: "Geometry" }] };
+  let result;
+  for (let i = 0; i < 30 && !result; i++) {
+    h.current.invocationId = String(i);
+    const callAi = h.caller(fakeProvider(unquoted, []));
+    result = await generatePlannedResource({ job: h.job(), request: { model: "gpt-test", userMessage: "Write a paper for a 90-minute sitting. Algebra; Geometry.", systemPrompt: "" }, callAi })
+      .catch((err) => { if (err.code === "RESOURCE_STAGE_YIELD") return null; throw err; });
+  }
+  assert.ok(result, "the paper was delivered");
+  assert.deepEqual(result.warnings.filter((w) => w.code === "RESOURCE_PLAN_EVIDENCE_WARNING").map((w) => w.message), ['Topic "Algebra" couldn\'t be matched to the request or uploaded files. Check it is in scope.']);
 });
