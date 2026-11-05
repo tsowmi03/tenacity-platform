@@ -3,7 +3,7 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { fileNameFor, legacyUrl, parseArgs, parseListing, parseWorkers } = require("../../scripts/thscPastPapers");
+const { fileNameFor, legacyUrl, paperYear, parseArgs, parseListing, parseWorkers } = require("../../scripts/thscPastPapers");
 const { isAnswerFile } = require("../../src/questionBank/sourceRules");
 
 describe("thscPastPapers", () => {
@@ -42,6 +42,20 @@ describe("thscPastPapers", () => {
 
   it("only takes years it has listings for", () => {
     assert.deepEqual(parseArgs(["--years=9"]).years, [9]);
-    assert.throws(() => parseArgs(["--years=12"]), /No THSC listing/);
+    assert.deepEqual(parseArgs(["--years=11,12", "--since=2019"]), { ...parseArgs([]), years: [11, 12], since: 2019 });
+    assert.throws(() => parseArgs(["--years=8"]), /No THSC listing/);
+  });
+
+  it("names senior papers by course and kind, still never as solutions", () => {
+    const name = fileNameFor({ title: "Abbotsleigh 2021 w. sol", year: 12, kind: "Trial Papers", course: "Extension 1" });
+    assert.equal(name, "Abbotsleigh 2021 - Year 12 Extension 1 Trial.pdf");
+    assert.equal(isAnswerFile(name), false);
+    assert.equal(fileNameFor({ title: "Baulko 2020", year: 11, kind: "Prelim Papers", course: "Standard" }), "Baulko 2020 - Year 11 Standard Prelim.pdf");
+  });
+
+  it("reads the year a paper is from", () => {
+    assert.equal(paperYear("Sydney Boys 2019 Trial"), 2019);
+    assert.equal(paperYear("Knox 2018-2019 Task 2"), 2019);
+    assert.equal(paperYear("Untitled"), null);
   });
 });

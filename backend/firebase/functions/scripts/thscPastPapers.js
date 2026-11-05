@@ -8,7 +8,12 @@
  * tutoring (November 2026).
  *
  * Usage:
- *   node scripts/thscPastPapers.js [--years=9,10] [--out=<folder>] [--dry-run]
+ *   node scripts/thscPastPapers.js [--years=9,10,11,12] [--since=2019] [--out=<folder>] [--dry-run]
+ *
+ * Years 11 and 12 are filed by kind and course ("Year 12/Trial Papers/
+ * Extension 1"). --since keeps papers whose title names that year or later:
+ * the current Advanced, Extension and Standard courses were first examined in
+ * 2019-2020, and older papers test some content that is no longer taught.
  *
  * It works one paper at a time with a pause between requests, skips files that
  * are already there (so a stopped run resumes), and writes "THSC sources.json"
@@ -40,17 +45,36 @@ const LISTINGS = Object.freeze({
     { kind: "Yearly Papers", page: "/s/yr10/Maths/yr10papers.html" },
     { kind: "Assessment Tasks", page: "/s/yr10/Maths/assessment-tasks.html" },
   ],
+  // THSC's "general" listings hold Standard papers from 2019 on.
+  11: [
+    { kind: "Prelim Papers", course: "Advanced", page: "/s/yr11/Maths/prelimpapers_advanced.html" },
+    { kind: "Prelim Papers", course: "Extension 1", page: "/s/yr11/Maths/prelimpapers_extension1.html" },
+    { kind: "Prelim Papers", course: "Standard", page: "/s/yr11/Maths/prelimpapers_general.html" },
+    { kind: "Assessment Tasks", course: "Advanced", page: "/s/yr11/Maths/assessment-tasks_advanced.html" },
+    { kind: "Assessment Tasks", course: "Extension 1", page: "/s/yr11/Maths/assessment-tasks_extension1.html" },
+  ],
+  12: [
+    { kind: "Trial Papers", course: "Advanced", page: "/s/yr12/Maths/trialpapers_advanced.html" },
+    { kind: "Trial Papers", course: "Extension 1", page: "/s/yr12/Maths/trialpapers_extension1.html" },
+    { kind: "Trial Papers", course: "Extension 2", page: "/s/yr12/Maths/trialpapers_extension2.html" },
+    { kind: "Trial Papers", course: "Standard", page: "/s/yr12/Maths/trialpapers_general.html" },
+    { kind: "Assessment Tasks", course: "Advanced", page: "/s/yr12/Maths/assessment-tasks_advanced.html" },
+    { kind: "Assessment Tasks", course: "Extension 1", page: "/s/yr12/Maths/assessment-tasks_extension1.html" },
+    { kind: "Assessment Tasks", course: "Extension 2", page: "/s/yr12/Maths/assessment-tasks_extension2.html" },
+  ],
 });
+const KIND_LABELS = { "Yearly Papers": "Yearly", "Assessment Tasks": "Assessment Task", "Prelim Papers": "Prelim", "Trial Papers": "Trial" };
 const PAUSE_MS = 2000;
 const ATTEMPTS = 3;
 const MANIFEST = "THSC sources.json";
 
 function parseArgs(argv) {
-  const options = { years: [9, 10], out: DEFAULT_OUT, dryRun: false };
+  const options = { years: [9, 10], since: null, out: DEFAULT_OUT, dryRun: false };
   for (const arg of argv) {
     if (arg === "--dry-run") options.dryRun = true;
     else if (arg.startsWith("--years=")) options.years = arg.slice(8).split(",").map(Number);
     else if (arg.startsWith("--out=")) options.out = arg.slice(6);
+    else if (arg.startsWith("--since=")) options.since = Number(arg.slice(8));
     else throw new Error(`Unknown argument: ${arg}`);
   }
   for (const year of options.years) if (!LISTINGS[year]) throw new Error(`No THSC listing set up for Year ${year}`);
@@ -78,10 +102,16 @@ function viewerTitle(title) {
 // "Baulkham Hills 2010 w. sol" -> "Baulkham Hills 2010 - Year 9 Yearly.pdf".
 // The file name must not say "solutions": the question bank skips answer and
 // solution files by name, and these papers carry their questions first.
-function fileNameFor({ title, year, kind }) {
+function fileNameFor({ title, year, kind, course }) {
   const paper = title.replace(/\s*w\.\s*sol\.?\s*$/i, "").replace(/[\\/:*?"<>|]/g, "-").trim();
-  const label = kind === "Yearly Papers" ? "Yearly" : "Assessment Task";
-  return `${paper} - Year ${year} ${label}.pdf`;
+  const label = KIND_LABELS[kind] || kind;
+  return `${paper} - Year ${year}${course ? ` ${course}` : ""} ${label}.pdf`;
+}
+
+// The latest year a paper's title names, or null.
+function paperYear(title) {
+  const years = String(title).match(/\b(?:19|20)\d\d\b/g);
+  return years ? Math.max(...years.map(Number)) : null;
 }
 
 function legacyUrl(worker, group, title) {
@@ -122,11 +152,14 @@ async function main() {
   for (const year of options.years) {
     for (const listing of LISTINGS[year]) {
       const html = await (await fetch(`${SITE}${listing.page}`)).text();
+      let count = 0;
       for (const paper of parseListing(html)) {
-        const folder = path.join(options.out, `Year ${year}`, listing.kind);
-        papers.push({ ...paper, year, kind: listing.kind, file: path.join(folder, fileNameFor({ ...paper, year, kind: listing.kind })) });
+        if (options.since && !(paperYear(paper.title) >= options.since)) continue;
+        const folder = path.join(options.out, `Year ${year}`, listing.kind, ...(listing.course ? [listing.course] : []));
+        papers.push({ ...paper, year, kind: listing.kind, course: listing.course || null, file: path.join(folder, fileNameFor({ ...paper, year, kind: listing.kind, course: listing.course })) });
+        count += 1;
       }
-      console.log(`Year ${year} ${listing.kind}: ${papers.filter((p) => p.year === year && p.kind === listing.kind).length} papers`);
+      console.log(`Year ${year} ${listing.kind}${listing.course ? ` ${listing.course}` : ""}: ${count} papers`);
     }
   }
   const todo = papers.filter((paper) => !fs.existsSync(paper.file));
@@ -143,7 +176,7 @@ async function main() {
       fs.mkdirSync(path.dirname(paper.file), { recursive: true });
       fs.writeFileSync(paper.file, pdf);
       manifest.papers[path.relative(options.out, paper.file)] = {
-        year: paper.year, kind: paper.kind, title: paper.title, group: paper.group,
+        year: paper.year, kind: paper.kind, course: paper.course, title: paper.title, group: paper.group,
         originalFileName, withSolutions: /w\.\s*sol/i.test(paper.title), bytes: pdf.length, savedAt: new Date().toISOString(),
       };
       fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -165,4 +198,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fileNameFor, legacyUrl, parseArgs, parseListing, parseWorkers, viewerTitle };
+module.exports = { fileNameFor, legacyUrl, paperYear, parseArgs, parseListing, parseWorkers, viewerTitle };
