@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-06 | [English bank: embeddings and search, with the stimulus year rule (RES-77)](#2026-11-06--english-bank-embeddings-and-search-with-the-stimulus-year-rule-res-77) |
 | 2026-11-06 | [English bank: passages, questions, guides and set texts extracted (RES-66, RES-67)](#2026-11-06--english-bank-passages-questions-guides-and-set-texts-extracted-res-66-res-67) |
 | 2026-11-06 | [Question bank matching follows the brief: difficulty, year ±1, restate or adapt (RES-76)](#2026-11-06--question-bank-matching-follows-the-brief-difficulty-year-1-restate-or-adapt-res-76) |
 | 2026-11-06 | [Question bank: THSC Year 11-12 papers (RES-69)](#2026-11-06--question-bank-thsc-year-11-12-papers-res-69) |
@@ -220,6 +221,36 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-06 — English bank: embeddings and search, with the stimulus year rule (RES-77)
+
+**What changed**
+- `src/englishBank/search.js`: `searchStimuli` finds English bank stimuli
+  nearest a free-text brief. It filters by medium, type, technique, theme,
+  word count and student year, and can return each stimulus's questions with
+  their marking-guide entries. It's what the generator (RES-78) and tutor
+  search (RES-68) will use.
+- Year rule: a stimulus's year level doesn't limit who can use it. Years 7–12
+  can be given any stimulus. Years 5–6 can be given anything up to Year 10,
+  which leaves out stimuli tagged only Year 11 or 12. Untagged stimuli are
+  open to everyone.
+- `englishBankEmbed.js` embeds each live stimulus (type, title, themes,
+  techniques and its first 1,500 characters) with `text-embedding-3-small`,
+  skipping any whose text hasn't changed. The weekly bank update now runs it
+  after the maths steps.
+- Two vector indexes on `englishStimuli`: status alone, and status with
+  medium.
+- All 2,788 production stimuli are embedded ($0.014). A spot check of five
+  briefs ranked well: "persuasive speech on climate change" for Year 5
+  returned Years 5–7 persuasive texts and nothing Year 12 only.
+
+**Why:** The English bank needs to be searchable before the generator or
+tutors can use it.
+
+**Status:** Live. The embeddings are in production and the indexes are
+deployed. Nothing calls the search yet (RES-78 and RES-68).
 
 ---
 
