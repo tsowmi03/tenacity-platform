@@ -231,11 +231,14 @@ omitted, and open follow-ups are tracked at the bottom.
   records written once all its pages are back, and stimulus crops cut from
   a high-resolution render. Passages that run across pages are joined into
   one stimulus. A visual that a published paper blanked out for copyright is
-  left out. `--local` writes to the work folder for checking, and a rerun
-  with the same `--work-dir` resumes.
-- The production run read 8,051 pages from 627 of the 628 files for $3.58:
-  2,766 stimuli (284 of them joined across pages), 9,684 questions and 1,273
-  marking-guide entries. Those 627 files are marked extracted.
+  left out, and a question about one is left unlinked rather than pointed at
+  another text. `--local` writes to the work folder for checking. A rerun
+  with the same `--work-dir` resumes, and retries any file that failed to
+  prepare or to save.
+- The production run read 8,082 pages from all 628 files for $3.60: 2,788
+  stimuli (293 of them joined across pages), 9,758 questions and 1,273
+  marking-guide entries. Every file is marked extracted. One question,
+  extracted before the withheld-visual fix, was unlinked by hand.
 - 54 pages failed because the API refused to repeat the passage word for
   word ("Output blocked by content filtering policy"). They're mostly Year 12
   trial unseen-text pages. Each file lists its failed pages.
@@ -252,11 +255,6 @@ questions and marking guides, reprinted exactly as published.
 
 **Status:** Live in production Firestore and Storage. Nothing uses it yet:
 tutor search is RES-68, and the generator needs a ticket of its own.
-
-**Next steps**
-- Extract the one file that timed out while being prepared ("AOS Discovery
-  Unseen Texts Booklet", 55 pages). Rerun with the same work folder, a few
-  cents.
 
 ---
 
