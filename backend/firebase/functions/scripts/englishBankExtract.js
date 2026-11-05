@@ -191,12 +191,17 @@ async function prepareSource(run, drive, source, options) {
       state.pages[key] = { sourceId: source.id, pageNumber, width: page.width, height: page.height, stage: blank ? "blank" : "extract" };
       previousText = page.textLayer;
     }
+    delete source.error;
+    source.prepared = true;
   } catch (err) {
+    // Left unprepared so the next run tries the file again (a download or
+    // conversion can fail for a moment); its half-rendered pages are dropped
+    // so none of them is extracted on its own.
     source.error = err.message.slice(0, 300);
+    for (const key of Object.keys(state.pages)) if (state.pages[key].sourceId === source.id) delete state.pages[key];
   } finally {
     if (pdf) await pdf.close();
   }
-  source.prepared = true;
   run.save();
 }
 
@@ -356,29 +361,32 @@ async function writeSource(run, source, { db, bucket, local }) {
 // still covers it.
 async function writeFinishedSources(run, io) {
   for (const source of Object.values(run.state.sources)) {
-    if (!source.prepared || source.written) continue;
-    const own = sourcePages(run, source.id);
-    if (source.error) {
-      if (!io.local) await io.db.collection(SOURCES_COLLECTION).doc(source.id).set({ extractionError: source.error, extractionRunId: run.state.runId }, { merge: true });
-      source.written = true;
+    if (source.written) continue;
+    if (!source.prepared) {
+      // A file that couldn't be prepared is noted on its source and tried
+      // again next run; it is never marked written.
+      if (source.error && !io.local) await io.db.collection(SOURCES_COLLECTION).doc(source.id).set({ extractionError: source.error, extractionRunId: run.state.runId }, { merge: true });
       continue;
     }
+    const own = sourcePages(run, source.id);
     if (!own.every((page) => TERMINAL_STAGES.has(page.stage))) continue;
+    const retry = { onRetry: (err, attempt) => console.log(`  Retrying ${source.path} (attempt ${attempt + 1}): ${err.message.slice(0, 120)}`), ...(io.retryDelays && { delays: io.retryDelays }) };
     try {
-      const counts = await withRetries(() => writeSource(run, source, io), {
-        onRetry: (err, attempt) => console.log(`  Retrying ${source.path} (attempt ${attempt + 1}): ${err.message.slice(0, 120)}`),
-      });
-      Object.assign(source, counts, { written: true });
+      const counts = await withRetries(() => writeSource(run, source, io), retry);
+      // Only marked written once its source records it as extracted, so a
+      // failed metadata write is retried next run rather than lost.
       if (!io.local && !source.sampled) {
-        await io.db.collection(SOURCES_COLLECTION).doc(source.id).set({
+        await withRetries(() => io.db.collection(SOURCES_COLLECTION).doc(source.id).set({
           extractedVersion: source.version,
           extractedAt: admin.firestore.FieldValue.serverTimestamp(),
           extractionRunId: run.state.runId,
           ...counts,
           failedPages: own.filter((page) => page.stage === "failed").map((page) => page.pageNumber),
           extractionError: null,
-        }, { merge: true });
+        }, { merge: true }), retry);
       }
+      Object.assign(source, counts, { written: true });
+      delete source.writeError;
       console.log(`  Wrote ${source.path}: ${counts.stimuli} stimuli, ${counts.questions} questions, ${counts.guideEntries} guide entries`);
     } catch (err) {
       source.writeError = err.message.slice(0, 300);
@@ -483,4 +491,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { pageKey, pagesToTake, parseArgs, parsePageKey, randomSource, summary, withRetries };
+module.exports = { createRun, pageKey, pagesToTake, parseArgs, parsePageKey, prepareSource, randomSource, summary, withRetries, writeFinishedSources };

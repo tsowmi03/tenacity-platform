@@ -172,9 +172,11 @@ function stimulusByLabel(label, page, stimuli) {
 
 // A question that names no stimulus is about the one on its page, when there
 // is exactly one, or else the last stimulus before it.
-function stimuliForQuestion(question, page, stimuli, stimulusPages) {
-  const byLabel = question.stimulusLabels.map((label) => stimulusByLabel(label, page, stimuli)).filter(Boolean);
-  if (byLabel.length) return [...new Set(byLabel.map((doc) => doc.id))];
+// A label that resolves to a withheld visual stays unresolved: the question
+// is kept but linked to nothing rather than to a passage it isn't about.
+function stimuliForQuestion(question, page, stimuli, stimulusPages, withheld = []) {
+  const byLabel = question.stimulusLabels.map((label) => stimulusByLabel(label, page, [...stimuli, ...withheld])).filter(Boolean);
+  if (byLabel.length) return [...new Set(byLabel.filter((doc) => !doc.withheld).map((doc) => doc.id))];
   const onPage = stimuli.filter((doc) => doc.data.pages.includes(page.pageNumber));
   if (onPage.length === 1) return [onPage[0].id];
   const before = stimulusPages.filter((entry) => entry.firstPage <= page.pageNumber).pop();
@@ -193,6 +195,9 @@ function toPaperDocs({ source, pages, runId = null, model = null }) {
   const kept = groups.filter((group) => !isWithheldVisual(group));
   const built = kept.map((group, index) => stimulusDoc({ source, group, index, runId, model }));
   const stimuli = built.map(({ id, data }) => ({ id, data }));
+  const withheld = groups
+    .filter((group) => group.label && isWithheldVisual(group))
+    .map((group) => ({ id: null, withheld: true, data: { label: group.label, pages: group.pieces.map(({ page }) => page.pageNumber) } }));
   const stimulusPages = stimuli.map((doc) => ({ id: doc.id, firstPage: Math.min(...doc.data.pages) }));
 
   // A paper's questions are keyed by label alone, so its guide can find them.
@@ -203,7 +208,7 @@ function toPaperDocs({ source, pages, runId = null, model = null }) {
   const questions = new Map();
   for (const page of ordered) {
     for (const question of page.result?.questions || []) {
-      const stimulusIds = stimuliForQuestion(question, page, stimuli, stimulusPages);
+      const stimulusIds = stimuliForQuestion(question, page, stimuli, stimulusPages, withheld);
       const plainId = questionId(source.id, question.label);
       const earlier = questions.get(plainId);
       let id = plainId;

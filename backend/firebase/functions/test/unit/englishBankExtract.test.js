@@ -3,7 +3,11 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { pageKey, pagesToTake, parseArgs, parsePageKey } = require("../../scripts/englishBankExtract");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const { createRun, pageKey, pagesToTake, parseArgs, parsePageKey, prepareSource, writeFinishedSources } = require("../../scripts/englishBankExtract");
 const { PAGE_MAX_TOKENS, buildPageParams, pagePrompt } = require("../../src/englishBank/prompts");
 const { PAGE_SCHEMA } = require("../../src/englishBank/schema");
 
@@ -43,5 +47,52 @@ describe("English bank extraction", () => {
     assert.match(text, /<text_layer>\nCriteria: explains/);
     assert.match(text, /<previous_page_end>\nend of page one/);
     assert.doesNotMatch(pagePrompt({ sourcePath: "x", pageNumber: 1, width: 1, height: 1 }), /text_layer/);
+  });
+
+  function tempRun() {
+    return createRun(fs.mkdtempSync(path.join(os.tmpdir(), "eb-test-")));
+  }
+  function fakeDb({ failSets = 0 } = {}) {
+    const sets = [];
+    let failures = failSets;
+    return {
+      sets,
+      collection: (name) => ({ doc: (id) => ({ set: async (data) => {
+        if (failures > 0) { failures -= 1; throw new Error("unavailable"); }
+        sets.push({ name, id, data });
+      } }) }),
+      batch: () => ({ set() {}, commit: async () => {} }),
+    };
+  }
+
+  it("leaves a file that failed to prepare for the next run, with its half-rendered pages dropped", async () => {
+    const run = tempRun();
+    const source = { id: "f1", name: "Paper.pdf", path: "English/Paper.pdf", mimeType: "application/vnd.google-apps.shortcut", version: "v1", role: "paper", prepared: false };
+    run.state.sources = { f1: source };
+    run.state.pages[pageKey("f1", 1)] = { sourceId: "f1", pageNumber: 1, stage: "extract" };
+    await prepareSource(run, { getFile: async () => { throw new Error("Drive timed out"); } }, source, { pagesPerSource: null, seed: 66 });
+    assert.equal(source.prepared, false);
+    assert.match(source.error, /Drive timed out/);
+    assert.deepEqual(run.state.pages, {});
+
+    const db = fakeDb();
+    await writeFinishedSources(run, { db, local: false });
+    assert.equal(source.written, undefined);
+    assert.deepEqual(db.sets.map((set) => set.data.extractionError), ["Drive timed out"]);
+  });
+
+  it("marks a file written only once its source records it as extracted", async () => {
+    const run = tempRun();
+    const source = { id: "f2", name: "Paper.pdf", path: "English/Paper.pdf", version: "v1", role: "paper", prepared: true, sampled: false };
+    run.state.sources = { f2: source };
+    await writeFinishedSources(run, { db: fakeDb({ failSets: 2 }), local: false, retryDelays: [0] });
+    assert.equal(source.written, undefined);
+    assert.match(source.writeError, /unavailable/);
+
+    const db = fakeDb();
+    await writeFinishedSources(run, { db, local: false, retryDelays: [0] });
+    assert.equal(source.written, true);
+    assert.equal(source.writeError, undefined);
+    assert.equal(db.sets[0].data.extractedVersion, "v1");
   });
 });

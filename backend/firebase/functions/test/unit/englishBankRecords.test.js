@@ -134,6 +134,24 @@ describe("English bank records", () => {
     assert.deepEqual(stimuli.map((doc) => doc.data.label), ["Item 5", "Item 6"]);
   });
 
+  it("leaves a question about a withheld visual unlinked rather than pointing it at another text", () => {
+    const { questions } = toPaperDocs({
+      source,
+      pages: [page(3, {
+        stimuli: [
+          piece({ label: "Text 1" }),
+          piece({ label: "Text 2", type: "photograph", text: null, visualDescription: "Empty bordered box under the heading 'Text 2'." }),
+        ],
+        questions: [
+          question({ label: "Question 1", stimulusLabels: ["Text 1"] }),
+          question({ label: "Question 2", stimulusLabels: ["Text 2"] }),
+          question({ label: "Question 3", stimulusLabels: ["Text 1", "Text 2"] }),
+        ],
+      })],
+    });
+    assert.deepEqual(questions.map((doc) => doc.data.stimulusIds), [["drive1_s1"], [], ["drive1_s1"]]);
+  });
+
   it("links questions to the stimuli they name, or the one on their page", () => {
     const { questions } = toPaperDocs({
       source,
