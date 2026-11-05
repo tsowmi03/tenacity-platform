@@ -102,8 +102,14 @@ function closestTopic(label, names) {
   if (!wanted) return names[0] || null;
   const same = names.find((name) => normaliseQuote(name) === wanted);
   if (same) return same;
-  const containing = names.find((name) => normaliseQuote(name).includes(wanted) || wanted.includes(normaliseQuote(name)));
-  if (containing) return containing;
+  // The most specific overlap wins: "Non-linear equations and graphs" is
+  // "Non-linear equations", not the "Linear equations" it also contains.
+  const within = names.filter((name) => wanted.includes(normaliseQuote(name)))
+    .sort((a, b) => normaliseQuote(b).length - normaliseQuote(a).length);
+  if (within.length) return within[0];
+  const around = names.filter((name) => normaliseQuote(name).includes(wanted))
+    .sort((a, b) => normaliseQuote(a).length - normaliseQuote(b).length);
+  if (around.length) return around[0];
   const words = topicWords(label);
   let best = null;
   let bestScore = 0;

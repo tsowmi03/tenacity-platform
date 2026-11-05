@@ -292,6 +292,13 @@ it("reassigns a question labelled with an unlisted topic instead of failing the 
   assert.deepEqual(unmatchedEvidenceTopics(fixed, "x"), ["Linear programming"]);
 });
 
+it("reassigns to the most specific overlapping topic", () => {
+  const base = { ...plan(3), topics: [{ name: "Linear equations", evidence: "x" }, { name: "Non-linear equations", evidence: "x" }] };
+  const labels = ["Non-linear equations and graphs", "Linear equations with fractions", "equations"];
+  const { plan: fixed } = reconcilePlanTopics({ ...base, questions: base.questions.map((q, i) => ({ ...q, topic: labels[i] })) });
+  assert.deepEqual(fixed.questions.map((q) => q.topic), ["Non-linear equations", "Linear equations", "Linear equations"]);
+});
+
 it("delivers a paper whose topic quotes cannot be matched, with a review warning", async () => {
   const h = harness({ resourceType: "practice-paper", year: "10", subject: "maths", answerMode: "worked", customPrompt: "Write a paper for a 90-minute sitting." });
   const unquoted = { ...plan(4), topics: [{ name: "Algebra", evidence: "Algebra chapter" }, { name: "Geometry", evidence: "Geometry" }] };
