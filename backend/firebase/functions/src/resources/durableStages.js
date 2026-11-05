@@ -6,6 +6,10 @@ const { resourceEvent, resourceStage } = require("./resourceLog");
 const { fromDate } = require("../shared/timestamps");
 
 const STAGE_TIMEOUT_MS = 360_000;
+// Optional work (a content review, an optional diagram fill) never gets the full
+// six minutes (RES-70): a GPT cone fill once ran 256s to its token limit and
+// failed anyway, more than half of that worksheet's whole run.
+const OPTIONAL_STAGE_TIMEOUT_MS = 120_000;
 const MAX_STAGE_COUNT = 80;
 const MAX_PLANNED_STAGE_COUNT = 600;
 const MAX_STAGE_RECOVERIES = 12;
@@ -44,7 +48,7 @@ function assertRequestSize(job) {
 // Content-addressed results are private Storage objects, not Firestore fields:
 // a large response can exceed Firestore's document limit. Only the worker writes
 // them; an attempt fence protects both the journal and the progress display.
-function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, clock = () => new Date(), timeoutMs = STAGE_TIMEOUT_MS }) {
+function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, clock = () => new Date(), timeoutMs = STAGE_TIMEOUT_MS, optionalTimeoutMs = OPTIONAL_STAGE_TIMEOUT_MS }) {
   let inFlight = null;
   let completed = 0;
   const invocationStarted = Date.now();
@@ -60,7 +64,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
         stageFallbackCount: (current.stageFallbackCount || 0) + (recovery.fallback ? 1 : 0) } : {}) });
   });
   return async (request) => {
-    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, validateStageResult, ...publicRequest } = request;
+    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, bestEffort, validateStageResult, ...publicRequest } = request;
     for (const key of Object.keys(publicRequest)) {
       if (key.startsWith("posthog") || key === "safetyIdentifier") delete publicRequest[key];
     }
@@ -80,6 +84,10 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     }
     if (request.optionalReview && job.optionalReviewFailures?.[key]) {
       throw controlError("RESOURCE_REVIEW_UNAVAILABLE", "This optional review could not finish; the draft is retained.");
+    }
+    if (bestEffort && bestEffortGivenUp(job.optionalStageFailures?.[key])) {
+      resourceEvent(job, "stage.skipped", { stageId: stageId || key, reason: "best_effort_failed_before" });
+      throw bestEffortSkipped(job.optionalStageFailures[key].code);
     }
     // Concurrent stages (diagram fills run under Promise.all) reach here
     // together. The slot is taken before any await, so only one provider call
@@ -116,7 +124,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     let providerResult;
     const providerStarted = Date.now();
     const activeModel = recovery.fallback && fallbackModel ? fallbackModel : request.model;
-    const budget = Math.max(1, Math.min(timeoutMs, request.optionalReview ? 120_000 : timeoutMs, INVOCATION_BUDGET_MS - (Date.now() - invocationStarted)));
+    const budget = Math.max(1, Math.min(timeoutMs, request.optionalReview || request.bestEffort ? optionalTimeoutMs : timeoutMs, INVOCATION_BUDGET_MS - (Date.now() - invocationStarted)));
     try {
       const deadline = new Promise((_, reject) => {
         timer = setTimeout(() => {
@@ -157,6 +165,24 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
         resourceEvent(job, "review.unavailable_saved", { errorCode: err?.code || "REVIEW_FAILED", outcome: "draft", recoveryDecision: "keep_draft" }, "warn");
         throw controlError("RESOURCE_REVIEW_UNAVAILABLE", "This optional review could not finish; the draft is retained.");
       }
+      // RES-70. A best-effort stage (an optional diagram fill) that fails saves
+      // nothing, so without a record every later worker sent it again: one job
+      // re-sent 11 failing fills on each of 16 hand-offs. Record the failure;
+      // a deterministic one is given up at once, a transient one after two.
+      if (request.bestEffort && !signal?.aborted && (!err?.resourceControl || err?.code === "RESOURCE_STAGE_TIMEOUT")) {
+        const entry = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(job.ref);
+          const current = snap.data() || {};
+          if (!snap.exists || current.status !== "processing" || current.attemptId !== job.attemptId || current.cancelRequested) throw controlError("RESOURCE_SUPERSEDED", "This worker no longer owns the resource.");
+          const previous = current.optionalStageFailures?.[key] || {};
+          const next = { code: String(err?.code || err?.status || "PROVIDER_FAILURE").slice(0, 60), failures: (previous.failures || 0) + 1, transient: isTransient(err) };
+          tx.update(job.ref, { optionalStageFailures: { ...current.optionalStageFailures, [key]: next } });
+          return next;
+        });
+        job.optionalStageFailures = { ...job.optionalStageFailures, [key]: entry };
+        resourceEvent(job, "recovery.decided", { errorCode: entry.code, retryCount: entry.failures, recoveryDecision: bestEffortGivenUp(entry) ? "omit_optional" : "retry_optional" }, "warn");
+        throw err;
+      }
       if (job.generationVersion === 1 && recoverable && !request.optionalReview) {
         const failures = (recovery.failures || 0) + 1;
         const next = { failures, ...(err.resourceControl && err.reason ? { lastReason: err.reason } : {}), split: Boolean(request.splitAllowed && err?.code === "RESOURCE_STAGE_TIMEOUT"),
@@ -172,7 +198,12 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
         });
         resourceEvent(job, "recovery.decided", { errorCode: err?.code || "PROVIDER_FAILURE", reason: err?.resourceControl ? err?.reason : undefined, retryCount: failures,
           recoveryDecision: count > MAX_STAGE_RECOVERIES || next.exhausted ? "exhausted" : next.split ? "split" : next.fallback ? "fallback" : "retry" }, "warn");
-        if (count > MAX_STAGE_RECOVERIES || next.exhausted) throw controlError("RESOURCE_RECOVERY_EXHAUSTED", "Generation reached its recovery limit. Completed stages are retained; reduce the request before retrying.");
+        if (count > MAX_STAGE_RECOVERIES || next.exhausted) {
+          // A plan that never validates is usually an under-specified request,
+          // not an oversized one (RES-70), so say what to add.
+          if (err?.code === "RESOURCE_PLAN_INVALID") throw Object.assign(controlError("RESOURCE_RECOVERY_EXHAUSTED", "The generator couldn't plan this resource. Add the topics, number of questions and, for a paper, the sitting time, then submit again."), { reason: err.reason });
+          throw controlError("RESOURCE_RECOVERY_EXHAUSTED", "Generation reached its recovery limit. Completed stages are retained; reduce the request before retrying.");
+        }
         throw controlError("RESOURCE_STAGE_YIELD", next.split ? "Continuing in smaller batches" : next.fallback ? "Retrying this stage with the backup model" : "Retrying this stage from saved progress");
       }
       throw err;
@@ -181,6 +212,26 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
       signal?.removeEventListener("abort", cancel);
     }
   }
+}
+
+function isTransient(err) {
+  const status = Number(err?.status);
+  return status === 429 || status >= 500 || err?.stopReason === "max_tokens";
+}
+
+// A deterministic failure (a rejected schema, an invalid response) will fail the
+// same way again, and so, in practice, does an optional stage that ran out its
+// two minutes. A busy or failing provider deserves one more attempt, and so
+// does a response cut off at its token limit: that is a runaway generation,
+// which the same request usually does not repeat.
+function bestEffortGivenUp(entry) {
+  return Boolean(entry) && entry.failures >= (entry.transient ? 2 : 1);
+}
+
+function bestEffortSkipped(code) {
+  // Deliberately not a resourceControl error: the caller treats this as the
+  // optional stage failing (the diagram is omitted), not as the job stopping.
+  return Object.assign(new Error("This optional step failed earlier and is not retried."), { code: "RESOURCE_OPTIONAL_SKIPPED", previousCode: code || null, modelFailure: true });
 }
 
 async function generateWorksheetBatches({ job, request, callAi, count }) {

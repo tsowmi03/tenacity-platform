@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-05 | [Resource generation: diagrams work on GPT, failures stop repeating (RES-70)](#2026-11-05--resource-generation-diagrams-work-on-gpt-failures-stop-repeating-res-70) |
 | 2026-11-05 | [English bank: THSC and NESA Year 12 English papers in Drive (RES-65)](#2026-11-05--english-bank-thsc-and-nesa-year-12-english-papers-in-drive-res-65) |
 | 2026-11-05 | [Question bank: weekly update from Drive (RES-62)](#2026-11-05--question-bank-weekly-update-from-drive-res-62) |
 | 2026-11-05 | [Question bank: tutors flag textbook questions, admins fix or hide them (RES-61)](#2026-11-05--question-bank-tutors-flag-textbook-questions-admins-fix-or-hide-them-res-61) |
@@ -211,6 +212,52 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-05 — Resource generation: diagrams work on GPT, failures stop repeating (RES-70)
+
+**What changed**
+- Every diagram schema now lists all of its fields as required, with optional
+  ones accepting null (removed before validation). GPT's strict mode had
+  rejected every schema with an optional field before the model ran, so
+  triangles, prisms, cones, Venn diagrams, scatter plots and more were dropped
+  from GPT-generated resources, and a required one failed the job.
+- A failed optional diagram is recorded on the job and not sent again by the
+  next worker (a busy provider or timeout gets one more try). Before, every
+  worker hand-off re-sent all of them: one worksheet made 191 AI calls, about
+  170 of them instant failures.
+- Every optional diagram that couldn't be produced is listed in the job's
+  warnings, and a timed-out optional diagram is omitted instead of failing
+  the resource.
+- Optional diagram calls get two minutes, like optional reviews, instead of
+  six. Their output limit is sized to the number of diagrams (2,000 tokens
+  plus 300 each) instead of 32,000. When a question describes something its
+  diagram type can't draw, GPT can stall and pad its answer with blank space:
+  one cone call ran 256 seconds before failing. Now a stall fails in about 20
+  seconds and gets one retry. Shape units are limited to mm, cm, m, km or
+  units, after GPT wrote "cm 脚".
+- A practice paper whose request names no sitting time gets one from the
+  plan's question estimates instead of failing planning three times. Each
+  plan check now has its own reason, which the retry is told to correct, and
+  a plan that never validates tells the tutor what to add.
+- Retrying an older job (submitted before planned generation) whose single
+  generation call ran out of time moves it to planned generation.
+- When Claude rejects a schema as too large to compile, the call is sent once
+  more without it; the response is still parsed and validated.
+- `scripts/sweepDiagramSchemas.js` can now sweep GPT as well as Claude, and a
+  unit test checks every schema against GPT's strict-mode rules.
+- Checked with real generations (local replay, production keys). A Year 10
+  worksheet with 14 diagrams failed on the old code after 34 calls; with the
+  fixes it completed in 2.8 minutes with 15 calls and all 14 diagrams. The
+  untimed Year 7 poem paper completed in 3.3 minutes. All 38 diagram types
+  pass on both GPT and Claude.
+
+**Why:** Resources were slow and hit-or-miss. A read-only look at 31
+production jobs traced most of it to rejected diagram schemas and to failed
+calls repeating on every hand-off.
+
+**Status:** Live. Merged and Functions deployed.
 
 ---
 

@@ -44,19 +44,52 @@ const arr = (items) => ({ type: "array", items });
 // is legitimate (a Venn region labelled "x", a table cell of "12" or 12).
 const countValue = Object.freeze({ type: ["string", "number"] });
 const constType = (type) => ({ type: "string", enum: [type] });
+// RES-70: a free-text unit let GPT run away inside the string ("cm 脚", and
+// once a fill that ran to its token limit). Shapes are measured in these.
+const unitEnum = Object.freeze({ type: "string", enum: ["mm", "cm", "m", "km", "units"] });
+
+// The null-union form of a property, kept to a single branch (a `type` array)
+// because every anyOf multiplies the grammar the APIs compile.
+function nullable(schema) {
+  const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+  return types.includes("null") ? schema : { ...schema, type: [...types, "null"] };
+}
 
 /**
- * `required` defaults to every property. Pass `optional` for the few fields that
- * are genuinely presentational — each one spends part of the 24-parameter budget.
+ * Every property is listed in `required` (RES-70). OpenAI's strict mode rejects
+ * a schema that leaves any property out of `required` with `invalid_json_schema`,
+ * before the model runs. With GPT the default provider, every diagram type with
+ * an optional field failed instantly and its diagrams were dropped. Pass
+ * `optional` for the few fields that are genuinely presentational: they stay
+ * required but accept null, and `stripDiagramNulls` removes the nulls before
+ * validation and rendering, which treat an absent field as before. Each one
+ * still spends part of Anthropic's 24-optional-parameter budget.
  */
 function obj(properties, { optional = [] } = {}) {
   const skip = new Set(optional);
   return {
     type: "object",
-    properties,
-    required: Object.keys(properties).filter((key) => !skip.has(key)),
+    properties: Object.fromEntries(
+      Object.entries(properties).map(([key, value]) => [key, skip.has(key) ? nullable(value) : value])
+    ),
+    required: Object.keys(properties),
     additionalProperties: false,
   };
+}
+
+/**
+ * A filled or repaired diagram with the nulls that stand for "not given"
+ * removed, so it reads exactly as it would have with the field left out.
+ * Arrays keep their elements; only object keys holding null are dropped.
+ */
+function stripDiagramNulls(value) {
+  if (Array.isArray(value)) return value.map(stripDiagramNulls);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== null)
+      .map(([key, entry]) => [key, stripDiagramNulls(entry)])
+  );
 }
 
 // --- the dimensioned-shape family ------------------------------------------
@@ -73,7 +106,7 @@ function shape(type, dimensionFields) {
     {
       type: constType(type),
       dimensions: obj(dimensions),
-      unit: str,
+      unit: unitEnum,
       // Each label is individually optional — the exception to authoring rule 1,
       // and it earns it. Requiring them all made the model label every edge, and
       // a label is drawn instead of the measurement: it wrote "80 cm" onto a side
@@ -120,7 +153,7 @@ function netSchema() {
       type: constType("net"),
       solid: { type: "string", enum: ["rectangular-prism"] },
       dimensions: base.properties.dimensions,
-      unit: str,
+      unit: unitEnum,
       dimensionLabels: base.properties.dimensionLabels,
     },
     { optional: ["dimensionLabels"] }
@@ -402,4 +435,5 @@ module.exports = {
   buildDiagramJudgeSchema,
   buildDiagramRepairSchema,
   buildDiagramSchema,
+  stripDiagramNulls,
 };

@@ -1,5 +1,6 @@
 "use strict";
 
+const logger = require("firebase-functions/logger");
 const { lazyRequire } = require("../shared/lazyRequire");
 const {
   createPostHogClient,
@@ -199,6 +200,14 @@ function normaliseAnthropicUsage(usage = {}) {
   };
 }
 
+// The API's compile-time rejections of a structured-output schema. Each is a
+// 400 raised before any generation, so retrying without the schema costs nothing.
+function isSchemaTooLargeError(err) {
+  const message = String(err?.message || err?.error?.error?.message || "");
+  return Number(err?.status) === 400 &&
+    /compiled grammar is too large|schema is too complex|compilation timed out|too many (optional|union)/i.test(message);
+}
+
 async function callAnthropicForResource({
   apiKey,
   model,
@@ -273,9 +282,26 @@ async function callAnthropicForResource({
     // Passing `signal` lets the caller abort an in-flight generation (e.g. when a
     // tutor stops a job). When aborted the SDK rejects with APIUserAbortError.
     const options = signal ? { signal } : undefined;
-    const response = shouldStreamResponse(maxTokens)
-      ? await streamResponseText(await client.messages.create({ ...request, stream: true }, options))
-      : await client.messages.create(request, options);
+    const send = async (body) => (shouldStreamResponse(maxTokens)
+      ? streamResponseText(await client.messages.create({ ...body, stream: true }, options))
+      : client.messages.create(body, options));
+    let response;
+    try {
+      response = await send(request);
+    } catch (err) {
+      // RES-70. Claude rejects some large schemas before generating ("The
+      // compiled grammar is too large"): a topic booklet with a stimulus failed
+      // over from GPT and then failed here every time. The prompts already
+      // spell out the JSON shape and the response is parsed and validated
+      // either way, so send the same request once without the constraint.
+      if (!outputConfig.format || !isSchemaTooLargeError(err)) throw err;
+      const { format: _format, ...rest } = request.output_config;
+      const unconstrained = { ...request };
+      if (Object.keys(rest).length) unconstrained.output_config = rest;
+      else delete unconstrained.output_config;
+      logger.warn("[resource] schema too large for Claude; retrying unconstrained", { model });
+      response = await send(unconstrained);
+    }
 
     const usage = normaliseAnthropicUsage(response.usage);
     let raw = "";
@@ -313,6 +339,7 @@ module.exports = {
   callAnthropicForResource,
   createDefaultAnthropicClient,
   extractJsonBlock,
+  isSchemaTooLargeError,
   normaliseAnthropicUsage,
   parseAiJsonResponse,
   repairJsonBackslashes,

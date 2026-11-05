@@ -13,7 +13,7 @@ function harness(callAi, timeoutMs) {
     download: async () => { if (!values.has(path)) throw Object.assign(new Error("missing"), { code: 404 }); return [Buffer.from(values.get(path))]; },
     save: async (data) => values.set(path, data),
   }) }) };
-  return { current, values, make: () => createDurableCaller({ job: { jobId: "j", attemptId: "a", ref: {} }, db, storage, callAi, timeoutMs }) };
+  return { current, values, db, storage, callAi, make: (job = {}) => createDurableCaller({ job: { jobId: "j", attemptId: "a", ref: {}, ...job }, db, storage, callAi, timeoutMs }) };
 }
 
 it("bounds a hung provider, aborts it, and never checkpoints its late result", async () => {
@@ -117,4 +117,62 @@ it("starts one call at a time when concurrent stages wait on a failed one", asyn
   assert.equal(results[0].reason.message, "provider rejected");
   assert.equal(results[1].status, "fulfilled");
   assert.equal(results[2].reason.code, "RESOURCE_STAGE_YIELD");
+});
+
+// RES-70. Optional diagram fills that failed were re-sent by every later
+// worker, because a failure saves no checkpoint: one job re-sent 11 failing
+// fills on each of 16 hand-offs.
+it("records a failed best-effort stage and never sends it again in a later worker", async () => {
+  let calls = 0;
+  const h = harness(async () => { calls += 1; throw Object.assign(new Error("Invalid schema"), { status: 400, code: "invalid_json_schema" }); });
+  const request = { userMessage: "fill triangles", model: "m", bestEffort: true };
+  await assert.rejects(h.make()(request), { code: "invalid_json_schema" });
+  const [entry] = Object.values(h.current.optionalStageFailures);
+  assert.deepEqual(entry, { code: "invalid_json_schema", failures: 1, transient: false });
+
+  const nextWorker = h.make({ optionalStageFailures: h.current.optionalStageFailures });
+  await assert.rejects(nextWorker(request), (err) => err.code === "RESOURCE_OPTIONAL_SKIPPED" && !err.resourceControl);
+  assert.equal(calls, 1);
+});
+
+it("gives a transient best-effort failure one more attempt", async () => {
+  let calls = 0;
+  const h = harness(async () => { calls += 1; throw Object.assign(new Error("busy"), { status: 529 }); });
+  const request = { userMessage: "fill cones", model: "m", bestEffort: true };
+  await assert.rejects(h.make()(request), /busy/);
+  await assert.rejects(h.make({ optionalStageFailures: h.current.optionalStageFailures })(request), /busy/);
+  await assert.rejects(h.make({ optionalStageFailures: h.current.optionalStageFailures })(request), { code: "RESOURCE_OPTIONAL_SKIPPED" });
+  assert.equal(calls, 2);
+});
+
+it("leaves the checkpoint key unchanged by the best-effort flag", async () => {
+  let calls = 0;
+  const h = harness(async () => { calls += 1; return { parsed: { ok: true } }; });
+  await h.make()({ userMessage: "fill", model: "m" });
+  assert.deepEqual((await h.make()({ userMessage: "fill", model: "m", bestEffort: true })).parsed, { ok: true });
+  assert.equal(calls, 1);
+});
+
+it("caps a best-effort stage at the optional time limit and gives it up after one timeout", async () => {
+  let calls = 0;
+  const h = harness(() => { calls += 1; return new Promise(() => {}); }, 60_000);
+  const caller = (job = {}) => createDurableCaller({ job: { jobId: "j", attemptId: "a", ref: {}, ...job }, db: h.db, storage: h.storage, callAi: h.callAi, timeoutMs: 60_000, optionalTimeoutMs: 10 });
+  const request = { userMessage: "fill cones", model: "m", bestEffort: true };
+  const started = Date.now();
+  await assert.rejects(caller()(request), { code: "RESOURCE_STAGE_TIMEOUT" });
+  assert.ok(Date.now() - started < 5_000);
+  assert.deepEqual(Object.values(h.current.optionalStageFailures)[0], { code: "RESOURCE_STAGE_TIMEOUT", failures: 1, transient: false });
+  await assert.rejects(caller({ optionalStageFailures: h.current.optionalStageFailures })(request), { code: "RESOURCE_OPTIONAL_SKIPPED" });
+  assert.equal(calls, 1);
+});
+
+it("retries a best-effort stage once after a runaway response hit its token limit", async () => {
+  let calls = 0;
+  const h = harness(async () => { calls += 1; throw Object.assign(new Error("AI response was truncated at the 8000 token output limit."), { stopReason: "max_tokens", modelFailure: true }); });
+  const request = { userMessage: "fill cones", model: "m", bestEffort: true };
+  await assert.rejects(h.make()(request), /truncated/);
+  assert.equal(Object.values(h.current.optionalStageFailures)[0].transient, true);
+  await assert.rejects(h.make({ optionalStageFailures: h.current.optionalStageFailures })(request), /truncated/);
+  await assert.rejects(h.make({ optionalStageFailures: h.current.optionalStageFailures })(request), { code: "RESOURCE_OPTIONAL_SKIPPED" });
+  assert.equal(calls, 2);
 });
