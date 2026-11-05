@@ -2,7 +2,7 @@
 const { it } = require("node:test");
 const assert = require("node:assert/strict");
 const { createDurableCaller, requestedQuestionCount } = require("../../src/resources/durableStages");
-const { generatePlannedResource, perTopicCount, validatePlan, validateQuestions, validateAnswers } = require("../../src/resources/plannedGeneration");
+const { generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers } = require("../../src/resources/plannedGeneration");
 const { resourceEvent, resourceStage } = require("../../src/resources/resourceLog");
 
 function harness(extra = {}) {
@@ -229,4 +229,40 @@ it("returns a real DOCX with review notes for content concerns instead of throwi
   const text = await mammoth.extractRawText({ buffer: Buffer.from(h.values.get(result.outputPath)) });
   assert.match(text.value, /Tutor review recommended/);
   assert.match(text.value, /Estimated answering time is 112 minutes/);
+});
+
+// RES-70. "Short answer questions in response to a poem" names no sitting time.
+// The planner left timeAllowed empty, the plan was rejected with a catch-all
+// reason, and all three attempts failed the same way.
+it("accepts a practice paper plan with no sitting time and derives one", () => {
+  const paper = { resourceType: "practice-paper", customPrompt: "Short answer questions on a poem" };
+  const untimed = { ...plan(5), timeAllowed: "" };
+  assert.doesNotThrow(() => validatePlan({ parsed: untimed }, paper, "Algebra Geometry"));
+  assert.equal(plannedTimeAllowed(untimed), "30 minutes");
+  assert.equal(plannedTimeAllowed({ ...untimed, timeAllowed: "45 minutes" }), "45 minutes");
+  const noEstimates = { ...untimed, questions: untimed.questions.map((q) => ({ ...q, estimatedMinutes: 0 })) };
+  assert.throws(() => validatePlan({ parsed: noEstimates }, paper, "Algebra Geometry"), { reason: "time_allowed_missing" });
+});
+
+it("names the plan check that failed, so the retry knows what to correct", () => {
+  const job = { resourceType: "worksheet", customPrompt: "" };
+  const reasonFor = (parsed) => { try { validatePlan({ parsed }, job, "Algebra Geometry"); } catch (err) { return err.reason; } return null; };
+  const base = plan(4);
+  assert.equal(reasonFor({ ...base, questions: base.questions.map((q, i) => ({ ...q, number: i + 2 })) }), "questions_not_numbered_1_to_n");
+  assert.equal(reasonFor({ ...base, questions: base.questions.map((q) => ({ ...q, topic: "Trigonometry" })) }), "question_topic_not_in_topics");
+  assert.equal(reasonFor({ ...base, questions: base.questions.map((q) => ({ ...q, marks: 40 })) }), "question_marks_outside_1_to_30");
+  assert.equal(reasonFor({ ...base, questions: base.questions.map((q, i) => ({ ...q, section: i % 2 ? "A" : "B" })) }), "section_questions_not_consecutive");
+  assert.equal(reasonFor({ ...base, questions: [] }), "plan_questions_empty");
+});
+
+it("tells the tutor what to add when a plan never validates (RES-70)", async () => {
+  const h = harness();
+  const provider = async () => ({ parsed: { title: "Paper", clarification: "", timeAllowed: "", topics: [], questions: [] } });
+  const request = { model: "gpt-test", stageId: "plan.v2", userMessage: "poem questions",
+    validateStageResult: (result) => validatePlan(result, { resourceType: "practice-paper", customPrompt: "poem questions" }, "poem questions") };
+  let last;
+  for (let i = 0; i < 3; i++) last = await h.caller(provider, { fallbackModel: "claude-test" })(request).catch((err) => err);
+  assert.equal(last.code, "RESOURCE_RECOVERY_EXHAUSTED");
+  assert.match(last.message, /Add the topics, number of questions/);
+  assert.equal(last.reason, "plan_topics_empty");
 });

@@ -30,6 +30,7 @@ const { DIAGRAM_REGISTRY } = require("./diagramRegistry");
 const {
   buildDiagramJudgeSchema,
   buildDiagramRepairSchema,
+  stripDiagramNulls,
 } = require("./diagramSchema");
 const {
   buildDiagramJudgePrompt,
@@ -224,7 +225,7 @@ async function requestRepairedDiagram({
     mathBearing: true,
   });
 
-  const diagram = parsed?.diagram;
+  const diagram = stripDiagramNulls(parsed?.diagram);
   if (!diagram || typeof diagram !== "object") return null;
   // Enforced here as well as by the prompt: the unconstrained fallback types
   // (tree-diagram, angles, function-plot) have no schema to pin `type`, so
@@ -610,6 +611,7 @@ module.exports = {
   MAX_RESOURCE_REPAIR_CALLS,
   OUTCOME,
   collectDiagramOwners,
+  diagramOwnerLabel,
   judgeDiagram,
   repairDiagrams,
   verifyDiagram,

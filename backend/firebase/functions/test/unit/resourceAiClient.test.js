@@ -8,6 +8,7 @@ const {
   buildAnthropicSystemParam,
   callAnthropicForResource,
   extractJsonBlock,
+  isSchemaTooLargeError,
   parseAiJsonResponse,
   repairJsonBackslashes,
   responseText,
@@ -738,5 +739,39 @@ describe("resource Anthropic client", () => {
       assert.doesNotMatch(parsed.v, NO_XML_ILLEGAL); // raw parse contains the form-feed
       assert.match(stripXmlIllegalChars(parsed.v), NO_XML_ILLEGAL); // net removes it
     });
+  });
+});
+
+// RES-70. A topic booklet that failed over to Claude was rejected before any
+// generation with "The compiled grammar is too large", every time.
+describe("Claude schema-size rejection", () => {
+  const grammarError = () => Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"The compiled grammar is too large, which would cause performance issues."}}'), { status: 400 });
+
+  it("retries once without the schema, keeping effort", async () => {
+    const calls = [];
+    const result = await callAnthropicForResource({
+      apiKey: "sk-ant-test", model: "claude-opus-5-5", systemPrompt: "SYSTEM", userMessage: "USER", effort: "high",
+      responseSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+      createClient: () => ({ messages: { async create(payload) {
+        calls.push(payload);
+        if (payload.output_config?.format) throw grammarError();
+        return { content: [{ type: "text", text: "{\"title\":\"Booklet\"}" }] };
+      } } }),
+    });
+    assert.deepEqual(result.parsed, { title: "Booklet" });
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[1].output_config, { effort: "high" });
+  });
+
+  it("does not retry other request errors", async () => {
+    let calls = 0;
+    await assert.rejects(callAnthropicForResource({
+      apiKey: "sk-ant-test", model: "claude-opus-5-5", systemPrompt: "SYSTEM", userMessage: "USER",
+      responseSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+      createClient: () => ({ messages: { async create() { calls += 1; throw Object.assign(new Error("400 max_tokens too large"), { status: 400 }); } } }),
+    }), /max_tokens/);
+    assert.equal(calls, 1);
+    assert.equal(isSchemaTooLargeError(grammarError()), true);
+    assert.equal(isSchemaTooLargeError(Object.assign(new Error("grammar is too large"), { status: 500 })), false);
   });
 });
