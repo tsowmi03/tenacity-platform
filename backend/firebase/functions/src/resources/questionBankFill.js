@@ -444,6 +444,7 @@ async function applyQuestionBank({
       bestEffort: true,
       concurrent: true,
       stageLabel,
+      progressPhase: "diagrams",
     }).then(({ parsed: out }) => out);
 
   const outcomes = await mapLimited(plans, CONCURRENCY, async (plan) => {

@@ -4,6 +4,7 @@ const { createHash } = require("crypto");
 const { providerForModel } = require("./modelRegistry");
 const { resourceEvent, resourceStage } = require("./resourceLog");
 const { fromDate } = require("../shared/timestamps");
+const { estimateProgress, loadTimingStats, noteProgress, phaseForStage, phaseIndex } = require("./progressModel");
 
 const STAGE_TIMEOUT_MS = 360_000;
 // Optional work (a content review, an optional diagram fill) never gets the full
@@ -52,19 +53,45 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
   let inFlight = null;
   let completed = 0;
   const invocationStarted = Date.now();
-  const progress = async (message, executing = false, recovery = {}) => db.runTransaction(async (tx) => {
+  // RES-73. Shared by reference with the pipeline's copies of the job, which
+  // report the step they are on and how many questions are written. Each
+  // invocation replays saved stages from the start, so this rebuilds itself.
+  const tracker = job.progressTracker || (job.progressTracker = { phase: null, questionsDone: 0, questionCount: 0 });
+  const advance = (phase) => { if (phase && (!tracker.phase || phaseIndex(phase) > phaseIndex(tracker.phase))) tracker.phase = phase; };
+  let statsLoad = null;
+  const timingStats = () => (statsLoad ||= (job.timingStats ? Promise.resolve(job.timingStats) : loadTimingStats(db, job)));
+  const requestedQuestions = requestedQuestionCount(job.customPrompt);
+  const progressFields = (current, message, stats) => {
+    const now = clock();
+    const prev = current.progress || {};
+    const startedMs = typeof current.startedAt?.toMillis === "function" ? current.startedAt.toMillis()
+      : current.startedAt instanceof Date ? current.startedAt.getTime() : null;
+    const activeMs = (current.activeElapsedMs || 0) + (startedMs ? Math.max(0, now.getTime() - startedMs) : 0);
+    const firstStartedAtMs = prev.firstStartedAtMs || now.getTime();
+    const phaseStarts = { ...(prev.phaseStarts || {}) };
+    if (tracker.phase && phaseStarts[tracker.phase] == null) phaseStarts[tracker.phase] = activeMs;
+    const estimate = estimateProgress({ job: current.resourceType ? current : job, statsByKey: stats, tracker, activeMs,
+      wallMs: Math.max(activeMs, now.getTime() - firstStartedAtMs), phaseStarts, requestedQuestions });
+    return { message, completedStages: completed, updatedAt: fromDate(now), firstStartedAtMs, phaseStarts, ...estimate,
+      initialEstimateMs: prev.initialEstimateMs || estimate.expectedTotalMs };
+  };
+  const progress = async (message, executing = false, recovery = {}) => {
+    const stats = await timingStats();
+    return db.runTransaction(async (tx) => {
     const snap = await tx.get(job.ref);
     const current = snap.data() || {};
     if (!snap.exists || current.status !== "processing" || current.attemptId !== job.attemptId || current.cancelRequested) {
       throw controlError("RESOURCE_SUPERSEDED", "This worker no longer owns the resource.");
     }
-    tx.update(job.ref, { progress: { message, completedStages: completed, updatedAt: fromDate(clock()) },
+    tx.update(job.ref, { progress: progressFields(current, message, stats),
       ...(executing ? { providerCallCount: (current.providerCallCount || 0) + 1,
         stageRetryCount: (current.stageRetryCount || 0) + (recovery.failures && !recovery.fallback ? 1 : 0),
         stageFallbackCount: (current.stageFallbackCount || 0) + (recovery.fallback ? 1 : 0) } : {}) });
-  });
-  return async (request) => {
-    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, bestEffort, concurrent, validateStageResult, ...publicRequest } = request;
+    });
+  };
+  const durableCall = async (request) => {
+    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, bestEffort, concurrent, validateStageResult, progressPhase, ...publicRequest } = request;
+    advance(phaseForStage({ progressPhase, stageId, stageLabel }));
     for (const key of Object.keys(publicRequest)) {
       if (key.startsWith("posthog") || key === "safetyIdentifier") delete publicRequest[key];
     }
@@ -116,6 +143,14 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     if (!(concurrent && bestEffort)) inFlight = running;
     return running;
   };
+  // A step with no provider call (building the PDF) still moves the display on.
+  durableCall.markPhase = async (phase, message) => {
+    advance(phase);
+    try { await progress(message); } catch (err) { if (err?.code === "RESOURCE_SUPERSEDED") throw err; }
+  };
+  tracker.markPhase = durableCall.markPhase;
+  durableCall.progressTracker = tracker;
+  return durableCall;
 
   async function runFreshStage({ request, signal, stageLabel, file, key, recovery }) {
     await progress(stageLabel || `Generating · ${completed} steps saved`, true, recovery);
@@ -136,7 +171,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
           controller.abort();
         }, budget);
       });
-      const { stageLabel: _label, stageId: _stageId, splitAllowed: _split, optionalReview: _optional, bestEffort: _bestEffort, concurrent: _concurrent, validateStageResult: validate, ...providerRequest } = request;
+      const { stageLabel: _label, stageId: _stageId, splitAllowed: _split, optionalReview: _optional, bestEffort: _bestEffort, concurrent: _concurrent, validateStageResult: validate, progressPhase: _phase, ...providerRequest } = request;
       if (recovery.fallback && fallbackModel) providerRequest.model = fallbackModel;
       if (recovery.lastReason) providerRequest.userMessage += `\n\nThe prior response failed validation (${recovery.lastReason}). Correct that issue while preserving the original scope and requested limits.`;
       resourceEvent(job, "provider.started", { model: providerRequest.model, provider: providerForModel(providerRequest.model), timeoutMs: budget, remainingMs: INVOCATION_BUDGET_MS - (Date.now() - invocationStarted), retryCount: recovery.failures || 0 });
@@ -191,13 +226,14 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
         const failures = (recovery.failures || 0) + 1;
         const next = { failures, ...(err.resourceControl && err.reason ? { lastReason: err.reason } : {}), split: Boolean(request.splitAllowed && err?.code === "RESOURCE_STAGE_TIMEOUT"),
           fallback: failures >= 2 && Boolean(fallbackModel), exhausted: failures >= (fallbackModel ? 3 : 2) };
+        const stats = await timingStats();
         const count = await db.runTransaction(async (tx) => {
           const snap = await tx.get(job.ref);
           const current = snap.data() || {};
           if (!snap.exists || current.status !== "processing" || current.attemptId !== job.attemptId || current.cancelRequested) throw controlError("RESOURCE_SUPERSEDED", "This worker no longer owns the resource.");
           const count = (current.stageRecoveryCount || 0) + 1;
           tx.update(job.ref, { stageRecovery: { ...current.stageRecovery, [key]: next }, stageRecoveryCount: count,
-            progress: { completedStages: completed, updatedAt: fromDate(clock()), message: count > MAX_STAGE_RECOVERIES || next.exhausted ? "Recovery limit reached" : next.split ? "Continuing in smaller batches" : next.fallback ? "Retrying this stage with the backup model" : "Retrying this stage from saved progress" } });
+            progress: { ...progressFields(current, count > MAX_STAGE_RECOVERIES || next.exhausted ? "Recovery limit reached" : next.split ? "Continuing in smaller batches" : next.fallback ? "Retrying this stage with the backup model" : "Retrying this stage from saved progress", stats), retrying: true } });
           return count;
         });
         resourceEvent(job, "recovery.decided", { errorCode: err?.code || "PROVIDER_FAILURE", reason: err?.resourceControl ? err?.reason : undefined, retryCount: failures,
@@ -240,6 +276,7 @@ function bestEffortSkipped(code) {
 
 async function generateWorksheetBatches({ job, request, callAi, count }) {
   const chunks = [];
+  noteProgress(job, { questionCount: count });
   for (let start = 1; start <= count; start += WORKSHEET_BATCH_SIZE) {
     const end = Math.min(count, start + WORKSHEET_BATCH_SIZE - 1);
     const validateStageResult = (result) => {
@@ -262,6 +299,7 @@ async function generateWorksheetBatches({ job, request, callAi, count }) {
     validateStageResult(result);
     const part = result.parsed;
     chunks.push(part);
+    noteProgress(job, { questionsWritten: end - start + 1 });
   }
   const parsed = {
     ...chunks[0],
