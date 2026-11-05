@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-11-05 | [Resource generation: diagrams work on GPT, failures stop repeating (RES-70)](#2026-11-05--resource-generation-diagrams-work-on-gpt-failures-stop-repeating-res-70) |
+| 2026-11-05 | [English bank: THSC and NESA Year 12 English papers in Drive (RES-65)](#2026-11-05--english-bank-thsc-and-nesa-year-12-english-papers-in-drive-res-65) |
 | 2026-11-05 | [Question bank: weekly update from Drive (RES-62)](#2026-11-05--question-bank-weekly-update-from-drive-res-62) |
 | 2026-11-05 | [Question bank: tutors flag textbook questions, admins fix or hide them (RES-61)](#2026-11-05--question-bank-tutors-flag-textbook-questions-admins-fix-or-hide-them-res-61) |
 | 2026-11-05 | [Generator: textbook questions with their original diagrams (RES-60)](#2026-11-05--generator-textbook-questions-with-their-original-diagrams-res-60) |
@@ -257,6 +258,44 @@ production jobs traced most of it to rejected diagram schemas and to failed
 calls repeating on every hand-off.
 
 **Status:** Live. Merged and Functions deployed.
+
+---
+
+## 2026-11-05 — English bank: THSC and NESA Year 12 English papers in Drive (RES-65)
+
+**What changed**
+- `scripts/thscPastPapers.js` takes `--subject=english`, which copies THSC
+  Online's English papers into Resources/English/Past Papers/Year 12, one
+  folder per listing. THSC only has English for Year 12.
+- 489 papers saved: 257 Trial Paper 1, 157 Trial Paper 2 Advanced, 20 Trial
+  Paper 2 Standard and 55 Extension 1 trials.
+- The script now keeps "(Adv.)" and "(Std.)" in titles, as THSC's viewer
+  does. Without them every Paper 2 trial came back missing.
+- THSC answers a missing file with a "404 Not Found" PDF, often under the
+  paper's own name. The script now recognises it by its bytes and reports
+  the paper as missing instead of saving it.
+- THSC doesn't have its 97 HSC papers and marking guidelines or its 5
+  assessment tasks (its own viewer shows 404 for them), so none were saved.
+- `scripts/nesaHscPapers.js` copies the HSC papers from NESA instead: 119
+  files from 2014 to 2025 (papers, marking guidelines and sample writing
+  booklets for Advanced, Standard and Extension 1) into
+  Past Papers/Year 12/HSC Papers, one folder per course. The common Standard
+  and Advanced Paper 1 is saved once, under "Standard and Advanced".
+  `NESA sources.json` records each file's URL. NESA's site has nothing
+  older than 2014.
+
+**Why:** RES-65 needs the past papers in Drive before the English sync and
+extraction, as the maths THSC papers were. The HSC papers and their marking
+guidelines are the best exam-style stimuli and guides available.
+
+**Status:** Live. The papers are in Drive with `THSC sources.json` and
+`NESA sources.json`; the
+English sync and extraction (RES-65, RES-66) have not started.
+
+**Next steps**
+- Three Maths Year 11 Prelim files saved by an earlier THSC run are the same
+  404 placeholder (Blacktown Boys 2023 Advanced, Cheltenham Girls 2024 and
+  2025 Standard) and should be deleted from Drive.
 
 ---
 
