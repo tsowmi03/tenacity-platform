@@ -6,13 +6,14 @@
 // Runs after the questions are written and before any diagram is drawn. Every
 // question or part that asks for a diagram is a slot:
 //
-//   1. search: the bank questions nearest the generated question, for the
-//      student's year and the difficulty its position calls for (saved, so a
-//      later worker does not search again);
-//   2. choose and solve: the model sees up to three candidate crops, picks one
-//      whose diagram fits and is complete, and either restates the original
-//      question or (about a third of the time) asks a new question about the
-//      same diagram, then solves it;
+//   1. search: the bank questions nearest the generated question, from the
+//      student's year and the years either side, ranked by how close their
+//      year and difficulty are to the difficulty the generator gave the
+//      question (RES-76; saved, so a later worker does not search again);
+//   2. choose and solve: the model sees up to four candidate crops and the
+//      tutor's brief, picks one whose diagram fits, is complete and is taught
+//      by the student's year, and either restates the original question or
+//      adapts it to the skill and difficulty wanted, then solves it;
 //   3. check: a second, independent solve must agree with that answer.
 //
 // A slot that finds no passing match keeps its generated question and its
@@ -28,8 +29,15 @@ const { pngSize, SOURCE_IMAGE } = require("./sourceImages");
 // the value is accepted and ignored.
 const QUESTION_BANK_MODES = Object.freeze(["none", "some", "mostly", "first"]);
 const BANK_FIRST = "first";
-const NEW_ASK_EVERY = 3; // every third bank question asks something new about its diagram
 const CANDIDATES = 4;
+// Searched before ranking by year and difficulty, so a close match on level
+// can outrank a slightly nearer question on wording.
+const SEARCH_POOL = 16;
+// RES-76. Year and difficulty on one scale: a hard Year 8 question sits level
+// with an easy Year 9 one. Candidates more than one step away are dropped.
+const DIFFICULTY_OFFSET = Object.freeze({ easy: -0.5, medium: 0, hard: 0.5 });
+const MAX_LEVEL_GAP = 1;
+const BRIEF_LIMIT = 1500;
 const CONCURRENCY = 4;
 const BANK_MODEL = "claude-sonnet-5-5";
 const BANK_MAX_TOKENS = 16000;
@@ -48,10 +56,13 @@ const SYSTEM_PROMPT = "You choose, adapt and solve questions from NSW school mat
 const CHOOSE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["choice", "reason", "stem", "options", "answer", "workingOut"],
+  required: ["choice", "reason", "approach", "stem", "options", "answer", "workingOut"],
   properties: {
     choice: { type: "integer" },
     reason: { type: "string" },
+    // RES-76: the model decides, per question, whether the original fits as
+    // printed or needs adapting to the skill and difficulty wanted.
+    approach: { type: "string", enum: ["original", "adapted"] },
     stem: { type: "string" },
     // Multiple choice only; empty otherwise.
     options: { type: "array", items: { type: "string" } },
@@ -173,11 +184,57 @@ function slotWhere(slot) {
   return where;
 }
 
-/** Questions get harder through a resource: first third easy, then medium, then hard. */
+/**
+ * Only for questions the generator left without a difficulty: assume they get
+ * harder through the resource, first third easy, then medium, then hard.
+ */
 function difficultyAt(index, total) {
   if (total < 3) return null;
   const position = index / total;
   return position < 1 / 3 ? "easy" : position < 2 / 3 ? "medium" : "hard";
+}
+
+const isDifficulty = (value) => Object.prototype.hasOwnProperty.call(DIFFICULTY_OFFSET, value);
+
+/**
+ * The difficulty a slot asks for: the generator's label on the question or
+ * part (RES-76), then its parent question's, then its position as a fallback.
+ */
+function slotDifficulty(slot, index, total) {
+  if (isDifficulty(slot.owner?.difficulty)) return slot.owner.difficulty;
+  if (isDifficulty(slot.parent?.difficulty)) return slot.parent.difficulty;
+  return difficultyAt(index, total);
+}
+
+/**
+ * How far a bank question is from what a slot wants, on one scale of year and
+ * difficulty. A question tagged with several years counts at the one nearest
+ * the student's; one without a difficulty counts as medium.
+ */
+function levelGap(question, year, difficulty) {
+  const years = (question.years || []).filter((y) => Math.abs(y - year) <= 1);
+  if (!years.length) return Infinity;
+  const nearest = years.reduce((best, y) => (Math.abs(y - year) < Math.abs(best - year) ? y : best));
+  const level = nearest + (DIFFICULTY_OFFSET[question.difficulty] ?? 0);
+  const target = year + (DIFFICULTY_OFFSET[difficulty] ?? 0);
+  return Math.abs(level - target);
+}
+
+/**
+ * Candidates ranked by level first, in half-step bands, and by closeness of
+ * wording within a band (search order), dropping any more than a step away.
+ */
+function rankByLevel(questions, year, difficulty) {
+  return questions
+    .map((question, rank) => ({ question, rank, gap: levelGap(question, year, difficulty) }))
+    .filter((entry) => entry.gap <= MAX_LEVEL_GAP)
+    .sort((a, b) => a.gap - b.gap || a.rank - b.rank)
+    .map((entry) => ({ ...entry.question, levelGap: entry.gap }));
+}
+
+function candidateYear(question, year) {
+  const years = (question.years || []).filter((y) => Math.abs(y - year) <= 1);
+  return years.includes(year) ? year : years[0] ?? null;
 }
 
 /** Every maths resource is bank-first (RES-71); other subjects have no bank. */
@@ -207,7 +264,7 @@ function slotQuestionText(slot) {
   return slot.owner.stem;
 }
 
-function choosePrompt({ job, topic, slot, candidates, askNew }) {
+function choosePrompt({ job, topic, slot, candidates, difficulty }) {
   const marks = slotMarks(slot);
   const multipleChoice = slot.owner.type === "multiple-choice";
   const listing = candidates
@@ -216,25 +273,29 @@ function choosePrompt({ job, topic, slot, candidates, askNew }) {
       candidate.stem ? `Instruction: ${candidate.stem}` : null,
       candidate.text ? `Question: ${candidate.text}` : null,
       `What it asks: ${candidate.description}`,
+      candidate.year || candidate.difficulty ? `Printed for: ${[candidate.year ? `Year ${candidate.year}` : null, candidate.difficulty].filter(Boolean).join(", ")}` : null,
     ].filter(Boolean).join("\n"))
     .join("\n\n");
-  const task = askNew
-    ? "Write one NEW question about the chosen diagram that tests the same skill as the question above but differs from the diagram's original question (for example a different unknown, or working backwards from the answer), using only measurements and labels printed on the diagram."
-    : "Restate the chosen original question as a single standalone question, keeping its wording and any rounding instruction (\"Find the area of each shape.\" becomes \"Find the area of this shape.\").";
+  const brief = typeof job.customPrompt === "string" && job.customPrompt.trim()
+    ? `\n\nThe tutor asked for: "${job.customPrompt.trim().slice(0, BRIEF_LIMIT)}"`
+    : "";
+  const wanted = difficulty ? ` It should be ${difficulty} for a Year ${job.year} student${brief ? ", in keeping with what the tutor asked for" : ""}.` : "";
+  const task = `Then decide how to use it. Set approach to "original" and restate the original question as a single standalone question, keeping its wording and any rounding instruction ("Find the area of each shape." becomes "Find the area of this shape."), when it already tests the skill above at the difficulty wanted. Otherwise set approach to "adapted" and write one question about the diagram that does: for example a different unknown, working backwards from the answer, or an extra step to make it harder, using only the measurements and labels printed on the diagram.`;
   const shape = slot.kind === "whole"
     ? " The question above has parts; write the replacement as one question (it may ask for more than one thing) worth the same total marks."
     : "";
   const format = multipleChoice
     ? " It is multiple choice: give exactly four options as plain text without letters, one of them correct and the others plausible mistakes, and give the correct option's text as the answer."
     : " Leave options empty.";
-  return `A Year ${job.year} maths resource on "${topic}" has this question, worth ${marks} mark(s):
-${slotQuestionText(slot)}
+  return `A Year ${job.year} maths resource on "${topic}" has this question, worth ${marks} mark(s):${brief}
 
+${slotQuestionText(slot)}
+${wanted ? `${wanted.trim()}\n` : ""}
 Replace it with a question built on one of these original textbook diagrams. The images follow in candidate order.
 
 ${listing}
 
-Choose a candidate only if a question on its diagram tests the same skill as the question above: the same quantity found in the same way (the area of a triangle is not the volume of a prism, and a perimeter is not an area). It must also suit Year ${job.year} and be complete: every label, measurement and marking the question needs is visible, and nothing from a neighbouring question is in the crop. Return choice 0 if no candidate meets all of this; a near miss is worse than keeping the original question. With choice 0, leave the other fields empty.
+Choose a candidate only if a question on its diagram tests the same skill as the question above: the same quantity found in the same way (the area of a triangle is not the volume of a prism, and a perimeter is not an area). Its content must be taught by Year ${job.year}: a diagram printed for the year above is fine only if a Year ${job.year} student has learned what the question needs. It must also be complete: every label, measurement and marking the question needs is visible, and nothing from a neighbouring question is in the crop. Return choice 0 if no candidate meets all of this; a near miss is worse than keeping the original question. With choice 0, leave the other fields empty.
 
 ${task}${shape}${format} The stem must not describe the diagram, because the student sees it. Pitch it at ${marks} mark(s). Solve it from the diagram with clear working.`;
 }
@@ -282,8 +343,8 @@ async function mapLimited(items, limit, fn) {
 }
 
 // The fields of a search hit a later worker needs to rebuild the same prompt.
-function savedCandidate(q) {
-  return { id: q.id, sourcePath: q.sourcePath || "", pageNumber: q.pageNumber ?? null, label: q.label || "", stem: q.stem || "", text: q.text || "", description: q.description || "", figures: (q.figures || []).map((f) => ({ storagePath: f.storagePath })) };
+function savedCandidate(q, year) {
+  return { id: q.id, sourcePath: q.sourcePath || "", pageNumber: q.pageNumber ?? null, label: q.label || "", stem: q.stem || "", text: q.text || "", description: q.description || "", year: candidateYear(q, year), difficulty: q.difficulty || null, figures: (q.figures || []).map((f) => ({ storagePath: f.storagePath })) };
 }
 
 /**
@@ -399,22 +460,19 @@ async function applyQuestionBank({
       // and returns 3D candidates.
       const diagramType = slot.owner.diagramType || slot.owner.diagram?.type || "";
       const brief = `${slotQuestionText(slot)}${diagramType ? `\nDiagram: ${diagramType}` : ""}\nTopic: ${topic}`;
-      const base = { years: [job.year], excludeIds: [...used] };
+      // RES-76: the years either side too, ranked below by year and difficulty.
+      const filters = { years: [job.year - 1, job.year, job.year + 1], excludeIds: [...used] };
+      const difficulty = slotDifficulty(slot, index, slots.length);
       // A Firestore call once hung for 328 s on production (2026-11-05); every
       // search is bounded by the step's budget and its own cap.
-      const search = async (filters) => {
-        const out = await withDeadline(searchQuestions({ db, embed: embedText, brief, filters, limit: CANDIDATES * 2 }), Math.min(deadline, now() + SEARCH_TIMEOUT_MS));
-        if (out?.timedOut) throw new Error("search timed out");
-        return out;
-      };
       try {
-        let candidates = await search({ ...base, difficulty: difficultyAt(index, slots.length) });
-        if (candidates.length < CANDIDATES) {
-          const more = await search(base);
-          candidates = [...candidates, ...more.filter((q) => !candidates.some((c) => c.id === q.id))];
-        }
-        candidates = candidates.filter((q) => (q.figures || []).length === 1 && q.figures[0].storagePath).slice(0, CANDIDATES).map(savedCandidate);
-        entry = { candidates };
+        const found = await withDeadline(searchQuestions({ db, embed: embedText, brief, filters, limit: SEARCH_POOL }), Math.min(deadline, now() + SEARCH_TIMEOUT_MS));
+        if (found?.timedOut) throw new Error("search timed out");
+        const withOneDiagram = found.filter((q) => (q.figures || []).length === 1 && q.figures[0].storagePath);
+        const candidates = rankByLevel(withOneDiagram, job.year, difficulty)
+          .slice(0, CANDIDATES)
+          .map((q) => savedCandidate(q, job.year));
+        entry = { candidates, difficulty };
         searched[slotKey] = entry;
         searchedNew = true;
         candidates.forEach((q) => used.add(q.id));
@@ -423,7 +481,7 @@ async function applyQuestionBank({
         continue;
       }
     }
-    if (entry.candidates.length) plans.push({ slot, candidates: entry.candidates, askNew: (plans.length + 1) % NEW_ASK_EVERY === 0 });
+    if (entry.candidates.length) plans.push({ slot, candidates: entry.candidates, difficulty: entry.difficulty ?? slotDifficulty(slot, index, slots.length) });
     else result.skipped.push({ ...slotWhere(slot), reason: "no_candidates" });
   }
   if (searchedNew) await store.save({ searched });
@@ -457,7 +515,7 @@ async function applyQuestionBank({
       const where = slotWhere(plan.slot);
       const label = `Question ${where.questionNumber}${where.partLabel ? where.partLabel : ""}`;
       const chosenOut = await call(
-        [...crops.map(imageBlock), { type: "text", text: choosePrompt({ job, topic, slot: plan.slot, candidates: plan.candidates, askNew: plan.askNew }) }],
+        [...crops.map(imageBlock), { type: "text", text: choosePrompt({ job, topic, slot: plan.slot, candidates: plan.candidates, difficulty: plan.difficulty }) }],
         CHOOSE_SCHEMA,
         CHOOSE_EFFORT,
         `Finding a textbook diagram for ${label}`
@@ -471,7 +529,8 @@ async function applyQuestionBank({
       const options = Array.isArray(chosenOut.options) ? chosenOut.options.map(tidy).filter(Boolean) : [];
       const png = crops[pick - 1];
       const check = await call([imageBlock(png), { type: "text", text: checkPrompt({ stem, options, answer }) }], CHECK_SCHEMA, CHECK_EFFORT, `Checking the textbook question for ${label}`);
-      if (check?.agrees) return { candidate: plan.candidates[pick - 1], png, stem, options, answer, workingOut: tidy(chosenOut.workingOut) };
+      const approach = chosenOut.approach === "adapted" ? "adapted" : "original";
+      if (check?.agrees) return { candidate: plan.candidates[pick - 1], png, stem, options, answer, approach, workingOut: tidy(chosenOut.workingOut) };
       // The two solves disagree, most often over arithmetic in the first. A
       // good diagram is worth a third, independent solve; its answer is used
       // only if a fresh check agrees with it (two of three in agreement).
@@ -480,7 +539,7 @@ async function applyQuestionBank({
       if (!fixedAnswer) return { skip: "check_disagreed", reason: check?.note };
       const recheck = await call([imageBlock(png), { type: "text", text: checkPrompt({ stem, options, answer: fixedAnswer }) }], CHECK_SCHEMA, CHECK_EFFORT, `Re-checking the textbook question for ${label}`);
       if (!recheck?.agrees) return { skip: "check_disagreed", reason: recheck?.note || check?.note };
-      return { candidate: plan.candidates[pick - 1], png, stem, options, answer: fixedAnswer, workingOut: tidy(resolved.workingOut) };
+      return { candidate: plan.candidates[pick - 1], png, stem, options, answer: fixedAnswer, approach, workingOut: tidy(resolved.workingOut) };
     };
     try {
       if (now() >= deadline) return { skip: "out_of_time" };
@@ -502,7 +561,12 @@ async function applyQuestionBank({
       return;
     }
     result.answerRows.push(...applySwap(plan.slot, out));
-    result.used.push({ ...slotWhere(plan.slot), questionId: out.candidate.id, kind: plan.askNew ? "new" : "original" });
+    // "new" keeps the value the portal already shows as a new question on a
+    // textbook diagram.
+    const usedEntry = { ...slotWhere(plan.slot), questionId: out.candidate.id, kind: out.approach === "adapted" ? "new" : "original" };
+    if (plan.difficulty) usedEntry.difficulty = plan.difficulty;
+    if (out.candidate.year) usedEntry.questionYear = out.candidate.year;
+    result.used.push(usedEntry);
   });
 
   logger.info?.("[resource] question bank applied", { jobId: job.jobId, mode, slots: result.slots, used: result.used.length, skipped: result.skipped.map((s) => s.reason) });
@@ -516,5 +580,8 @@ module.exports = {
   applyQuestionBank,
   bankSlots,
   difficultyAt,
+  levelGap,
   questionBankModeFor,
+  rankByLevel,
+  slotDifficulty,
 };

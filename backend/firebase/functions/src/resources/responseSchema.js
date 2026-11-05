@@ -80,12 +80,16 @@ const NO_DIAGRAM = Object.freeze({ type: "null" });
 // one; the object itself is filled in by a later call (see diagramSchema.js).
 const DIAGRAM_TYPE_FIELD = enumOf([...Object.keys(DIAGRAM_REGISTRY), "none"]);
 
+// RES-76. Maths questions say how hard they are, following the tutor's brief,
+// so the question bank can match a textbook question of the same difficulty.
+const DIFFICULTY_FIELD = enumOf(["easy", "medium", "hard"]);
+
 // Mirrors questionSchemaText() in promptBuilder.js. `diagram` is pinned to null
 // in both subjects: English questions never have one, and maths fills it in
 // after generation rather than during it.
 function diagramProperties(subject) {
   return subject === "maths"
-    ? { diagram: NO_DIAGRAM, diagramType: DIAGRAM_TYPE_FIELD, diagramRequired: bool }
+    ? { diagram: NO_DIAGRAM, diagramType: DIAGRAM_TYPE_FIELD, diagramRequired: bool, difficulty: DIFFICULTY_FIELD }
     : { diagram: NO_DIAGRAM, diagramRequired: bool };
 }
 

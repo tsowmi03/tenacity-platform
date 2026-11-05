@@ -3,7 +3,7 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { applyQuestionBank, bankSlots, difficultyAt, questionBankModeFor } = require("../../src/resources/questionBankFill");
+const { applyQuestionBank, bankSlots, difficultyAt, levelGap, questionBankModeFor, rankByLevel, slotDifficulty } = require("../../src/resources/questionBankFill");
 const { cloneWithSourceImages, loadSourceImages, pngSize, withoutSourceImageBytes } = require("../../src/resources/sourceImages");
 
 // A 3x2 PNG header is all pngSize reads.
@@ -250,7 +250,7 @@ describe("question bank fill: swapping questions", () => {
     };
     const env = setup({ choose: fits, check: agrees });
     const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
-    assert.equal(env.searches.length, 4, "each slot runs its own search and fallback; neither reuses the other's");
+    assert.equal(env.searches.length, 2, "each slot runs its own search; neither reuses the other's");
     const ids = result.used.map((u) => u.questionId);
     assert.equal(new Set(ids).size, 2, "never the same textbook question twice");
   });
@@ -335,3 +335,53 @@ describe("question bank fill: time limits", () => {
     assert.equal(JSON.stringify(parsed), JSON.stringify(worksheet(3)), "every generated question stays");
   });
 });
+
+// RES-76.
+describe("question bank fill: year and difficulty", () => {
+  it("takes the generator's difficulty, then the parent's, and position only as a fallback", () => {
+    assert.equal(slotDifficulty({ owner: { difficulty: "hard" } }, 0, 9), "hard");
+    assert.equal(slotDifficulty({ owner: {}, parent: { difficulty: "easy" } }, 8, 9), "easy");
+    assert.equal(slotDifficulty({ owner: { difficulty: "brutal" } }, 8, 9), "hard", "an unknown label falls back to position");
+  });
+
+  it("puts year and difficulty on one scale, the student's year either side", () => {
+    assert.equal(levelGap({ years: [9], difficulty: "easy" }, 8, "hard"), 0, "Year 9 easy sits level with Year 8 hard");
+    assert.equal(levelGap({ years: [8], difficulty: "hard" }, 8, "hard"), 0);
+    assert.equal(levelGap({ years: [7], difficulty: "medium" }, 8, "hard"), 1.5);
+    assert.equal(levelGap({ years: [10], difficulty: "easy" }, 8, "easy"), Infinity, "two years out is never offered");
+    assert.equal(levelGap({ years: [9, 10] }, 9, "medium"), 0, "a multi-year question counts at the student's year, untagged as medium");
+  });
+
+  it("ranks by level in half-step bands, by wording within a band, and drops anything a step away", () => {
+    const ranked = rankByLevel([
+      { id: "near-wording-wrong-level", years: [8], difficulty: "easy" },
+      { id: "level", years: [9], difficulty: "easy" },
+      { id: "half-step", years: [8], difficulty: "medium" },
+      { id: "too-far", years: [7], difficulty: "easy" },
+      { id: "level-later", years: [8], difficulty: "hard" },
+    ], 8, "hard");
+    assert.deepEqual(ranked.map((q) => q.id), ["level", "level-later", "half-step", "near-wording-wrong-level"]);
+  });
+
+  it("searches the years either side and tells the model the brief, the difficulty and each candidate's year", async () => {
+    const env = setup({ choose: fits, check: agrees });
+    const parsed = worksheet(1);
+    parsed.questions[0].difficulty = "hard";
+    await applyQuestionBank({ job: { ...job, customPrompt: "A tough revision paper for a selective school test" }, parsed, ...env, embed, logger: {} });
+    const prompt = env.calls[0].userMessage.at(-1).text;
+    assert.match(prompt, /The tutor asked for: "A tough revision paper/);
+    assert.match(prompt, /should be hard for a Year 9 student/);
+    assert.match(prompt, /Printed for: Year 9/);
+    assert.match(prompt, /taught by Year 9/);
+    assert.match(prompt, /approach to "original"/);
+  });
+
+  it("records the model's choice of restating or adapting, not a fixed schedule", async () => {
+    const env = setup({ choose: () => ({ ...fits(), approach: "adapted" }), check: agrees });
+    const result = await applyQuestionBank({ job, parsed: worksheet(3), ...env, embed, logger: {} });
+    assert.ok(result.used.length > 0);
+    assert.ok(result.used.every((u) => u.kind === "new"));
+    assert.ok(result.used.every((u) => u.questionYear === 9 && typeof u.difficulty === "string"));
+  });
+});
+
