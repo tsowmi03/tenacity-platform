@@ -4,7 +4,9 @@ Resource workers save completed AI responses in private Storage objects under
 `resources/checkpoints/<jobId>/`. The response key includes the model, schema,
 and full prompt. Replay reads the saved response and never resubmits that call.
 Only one new AI call runs in an invocation; the next uncached call yields to
-`pending`, which the existing update worker resumes. Concurrent stages (diagram
+`pending`, which the existing update worker resumes. The exception is the question bank
+step (RES-71): its best-effort calls (`bestEffort` and `concurrent`) run four
+at a time, each saved as it finishes, while the invocation budget allows. Concurrent stages (diagram
 fills) take that slot before any await, and the others wait for the started
 call to be saved before yielding. Output finalization remains
 fenced by the active attempt ID.

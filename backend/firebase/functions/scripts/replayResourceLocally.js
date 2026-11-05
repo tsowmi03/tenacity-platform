@@ -1,8 +1,9 @@
 "use strict";
 
 // Real-provider replay with an in-memory queue and a local filesystem journal.
-// Production access is limited to optional read-only Secret Manager lookups;
-// inputs/references must already be local. No Firebase database or Storage SDK.
+// Production access is limited to optional read-only Secret Manager lookups
+// and, with --question-bank, read-only question bank searches and diagram
+// downloads. Inputs/references must already be local; every write stays local.
 process.env.POSTHOG_PROJECT_TOKEN = "";
 const fs = require("node:fs");
 const path = require("node:path");
@@ -14,9 +15,10 @@ const { createMemoryDb, createSmokeJob, loadLocalSecrets, loadFirebaseSecrets } 
 const { modelForChoice } = require("../src/resources/modelRegistry");
 
 function parseArgs(argv) {
-  const options = { maxCalls: 60, firebaseSecrets: false };
+  const options = { maxCalls: 60, firebaseSecrets: false, questionBank: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--firebase-secrets") options.firebaseSecrets = true;
+    else if (argv[i] === "--question-bank") options.questionBank = true;
     else if (["--input", "--reference", "--output", "--max-calls"].includes(argv[i])) {
       const key = { "--input": "input", "--reference": "reference", "--output": "output", "--max-calls": "maxCalls" }[argv[i]];
       options[key] = argv[++i];
@@ -28,7 +30,9 @@ function parseArgs(argv) {
   return options;
 }
 
-function localStorage(root) {
+// With --question-bank, textbook diagram crops are read from production
+// Storage (read-only); everything the run writes stays local.
+function localStorage(root, remoteBucket = null) {
   const objects = path.resolve(root, "objects");
   const resolve = (name) => {
     const target = path.resolve(objects, name);
@@ -37,7 +41,9 @@ function localStorage(root) {
   };
   return { bucket: () => ({
     file: (name) => ({
-      download: async () => { try { return [await fs.promises.readFile(resolve(name))]; }
+      download: async () => {
+        if (remoteBucket && name.startsWith("questionBank/")) return remoteBucket.file(name).download();
+        try { return [await fs.promises.readFile(resolve(name))]; }
         catch (err) { if (err.code === "ENOENT") err.code = 404; throw err; } },
       save: async (bytes) => { const target = resolve(name); await fs.promises.mkdir(path.dirname(target), { recursive: true, mode: 0o700 }); await fs.promises.writeFile(target, bytes, { mode: 0o600 }); },
       delete: async () => fs.promises.rm(resolve(name), { force: true }),
@@ -58,7 +64,8 @@ async function runReplay(options) {
     Object.assign(keys, loadFirebaseSecrets({ secretNames: missing }));
   }
   if (!keys.OPENAI_API_KEY || !keys.ANTHROPIC_API_KEY) throw new Error("Provider credentials are missing; use local keys or --firebase-secrets");
-  const storage = localStorage(output);
+  if (options.questionBank && !admin.apps.length) admin.initializeApp({ projectId: "tenacity-tutoring-b8eb2", storageBucket: "tenacity-tutoring-b8eb2.firebasestorage.app" });
+  const storage = localStorage(output, options.questionBank ? admin.storage().bucket() : null);
   const uploadedFiles = input.uploadedFiles || [];
   if (uploadedFiles.length > 1) throw new Error("This replay runner accepts one original reference; supply a single-file input manifest");
   if (uploadedFiles.length && !options.reference) throw new Error("The original reference is required");
@@ -67,7 +74,7 @@ async function runReplay(options) {
   const stamp = admin.firestore.Timestamp.now();
   const jobId = `local-res51-${randomUUID().slice(0, 8)}`;
   const job = { ...createSmokeJob(model), ...Object.fromEntries(Object.entries(input).filter(([key]) => ["customPrompt", "uploadedFiles", "uploadedFilePath", "uploadedFileName", "subject", "year", "answerMode", "showMarks", "resourceType", "modelChoice"].includes(key))),
-    id: jobId, jobId, runId: randomUUID(), generationVersion: 1, createdAt: stamp, runStartedAt: stamp,
+    id: jobId, jobId, runId: randomUUID(), generationVersion: 1, questionBank: input.questionBank || "none", createdAt: stamp, runStartedAt: stamp,
     activeModel: model, requestedModel: model, model, studentName: "Local replay", createdByName: "Local replay", createdBy: "local-replay" };
   const db = createMemoryDb([job]);
   const eventsPath = path.join(output, "events.jsonl");
@@ -82,7 +89,7 @@ async function runReplay(options) {
     fs.appendFileSync(eventsPath, JSON.stringify(event) + "\n", { mode: 0o600 });
     if (["provider.started", "provider.completed", "provider.failed", "recovery.decided", "content.verified", "job.completed", "job.failed"].includes(event.event)) console.log(JSON.stringify(event));
   };
-  const deps = { db, storage, durableStages: true, enableFailover: true, enablePdTextSourcing: false,
+  const deps = { db, storage, durableStages: true, questionBankDb: options.questionBank ? admin.firestore() : null, enableFailover: true, enablePdTextSourcing: false,
     anthropicApiKey: keys.ANTHROPIC_API_KEY, openaiApiKey: keys.OPENAI_API_KEY, resourceLogSink: sink,
     callAi: async (request) => {
       if (calls >= options.maxCalls || Date.now() - started > 45 * 60_000) throw Object.assign(new Error("Local replay budget reached"), { code: "RESOURCE_LOCAL_BUDGET", resourceControl: true });
@@ -104,6 +111,7 @@ async function runReplay(options) {
     fs.writeFileSync(path.join(output, "resource.docx"), bytes, { mode: 0o600 });
   }
   const summary = { status: final.status, errorCode: final.errorCode || null, error: final.error || null,
+    questionBankUsage: final.questionBankUsage || null,
     jobId, providerCalls: calls, elapsedMs: Date.now() - started, progress: final.progress,
     contentVerification: events.filter((e) => e.event === "content.verified"),
     terminal: events.filter((e) => ["job.completed", "job.failed", "job.cancelled"].includes(e.event)),
