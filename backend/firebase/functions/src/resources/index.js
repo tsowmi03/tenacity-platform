@@ -12,8 +12,8 @@ const admin = require("firebase-admin");
 const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSHEET_BATCH_SIZE, MAX_RECOVERIES } = require("./durableStages");
 const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
 const { canKeepDraftAfterReview, unavailableReviewWarning } = require("./contentVerification");
-const { generatePlannedResource, usesPlannedGeneration, questionRows } = require("./plannedGeneration");
-const { noteProgress, phaseDurations, recordTimingSample } = require("./progressModel");
+const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
+const { countResourceQuestions, noteProgress, phaseDurations, recordTimingSample } = require("./progressModel");
 const { callAiForResource } = require("./aiClient");
 const {
   ANSWER_MODES,
@@ -1502,7 +1502,7 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
   let mathRepairUsed = false;
   // RES-73. Unplanned resources learn their question count only here; history
   // needs it either way. Then the display moves on to the last step.
-  if (!job.progressTracker?.questionCount) noteProgress(job, { questionCount: (questionRows(parsed, job.resourceType) || []).length });
+  if (!job.progressTracker?.questionCount) noteProgress(job, { questionCount: countResourceQuestions(parsed) });
   await job.progressTracker?.markPhase?.("finish", "Building the PDF");
   try {
     // A revision or repair reads generatedJson back without the bank diagrams'
@@ -2636,7 +2636,8 @@ async function runGenerationPipelineLogged(job, deps) {
     ? await generateSplitResource({
         job,
         schemas: splitSchemas,
-        callAi: trackedCallAi,
+        // These calls carry no stage id or label; they are the writing step.
+        callAi: (request) => trackedCallAi({ progressPhase: "write", ...request }),
         apiKey: null,
         model: generationModel,
         maxTokens,
@@ -2647,6 +2648,7 @@ async function runGenerationPipelineLogged(job, deps) {
         signal: deps.signal,
       })
     : await trackedCallAi({
+        progressPhase: "write",
         model: generationModel,
         maxTokens,
         effort: RESOURCE_GENERATION_EFFORT,

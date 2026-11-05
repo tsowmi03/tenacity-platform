@@ -23,7 +23,7 @@
 
 const { execFileSync } = require("node:child_process");
 const admin = require("firebase-admin");
-const { addSample, kindKey, phaseForStage, PHASE_KEYS, STATS_COLLECTION } = require("../src/resources/progressModel");
+const { addSample, countResourceQuestions, kindKey, phaseForStage, PHASE_KEYS, STATS_COLLECTION } = require("../src/resources/progressModel");
 
 const args = Object.fromEntries(process.argv.slice(2).map((a) => {
   const [k, v] = a.replace(/^--/, "").split("=");
@@ -70,12 +70,8 @@ function buildStats({ completed, plans, stages, jobs }) {
   return { stats, skipped };
 }
 
-function questionCountFromJson(raw, type) {
-  try {
-    const parsed = JSON.parse(raw);
-    const rows = type === "practice-paper" ? (parsed.sections || []).flatMap((s) => s.questions || []) : parsed.questions;
-    return Array.isArray(rows) ? rows.length : 0;
-  } catch { return 0; }
+function questionCountFromJson(raw) {
+  try { return countResourceQuestions(JSON.parse(raw)); } catch { return 0; }
 }
 
 async function main() {
@@ -94,7 +90,7 @@ async function main() {
       if (!snap.exists) continue;
       const d = snap.data();
       jobs.set(snap.id, { resourceType: d.resourceType, subject: d.subject, answerMode: d.answerMode, derivation: d.derivation,
-        revisionInstruction: d.revisionInstruction, questionCount: questionCountFromJson(d.generatedJson, d.resourceType) });
+        revisionInstruction: d.revisionInstruction, questionCount: questionCountFromJson(d.generatedJson) });
     }
   }
   const { stats, skipped } = buildStats({ completed, plans, stages, jobs });

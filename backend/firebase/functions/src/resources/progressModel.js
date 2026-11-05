@@ -45,7 +45,10 @@ function phaseForStage({ progressPhase, stageId = "", stageLabel = "" } = {}) {
   if (/^plan\./.test(stageId)) return "plan";
   if (/^(questions|solutions)\./.test(stageId)) return "write";
   if (/^diagrams\./.test(stageId)) return "diagrams";
-  if (/^(answers|content|math)\./.test(stageId)) return "check";
+  // content.review.v1 runs inside planned writing, before the bank and diagram
+  // stages, so it belongs to writing; the checks after diagrams are "check".
+  if (/^content\./.test(stageId)) return "write";
+  if (/^(answers|math)\./.test(stageId)) return "check";
   if (/^(document|preview)/.test(stageId)) return "finish";
   if (/^Writing/i.test(stageLabel)) return "write";
   if (/^(Checking|Fixing)/i.test(stageLabel)) return "check";
@@ -181,6 +184,17 @@ function addSample(stats, sample) {
   return s;
 }
 
+// Every resource shape keeps its questions in arrays named `questions`
+// (worksheets, paper sections, booklet end quizzes, question sets) or
+// `practiceQuestions` (booklet sub-topics). Parts inside a question are not
+// counted: they live under `parts`.
+function countResourceQuestions(node) {
+  if (Array.isArray(node)) return node.reduce((n, item) => n + countResourceQuestions(item), 0);
+  if (!node || typeof node !== "object") return 0;
+  return Object.entries(node).reduce((n, [key, value]) =>
+    n + ((key === "questions" || key === "practiceQuestions") && Array.isArray(value) ? value.length : countResourceQuestions(value)), 0);
+}
+
 // Pipeline code reports what only it knows: how many questions the resource
 // has and how many are written. A no-op outside durable generation.
 function noteProgress(job, { questionCount, questionsWritten } = {}) {
@@ -214,5 +228,5 @@ async function recordTimingSample(db, job, sample) {
 module.exports = {
   PHASES, PHASE_KEYS, STATS_COLLECTION, DEFAULT_FIT,
   phaseForStage, phaseIndex, kindKey, fitFromStats, estimateProgress,
-  phaseDurations, addSample, noteProgress, loadTimingStats, recordTimingSample,
+  phaseDurations, addSample, noteProgress, countResourceQuestions, loadTimingStats, recordTimingSample,
 };

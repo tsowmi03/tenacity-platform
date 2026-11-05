@@ -53,6 +53,18 @@ it("names the step each stage belongs to", () => {
   assert.equal(phaseForStage({ stageLabel: "Checking 12 answers" }), "check");
   assert.equal(phaseForStage({ progressPhase: "diagrams", stageLabel: "Checking" }), "diagrams");
   assert.equal(phaseForStage({}), null);
+  // The plan's coverage review runs inside writing, before diagrams.
+  assert.equal(phaseForStage({ stageId: "content.review.v1", stageLabel: "Checking topic coverage" }), "write");
+  assert.equal(phaseForStage({ stageId: "answers.verify" }), "check");
+});
+
+it("counts questions in every resource shape, not their parts", () => {
+  const { countResourceQuestions } = require("../../src/resources/progressModel");
+  const q = (n) => Array.from({ length: n }, () => ({ stem: "s", parts: [{ label: "a" }, { label: "b" }] }));
+  assert.equal(countResourceQuestions({ questions: q(12) }), 12);
+  assert.equal(countResourceQuestions({ sections: [{ questions: q(5) }, { questions: q(7) }] }), 12);
+  assert.equal(countResourceQuestions({ subTopics: [{ practiceQuestions: q(4) }, { practiceQuestions: q(3) }], endQuiz: { sections: [{ questions: q(6) }] } }), 13);
+  assert.equal(countResourceQuestions({ blocks: [{ type: "questionSet", questions: q(2) }, { type: "text" }] }), 2);
 });
 
 it("splits a run's time across the steps it went through", () => {
