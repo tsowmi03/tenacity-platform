@@ -176,3 +176,30 @@ it("retries a best-effort stage once after a runaway response hit its token limi
   await assert.rejects(h.make({ optionalStageFailures: h.current.optionalStageFailures })(request), { code: "RESOURCE_OPTIONAL_SKIPPED" });
   assert.equal(calls, 2);
 });
+
+// RES-71. Trying the bank for every diagram question would add one worker
+// hand-off per call if calls ran one per invocation; independent best-effort
+// calls run side by side instead, each still saved on its own.
+it("runs concurrent best-effort calls side by side and saves each", async () => {
+  let running = 0;
+  let peak = 0;
+  const h = harness(async (request) => {
+    running += 1; peak = Math.max(peak, running);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    running -= 1;
+    return { parsed: { echo: request.userMessage } };
+  });
+  const caller = h.make();
+  const results = await Promise.all([1, 2, 3, 4].map((n) => caller({ userMessage: `bank ${n}`, model: "m", bestEffort: true, concurrent: true })));
+  assert.equal(peak, 4);
+  assert.deepEqual(results.map((r) => r.parsed.echo), ["bank 1", "bank 2", "bank 3", "bank 4"]);
+  assert.equal(h.values.size, 4);
+});
+
+it("still runs ordinary calls one per invocation", async () => {
+  const h = harness(async (request) => ({ parsed: { echo: request.userMessage } }));
+  const caller = h.make();
+  const outcomes = await Promise.allSettled([1, 2].map((n) => caller({ userMessage: `stage ${n}`, model: "m" })));
+  assert.deepEqual(outcomes.map((o) => o.status), ["fulfilled", "rejected"]);
+  assert.equal(outcomes[1].reason.code, "RESOURCE_STAGE_YIELD");
+});

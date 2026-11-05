@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-05 | [Every maths diagram comes from the question bank first (RES-71)](#2026-11-05--every-maths-diagram-comes-from-the-question-bank-first-res-71) |
 | 2026-11-05 | [Resource generation: topic quotes and labels no longer fail a paper (RES-72)](#2026-11-05--resource-generation-topic-quotes-and-labels-no-longer-fail-a-paper-res-72) |
 | 2026-11-05 | [English bank: stimulus taxonomy, page schema and records (RES-64)](#2026-11-05--english-bank-stimulus-taxonomy-page-schema-and-records-res-64) |
 | 2026-11-05 | [English bank: which Drive files to extract, with guides paired to papers (RES-65)](#2026-11-05--english-bank-which-drive-files-to-extract-with-guides-paired-to-papers-res-65) |
@@ -215,6 +216,51 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-05 — Every maths diagram comes from the question bank first (RES-71)
+
+**What changed**
+- The "Textbook questions" setting (None / Some / Mostly) is gone from the
+  resource portal. Every maths resource now tries the question bank for every
+  question or part that needs a diagram. A diagram is drawn only when the bank
+  has no matching textbook diagram, or when its answer can't be confirmed.
+- The bank step now runs before any diagram is drawn, so no diagram is drawn
+  and then thrown away. A question the bank fills is rewritten to fit the
+  textbook diagram's own numbers.
+- The 8-question cap is gone. Questions with parts (replaced by one question
+  worth the same marks), multiple choice (with four textbook options),
+  practice paper sections and topic booklets are all covered.
+- Searches are saved, so the workers that carry a job on reuse them. The bank's
+  AI calls run four at a time, each saved as it finishes.
+- When the first two solves of a bank question disagree, a third, independent
+  solve is tried, and its answer is used only if a fresh check agrees with it.
+  Bank answers no longer go through the general answer checker, which can't
+  see the textbook diagram.
+- Each resource's details list its textbook questions and every drawn diagram
+  with the reason ("no textbook diagram tested the same skill").
+- Two Sonnet findings: a prompt that showed the model another solver's answer
+  and note, or ran at high effort, was refused ("reasoning_extraction") every
+  time; the plain, medium-effort wording went through every time.
+
+**Why:** Tutors want textbook diagrams, which are consistent and drawn by
+publishers. Drawing should be a last resort.
+
+**Results** (same requests, local replay with production models and bank):
+
+| Request | Before (Some) | After |
+|---|---|---|
+| Year 9 worksheet, 10 diagram questions | 1 of 4 tried from bank, 3.8 min | 5 of 10 from bank, 3.2 min |
+| Year 10 practice paper | none (papers not covered), 5.3 min | 8 of 11 from bank, 6.3 min |
+| Year 9 topic booklet | none (booklets not covered), 4.9 min | 15 of 23 from bank, 5.6 min |
+
+**Status:** Live. Merged; resource portal deployed on merge, Functions deployed.
+
+**Next steps**
+- Most diagrams still drawn have no textbook diagram testing the same skill
+  (for example inverse-trig angle questions); the bank's coverage outside
+  Years 9-10 has not been measured.
 
 ---
 

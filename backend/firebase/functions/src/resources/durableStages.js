@@ -64,7 +64,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
         stageFallbackCount: (current.stageFallbackCount || 0) + (recovery.fallback ? 1 : 0) } : {}) });
   });
   return async (request) => {
-    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, bestEffort, validateStageResult, ...publicRequest } = request;
+    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, bestEffort, concurrent, validateStageResult, ...publicRequest } = request;
     for (const key of Object.keys(publicRequest)) {
       if (key.startsWith("posthog") || key === "safetyIdentifier") delete publicRequest[key];
     }
@@ -95,7 +95,10 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     // A failed call saved nothing, so yielding after it would replay the same
     // failure every invocation (a best-effort caller swallows it): the slot
     // passes to the next stage instead.
-    while (inFlight) {
+    // RES-71. Independent best-effort calls (the question bank's) may run side
+    // by side: each is saved as it finishes, and the invocation budget below
+    // still stops a new one starting too late.
+    while (inFlight && !(concurrent && bestEffort)) {
       const current = inFlight;
       const saved = await current.then(() => true, () => false);
       if (saved) throw controlError("RESOURCE_STAGE_YIELD", "Continuing from saved progress");
@@ -109,8 +112,9 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     if (recovery.split) throw controlError("RESOURCE_STAGE_SPLIT", "Continuing in smaller batches.");
     if (recovery.exhausted) throw controlError("RESOURCE_RECOVERY_EXHAUSTED", "This stage could not finish after bounded retries. Completed stages are retained; reduce the request before retrying.");
     if (INVOCATION_BUDGET_MS - (Date.now() - invocationStarted) < MIN_CALL_BUDGET_MS) throw controlError("RESOURCE_STAGE_YIELD", "Continuing in a fresh worker.");
-    inFlight = resourceStage(job, stageId || key, () => runFreshStage({ request, signal, stageLabel, file, key, recovery }), { model: recovery.fallback ? fallbackModel : request.model, batchIndex: /^(questions|solutions)\./.test(stageId || "") ? Number(stageId.split(".")[1]) : undefined });
-    return inFlight;
+    const running = resourceStage(job, stageId || key, () => runFreshStage({ request, signal, stageLabel, file, key, recovery }), { model: recovery.fallback ? fallbackModel : request.model, batchIndex: /^(questions|solutions)\./.test(stageId || "") ? Number(stageId.split(".")[1]) : undefined });
+    if (!(concurrent && bestEffort)) inFlight = running;
+    return running;
   };
 
   async function runFreshStage({ request, signal, stageLabel, file, key, recovery }) {
@@ -132,7 +136,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
           controller.abort();
         }, budget);
       });
-      const { stageLabel: _label, stageId: _stageId, splitAllowed: _split, optionalReview: _optional, validateStageResult: validate, ...providerRequest } = request;
+      const { stageLabel: _label, stageId: _stageId, splitAllowed: _split, optionalReview: _optional, bestEffort: _bestEffort, concurrent: _concurrent, validateStageResult: validate, ...providerRequest } = request;
       if (recovery.fallback && fallbackModel) providerRequest.model = fallbackModel;
       if (recovery.lastReason) providerRequest.userMessage += `\n\nThe prior response failed validation (${recovery.lastReason}). Correct that issue while preserving the original scope and requested limits.`;
       resourceEvent(job, "provider.started", { model: providerRequest.model, provider: providerForModel(providerRequest.model), timeoutMs: budget, remainingMs: INVOCATION_BUDGET_MS - (Date.now() - invocationStarted), retryCount: recovery.failures || 0 });

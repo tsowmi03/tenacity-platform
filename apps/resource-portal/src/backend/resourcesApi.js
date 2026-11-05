@@ -230,7 +230,6 @@ export function buildResubmitPayload(job = {}) {
   };
   if (job.answerMode) payload.answerMode = job.answerMode;
   if (typeof job.showMarks === "boolean") payload.showMarks = job.showMarks;
-  if (job.questionBank) payload.questionBank = job.questionBank;
   if (uploadedFiles.length) payload.uploadedFiles = uploadedFiles;
   return payload;
 }

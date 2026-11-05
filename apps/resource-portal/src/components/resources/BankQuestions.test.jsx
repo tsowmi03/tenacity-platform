@@ -86,3 +86,19 @@ describe("textbook questions in a resource (RES-61)", () => {
     }));
   });
 });
+
+// RES-71: every diagram that was drawn rather than taken from a textbook is
+// listed with the reason.
+describe("drawn diagrams", () => {
+  it("lists each drawn diagram with a plain reason, even when no textbook question was used", () => {
+    render(<BankQuestionsSection job={{ jobId: "j2", questionBankUsage: { used: [], skipped: [
+      { questionNumber: 2, reason: "none_suitable" },
+      { questionNumber: 4, partLabel: "b", reason: "search_failed: timeout" },
+      { questionNumber: 1, section: "End quiz", reason: "check_disagreed" },
+    ] } }} />);
+    expect(screen.getByText("3 diagrams were drawn because:")).toBeInTheDocument();
+    expect(screen.getByText("Question 2: no textbook diagram tested the same skill")).toBeInTheDocument();
+    expect(screen.getByText("Question 4 part b: the textbook step could not finish")).toBeInTheDocument();
+    expect(screen.getByText("End quiz, Question 1: the textbook question's answer could not be confirmed")).toBeInTheDocument();
+  });
+});

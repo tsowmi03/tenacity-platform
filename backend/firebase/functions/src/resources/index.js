@@ -38,7 +38,7 @@ const {
   throwIfCancelled,
 } = require("./cancellation");
 const { diagramOwnerLabel, repairDiagrams } = require("./diagramRepair");
-const { QUESTION_BANK_MODES, applyQuestionBank } = require("./questionBankFill");
+const { QUESTION_BANK_MODES, applyQuestionBank, questionBankModeFor } = require("./questionBankFill");
 const { cloneWithSourceImages, loadSourceImages, withoutSourceImageBytes } = require("./sourceImages");
 const {
   buildDiagramFillPrompt,
@@ -284,8 +284,8 @@ function validateSubmitResourceJobPayload(input) {
       if (value === undefined || value === null) return null;
       return assertBoolean(value, "showMarks");
     },
-    // RES-60. How much of a maths resource comes from the question bank.
-    // Older clients send nothing and get none.
+    // RES-60. Older portals still send a mode. Every maths resource is now
+    // bank-first (RES-71), so the value is checked and then ignored.
     questionBank: (value) => {
       if (value === undefined || value === null || value === "") return "none";
       return assertEnum(value, "questionBank", QUESTION_BANK_MODES);
@@ -553,7 +553,7 @@ function buildResourceJobDoc({
     answerMode: payload.answerMode,
     showMarks: payload.showMarks,
     includeWorking: payload.answerMode === "worked",
-    questionBank: payload.subject === "maths" ? payload.questionBank || "none" : "none",
+    questionBank: questionBankModeFor({ subject: payload.subject }),
     questionBankUsage: null,
     customPrompt: payload.customPrompt,
     uploadedFiles: payload.uploadedFiles,
@@ -2661,10 +2661,40 @@ async function runGenerationPipelineLogged(job, deps) {
       });
   throwIfCancelled(deps);
 
+  // RES-71. Every diagram comes from the question bank first. This runs
+  // before any diagram is drawn: a question the bank fills takes the textbook
+  // diagram and its independently checked answer, and only the rest go on to
+  // be drawn below. Nothing here can fail the resource.
+  let questionBank = { mode: "none", used: [], skipped: [], answerRows: [] };
+  try {
+    questionBank = await (deps.applyQuestionBank || applyQuestionBank)({
+      job,
+      parsed,
+      // The local replay runner keeps the job in memory but searches the real
+      // bank, so it passes the bank's database separately.
+      db: deps.questionBankDb || deps.db,
+      bucket: storage.bucket(),
+      callAi: trackedCallAi,
+      openaiApiKey: deps.openaiApiKey,
+      signal: deps.signal,
+      logger,
+    });
+  } catch (err) {
+    if (isCancellationError(err) || err?.resourceControl) throw err;
+    logger.warn("[resource] question bank skipped", { jobId: job.jobId, error: errorMessage(err).slice(0, 300) });
+  }
+  if (questionBank.used?.length) raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
+  // Keyed by what the row answers rather than by object, so the set survives
+  // the draft fallback below swapping in a copy of the document.
+  const answerRowKey = (row) => JSON.stringify([row?.questionNumber, row?.partLabel || null, row?.subTopicTitle || null, row?.section || null]);
+  const bankAnswerKeys = new Set((questionBank.answerRows || []).map(answerRowKey));
+  const isBankAnswer = (row) => bankAnswerKeys.has(answerRowKey(row));
+  throwIfCancelled(deps);
+
   // Maths questions name the diagram they need; build those now. English
   // resources carry no diagramType, so this is a no-op walk for them.
   let diagramFill;
-  const beforeDiagrams = usePlan ? structuredClone(parsed) : null;
+  const beforeDiagrams = usePlan ? cloneWithSourceImages(parsed) : null;
   try {
     diagramFill = await fillDiagrams({
       job,
@@ -2694,7 +2724,7 @@ async function runGenerationPipelineLogged(job, deps) {
     // The generation response described diagrams by name only. What is stored —
     // and what a repair attempt would re-read — has to be the document that
     // actually has them.
-    raw = JSON.stringify(parsed, null, 2);
+    raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
   }
   throwIfCancelled(deps);
 
@@ -2724,7 +2754,7 @@ async function runGenerationPipelineLogged(job, deps) {
   }
   // A repaired or omitted diagram changes the document, and `raw` is what a
   // retry or a revision re-reads — so it has to be the document that was built.
-  if (diagramRepair.changed) raw = JSON.stringify(parsed, null, 2);
+  if (diagramRepair.changed) raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
   throwIfCancelled(deps);
 
   // The verbatim flags exempt a body from the de-AI punctuation backstop, so
@@ -2759,7 +2789,7 @@ async function runGenerationPipelineLogged(job, deps) {
     // Revisions and repair attempts re-read generatedJson, not the DOCX. Store
     // the hydrated verified text and resolved per-topic excerpts rather than
     // the model's selector-only draft, or a later edit would lose its sources.
-    raw = JSON.stringify(parsed, null, 2);
+    raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
   }
 
   // Verification pass: clean and cross-check maths working out. A topic booklet
@@ -2772,14 +2802,18 @@ async function runGenerationPipelineLogged(job, deps) {
   if (includesWorking(answerMode) && job.subject === "maths") {
     for (const group of answerGroupsFor(parsed)) {
       try {
+        // A bank answer was solved twice against the textbook diagram, which
+        // the checker cannot see, so only the generated answers go to it.
+        const generatedRows = group.rows.filter((row) => !isBankAnswer(row));
         const verified = await verifyMathsAnswers({
           job,
-          parsed: { ...parsed, answers: group.rows },
+          parsed: { ...parsed, answers: generatedRows },
           apiKey: null,
           callAi: trackedCallAi,
           signal: deps.signal,
         });
-        group.replace(parsed, verified.answers);
+        const checked = [...verified.answers];
+        group.replace(parsed, group.rows.map((row) => (isBankAnswer(row) ? row : checked.shift())));
       } catch (err) {
         if (!usePlan || !canKeepDraftAfterReview(err)) throw err;
         reviewStatus = "draft";
@@ -2790,27 +2824,6 @@ async function runGenerationPipelineLogged(job, deps) {
       throwIfCancelled(deps);
     }
   }
-
-  // RES-60. Swap some diagram questions for bank questions with their
-  // original diagrams. Runs after answer verification: each bank question
-  // carries its own checked answer, and the verifier cannot see the crop.
-  let questionBank = { mode: "none", used: [] };
-  try {
-    questionBank = await (deps.applyQuestionBank || applyQuestionBank)({
-      job,
-      parsed,
-      db: deps.db,
-      bucket: storage.bucket(),
-      callAi: trackedCallAi,
-      openaiApiKey: deps.openaiApiKey,
-      signal: deps.signal,
-      logger,
-    });
-  } catch (err) {
-    if (isCancellationError(err) || err?.resourceControl) throw err;
-    logger.warn("[resource] question bank skipped", { jobId: job.jobId, error: errorMessage(err).slice(0, 300) });
-  }
-  throwIfCancelled(deps);
 
   try {
     const saved = await saveGeneratedResource({
@@ -2838,7 +2851,7 @@ async function runGenerationPipelineLogged(job, deps) {
       ],
       ...diagramRepairPatch(diagramRepair),
       ...(questionBank.mode !== "none"
-        ? { questionBankUsage: { mode: questionBank.mode, slots: questionBank.slots || 0, used: questionBank.used, skipped: questionBank.skipped || [] } }
+        ? { questionBankUsage: { mode: questionBank.mode, slots: questionBank.slots || 0, used: questionBank.used || [], skipped: questionBank.skipped || [] } }
         : {}),
       effectiveModel: generationModel,
       effectiveProvider: providerForModel(generationModel),

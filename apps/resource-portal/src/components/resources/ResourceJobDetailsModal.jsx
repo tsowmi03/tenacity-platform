@@ -175,8 +175,8 @@ export default function ResourceJobDetailsModal({ job, open, onClose, onDownload
             <span className="muted">No files attached</span>
           )}
         </DetailRow>
-        {job.questionBankUsage?.used?.length ? (
-          <DetailRow label="Textbook questions">
+        {job.questionBankUsage?.used?.length || job.questionBankUsage?.skipped?.length ? (
+          <DetailRow label="Textbook diagrams">
             <BankQuestionsSection job={job} />
           </DetailRow>
         ) : null}
