@@ -160,6 +160,12 @@ function bankSlots(parsed) {
   return { slots, ineligible };
 }
 
+// A booklet's sub-topic and quiz section can share a title and number; the
+// answer list they belong to keeps their saved searches apart.
+function searchKey(slot) {
+  return JSON.stringify({ ...slotWhere(slot), list: slot.group?.answersKey || null });
+}
+
 function slotWhere(slot) {
   const where = { questionNumber: slot.number };
   if (slot.partLabel) where.partLabel = String(slot.partLabel);
@@ -286,7 +292,7 @@ function savedCandidate(q) {
  */
 function searchStore({ bucket, job, slots, topic }) {
   if (!bucket || !job?.jobId) return { load: async () => ({}), save: async () => {} };
-  const key = createHash("sha256").update(JSON.stringify([job.year, topic, slots.map((slot) => [slotWhere(slot), slotQuestionText(slot)])])).digest("hex").slice(0, 32);
+  const key = createHash("sha256").update(JSON.stringify([job.year, topic, slots.map((slot) => [searchKey(slot), slotQuestionText(slot)])])).digest("hex").slice(0, 32);
   const file = bucket.file(`resources/checkpoints/${job.jobId}/bank-search-${key}.json`);
   return {
     load: async () => {
@@ -320,6 +326,9 @@ function applySwap(slot, out) {
       const index = slot.answers.indexOf(first);
       for (const row of slot.answerRows.slice(1)) slot.answers.splice(slot.answers.indexOf(row), 1);
       const merged = { ...first, partLabel: null, answer: out.answer };
+      // The merged row stands for every part, so it carries the question's
+      // total marks; a mark scheme prints them (practice papers do).
+      if ("marks" in first) merged.marks = owner.marks;
       if (typeof first.workingOut === "string") merged.workingOut = out.workingOut || first.workingOut;
       slot.answers[index] = merged;
       rows.push(merged);
@@ -381,7 +390,7 @@ async function applyQuestionBank({
   let searchedNew = false;
   const plans = [];
   for (const [index, slot] of slots.entries()) {
-    const slotKey = JSON.stringify(slotWhere(slot));
+    const slotKey = searchKey(slot);
     let entry = searched[slotKey];
     if (!entry) {
       if (now() >= deadline) { result.skipped.push({ ...slotWhere(slot), reason: "out_of_time" }); continue; }

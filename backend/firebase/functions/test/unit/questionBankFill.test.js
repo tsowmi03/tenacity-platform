@@ -179,11 +179,11 @@ describe("question bank fill: swapping questions", () => {
     const parsed = worksheet(1);
     parsed.questions[0].marks = 3;
     parsed.questions[0].parts = [{ label: "a", stem: "Find x.", marks: 1 }, { label: "b", stem: "Find y.", marks: 2 }];
-    parsed.answers = [{ questionNumber: 1, partLabel: "a", answer: "1", workingOut: "w" }, { questionNumber: 1, partLabel: "b", answer: "2", workingOut: "w" }];
+    parsed.answers = [{ questionNumber: 1, partLabel: "a", answer: "1", workingOut: "w", marks: 1 }, { questionNumber: 1, partLabel: "b", answer: "2", workingOut: "w", marks: 2 }];
     await applyQuestionBank({ job, parsed, ...setup({ choose: fits, check: agrees }), embed, logger: {} });
     assert.equal(parsed.questions[0].parts, null);
     assert.equal(parsed.questions[0].marks, 3);
-    assert.deepEqual(parsed.answers.map((row) => [row.questionNumber, row.partLabel, row.answer]), [[1, null, "13 cm"]]);
+    assert.deepEqual(parsed.answers.map((row) => [row.questionNumber, row.partLabel, row.answer, row.marks]), [[1, null, "13 cm", 3]], "the one answer carries the question's total marks");
   });
 
   it("gives a multiple-choice question textbook options", async () => {
@@ -235,6 +235,24 @@ describe("question bank fill: swapping questions", () => {
     const env = setup({ choose: fits, check: agrees });
     await applyQuestionBank({ job, parsed: worksheet(1), ...env, embed: async (texts) => { briefs.push(...texts); return texts.map(() => [1]); }, logger: {} });
     assert.match(briefs[0], /^Find the hypotenuse of triangle 1\.\nDiagram: right-triangle\nTopic: Pythagoras/);
+  });
+
+  it("searches separately for a sub-topic and a quiz question that share a title and number", async () => {
+    const question = () => ({ number: 1, stem: "Find the hypotenuse.", type: "short-answer", options: null, marks: 2, diagram: null, diagramType: "right-triangle", parts: null });
+    const parsed = {
+      topic: "Pythagoras",
+      subTopics: [{ title: "Hypotenuse", practiceQuestions: [question()] }],
+      endQuiz: { sections: [{ title: "Hypotenuse", questions: [question()] }] },
+      answers: {
+        subTopicAnswers: [{ subTopicTitle: "Hypotenuse", questionNumber: 1, partLabel: null, answer: "a" }],
+        endQuizAnswers: [{ section: "Hypotenuse", questionNumber: 1, partLabel: null, answer: "b" }],
+      },
+    };
+    const env = setup({ choose: fits, check: agrees });
+    const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    assert.equal(env.searches.length, 4, "each slot runs its own search and fallback; neither reuses the other's");
+    const ids = result.used.map((u) => u.questionId);
+    assert.equal(new Set(ids).size, 2, "never the same textbook question twice");
   });
 
   it("saves its searches, so a later worker does not search again", async () => {
