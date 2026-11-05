@@ -58,6 +58,18 @@ function quoteKey(text) {
   return normaliseWhitespace(text).toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/^["']+|["'.,;:!?]+$/g, "");
 }
 
+// A published paper often prints a blank box where an image was withheld for
+// copyright. The model may still describe it ("Empty bordered box under the
+// heading Item 4"); such a visual has nothing to reuse and is left out.
+const WITHHELD_VISUAL = /\b(no (visible )?(image|picture|photograph)|(image|picture|photograph|stimulus)( itself)?( content)? (is |was )?not (shown|displayed|included|reproduced)|(removed|withheld) for copyright|blank (area|box|space|frame)|empty (bordered )?(box|frame|area))\b/i;
+
+function isWithheldVisual(group) {
+  const first = group.pieces[0].piece;
+  if (mediumOf(first.type) !== "visual") return false;
+  if (group.pieces.some(({ piece }) => piece.text && piece.text.trim())) return false;
+  return group.pieces.every(({ piece }) => piece.visualDescription && WITHHELD_VISUAL.test(piece.visualDescription));
+}
+
 function joinPieces(pieces) {
   return pieces.filter((piece) => piece && piece.trim()).map((piece) => piece.trim()).join("\n");
 }
@@ -160,9 +172,11 @@ function stimulusByLabel(label, page, stimuli) {
 
 // A question that names no stimulus is about the one on its page, when there
 // is exactly one, or else the last stimulus before it.
-function stimuliForQuestion(question, page, stimuli, stimulusPages) {
-  const byLabel = question.stimulusLabels.map((label) => stimulusByLabel(label, page, stimuli)).filter(Boolean);
-  if (byLabel.length) return [...new Set(byLabel.map((doc) => doc.id))];
+// A label that resolves to a withheld visual stays unresolved: the question
+// is kept but linked to nothing rather than to a passage it isn't about.
+function stimuliForQuestion(question, page, stimuli, stimulusPages, withheld = []) {
+  const byLabel = question.stimulusLabels.map((label) => stimulusByLabel(label, page, [...stimuli, ...withheld])).filter(Boolean);
+  if (byLabel.length) return [...new Set(byLabel.filter((doc) => !doc.withheld).map((doc) => doc.id))];
   const onPage = stimuli.filter((doc) => doc.data.pages.includes(page.pageNumber));
   if (onPage.length === 1) return [onPage[0].id];
   const before = stimulusPages.filter((entry) => entry.firstPage <= page.pageNumber).pop();
@@ -177,8 +191,13 @@ function stimuliForQuestion(question, page, stimuli, stimulusPages) {
  */
 function toPaperDocs({ source, pages, runId = null, model = null }) {
   const ordered = [...pages].sort((a, b) => a.pageNumber - b.pageNumber);
-  const built = groupStimuli(ordered).map((group, index) => stimulusDoc({ source, group, index, runId, model }));
+  const groups = groupStimuli(ordered);
+  const kept = groups.filter((group) => !isWithheldVisual(group));
+  const built = kept.map((group, index) => stimulusDoc({ source, group, index, runId, model }));
   const stimuli = built.map(({ id, data }) => ({ id, data }));
+  const withheld = groups
+    .filter((group) => group.label && isWithheldVisual(group))
+    .map((group) => ({ id: null, withheld: true, data: { label: group.label, pages: group.pieces.map(({ page }) => page.pageNumber) } }));
   const stimulusPages = stimuli.map((doc) => ({ id: doc.id, firstPage: Math.min(...doc.data.pages) }));
 
   // A paper's questions are keyed by label alone, so its guide can find them.
@@ -189,7 +208,7 @@ function toPaperDocs({ source, pages, runId = null, model = null }) {
   const questions = new Map();
   for (const page of ordered) {
     for (const question of page.result?.questions || []) {
-      const stimulusIds = stimuliForQuestion(question, page, stimuli, stimulusPages);
+      const stimulusIds = stimuliForQuestion(question, page, stimuli, stimulusPages, withheld);
       const plainId = questionId(source.id, question.label);
       const earlier = questions.get(plainId);
       let id = plainId;
@@ -220,7 +239,12 @@ function toPaperDocs({ source, pages, runId = null, model = null }) {
       });
     }
   }
-  return { stimuli, questions: [...questions.values()], droppedTechniques: built.reduce((sum, doc) => sum + doc.droppedTechniques, 0) };
+  return {
+    stimuli,
+    questions: [...questions.values()],
+    droppedTechniques: built.reduce((sum, doc) => sum + doc.droppedTechniques, 0),
+    withheldVisuals: groups.length - kept.length,
+  };
 }
 
 /**
@@ -268,6 +292,7 @@ module.exports = {
   GUIDES_COLLECTION,
   QUESTIONS_COLLECTION,
   STIMULI_COLLECTION,
+  WITHHELD_VISUAL,
   cropPath,
   groupStimuli,
   labelKey,
