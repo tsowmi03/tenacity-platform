@@ -145,12 +145,23 @@ function stimulusDoc({ source, group, index, runId, model }) {
   };
 }
 
+// The stimulus a label means from a given page. Comprehension books reuse
+// "Text 1" in every exercise, so it is the one on that page if there is one,
+// else the nearest one before it, else the first.
+function stimulusByLabel(label, page, stimuli) {
+  const matches = stimuli.filter((doc) => doc.data.label && labelKey(doc.data.label) === labelKey(label));
+  return (
+    matches.find((doc) => doc.data.pages.includes(page.pageNumber)) ||
+    matches.filter((doc) => Math.min(...doc.data.pages) <= page.pageNumber).pop() ||
+    matches[0] ||
+    null
+  );
+}
+
 // A question that names no stimulus is about the one on its page, when there
 // is exactly one, or else the last stimulus before it.
 function stimuliForQuestion(question, page, stimuli, stimulusPages) {
-  const byLabel = question.stimulusLabels
-    .map((label) => stimuli.find((doc) => doc.data.label && labelKey(doc.data.label) === labelKey(label)))
-    .filter(Boolean);
+  const byLabel = question.stimulusLabels.map((label) => stimulusByLabel(label, page, stimuli)).filter(Boolean);
   if (byLabel.length) return [...new Set(byLabel.map((doc) => doc.id))];
   const onPage = stimuli.filter((doc) => doc.data.pages.includes(page.pageNumber));
   if (onPage.length === 1) return [onPage[0].id];
@@ -170,11 +181,23 @@ function toPaperDocs({ source, pages, runId = null, model = null }) {
   const stimuli = built.map(({ id, data }) => ({ id, data }));
   const stimulusPages = stimuli.map((doc) => ({ id: doc.id, firstPage: Math.min(...doc.data.pages) }));
 
+  // A paper's questions are keyed by label alone, so its guide can find them.
+  // A comprehension book restarts at Question 1 for each exercise: a label
+  // seen before for a different stimulus is a new question, keyed by its
+  // stimulus too. The same label for the same stimulus is a repeat (a
+  // question continued over a page) and is skipped.
   const questions = new Map();
   for (const page of ordered) {
     for (const question of page.result?.questions || []) {
-      const id = questionId(source.id, question.label);
-      if (questions.has(id)) continue;
+      const stimulusIds = stimuliForQuestion(question, page, stimuli, stimulusPages);
+      const plainId = questionId(source.id, question.label);
+      const earlier = questions.get(plainId);
+      let id = plainId;
+      if (earlier) {
+        if (earlier.data.stimulusIds.join() === stimulusIds.join()) continue;
+        id = questionId(`${stimulusIds[0] || `${source.id}_p${page.pageNumber}`}`, question.label);
+        if (questions.has(id)) continue;
+      }
       questions.set(id, {
         id,
         data: {
@@ -184,7 +207,7 @@ function toPaperDocs({ source, pages, runId = null, model = null }) {
           sourceVersion: source.version,
           pageNumber: page.pageNumber,
           label: question.label,
-          stimulusIds: stimuliForQuestion(question, page, stimuli, stimulusPages),
+          stimulusIds,
           text: question.text,
           marks: Number.isInteger(question.marks) ? question.marks : null,
           questionType: question.questionType,

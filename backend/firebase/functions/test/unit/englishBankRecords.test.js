@@ -137,6 +137,24 @@ describe("English bank records", () => {
     assert.equal(questions[2].data.marks, null);
   });
 
+  it("keeps each exercise's Question 1 and Text 1 apart in a comprehension book", () => {
+    const { stimuli, questions } = toPaperDocs({
+      source,
+      pages: [
+        page(1, { stimuli: [piece({ text: "First exercise passage." })], questions: [question({ text: "Exercise 1, Q1" })] }),
+        page(2, { questions: [question({ text: "Exercise 1, Q1 again, continued" })] }),
+        page(5, { stimuli: [piece({ type: "prose_fiction", text: "Second exercise passage." })], questions: [question({ text: "Exercise 2, Q1" })] }),
+        page(6, { questions: [question({ label: "Question 2", text: "Exercise 2, Q2" })] }),
+      ],
+    });
+    assert.deepEqual(stimuli.map((doc) => doc.id), ["drive1_s1", "drive1_s2"]);
+    assert.deepEqual(questions.map((doc) => [doc.id, doc.data.text, doc.data.stimulusIds]), [
+      ["drive1_q1", "Exercise 1, Q1", ["drive1_s1"]],
+      ["drive1_s2_q1", "Exercise 2, Q1", ["drive1_s2"]],
+      ["drive1_q2", "Exercise 2, Q2", ["drive1_s2"]],
+    ]);
+  });
+
   it("points guide entries at the paper's questions and joins continued ones", () => {
     const guide = { id: "drive9", path: "English/Past Papers/x/English Advanced HSC marking guidelines 2023 - Paper 1.pdf", version: "v" };
     const docs = toGuideDocs({
