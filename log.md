@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-05 | [Resource generation: topic quotes and labels no longer fail a paper (RES-72)](#2026-11-05--resource-generation-topic-quotes-and-labels-no-longer-fail-a-paper-res-72) |
 | 2026-11-05 | [English bank: stimulus taxonomy, page schema and records (RES-64)](#2026-11-05--english-bank-stimulus-taxonomy-page-schema-and-records-res-64) |
 | 2026-11-05 | [English bank: which Drive files to extract, with guides paired to papers (RES-65)](#2026-11-05--english-bank-which-drive-files-to-extract-with-guides-paired-to-papers-res-65) |
 | 2026-11-05 | [Resource generation: diagrams work on GPT, failures stop repeating (RES-70)](#2026-11-05--resource-generation-diagrams-work-on-gpt-failures-stop-repeating-res-70) |
@@ -214,6 +215,33 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-05 — Resource generation: topic quotes and labels no longer fail a paper (RES-72)
+
+**What changed**
+- When planning a paper, the generator quotes the line of the request or
+  uploaded file that puts each topic in scope. A quote it can't find no
+  longer rejects the plan. The resource is delivered with a review warning
+  naming the topic ("Topic "X" couldn't be matched to the request or uploaded
+  files. Check it is in scope.").
+- Quote matching now ignores curly vs straight apostrophes and quote marks,
+  dash styles and case, and also searches the reference scope the planner
+  is given.
+- A question labelled with a topic the plan doesn't list is moved to the
+  closest planned topic, or added as a topic of its own (which then gets the
+  warning), instead of rejecting the plan.
+
+**Why:** A Year 10 practice paper made from a school assessment
+notification failed after three rejected plans. The quotes were real lines
+of the PDF, but the PDF used curly apostrophes and the model typed straight
+ones, so they never matched. The other safeguards (asking for clarification
+when the contents are unknown, checking coded references, the content
+review) already stop a made-up syllabus, so a failed quote match is now a
+note for the tutor, not a failure.
+
+**Status:** Live. Merged and deployed to production Functions.
 
 ---
 

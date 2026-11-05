@@ -20,7 +20,7 @@ function perTopicCount(prompt = "") {
   return match ? Number(match[1]) : null;
 }
 
-function validatePlan(result, job, userMessage, scope = { eligible: [], excluded: [], minutes: null }) {
+function validatePlan(result, job, _userMessage, scope = { eligible: [], excluded: [], minutes: null }) {
   const plan = result?.parsed;
   if (plan?.clarification === "SIZE_LIMIT") throw controlError("RESOURCE_SIZE_LIMIT", `The resolved request exceeds ${MAX_QUESTIONS} questions. Split it into smaller resources.`);
   if (plan?.clarification) throw controlError("RESOURCE_SCOPE_CLARIFICATION", `Clarify the requested topics or attach the relevant contents pages, then submit again.`);
@@ -32,16 +32,20 @@ function validatePlan(result, job, userMessage, scope = { eligible: [], excluded
   if (!Array.isArray(plan.topics) || !plan.topics.length) invalid("plan_topics_empty");
   if (!Array.isArray(plan.questions) || !plan.questions.length) invalid("plan_questions_empty");
   if (plan.questions.length > MAX_QUESTIONS) throw controlError("RESOURCE_SIZE_LIMIT", `The resolved request exceeds ${MAX_QUESTIONS} questions. Split it into smaller resources.`);
-  const names = plan.topics.map((t) => t?.name);
-  if (new Set(names).size !== names.length || plan.topics.some((t) => !t || typeof t.name !== "string" || !t.name.trim() || typeof t.evidence !== "string" || !t.evidence.trim() || !userMessage.replace(/\s+/g, " ").includes(t.evidence.replace(/\s+/g, " ")))) invalid("source_evidence_not_found");
+  if (plan.topics.some((t) => !t || typeof t.name !== "string" || !t.name.trim())) invalid("topic_name_missing");
+  if (new Set(plan.topics.map((t) => t.name)).size !== plan.topics.length) invalid("topic_names_duplicated");
   if (plan.questions.some((q, i) => !q || q.number !== i + 1)) invalid("questions_not_numbered_1_to_n");
-  if (plan.questions.some((q) => !names.includes(q.topic))) invalid("question_topic_not_in_topics");
+  // Topic evidence and question-topic labels are not checked here: an
+  // unmatched quote becomes a review warning and a stray label is reassigned
+  // (reconcilePlanTopics), so neither can fail the resource.
+  const reconciled = reconcilePlanTopics(plan).plan;
+  const names = reconciled.topics.map((t) => t.name);
   if (plan.questions.some((q) => !q.section)) invalid("question_section_missing");
   if (plan.questions.some((q) => !Number.isInteger(q.marks) || q.marks < 1 || q.marks > 30)) invalid("question_marks_outside_1_to_30");
   const each = perTopicCount(job.customPrompt);
   if (each && scope.eligible.length) {
     if (plan.questions.some((q) => q.sourceIds?.length !== 1) || scope.eligible.some((topic) => plan.questions.filter((q) => q.sourceIds?.includes(topic.id)).length !== each)) invalid("per_topic_count_mismatch");
-  } else if (each && names.some((topic) => plan.questions.filter((q) => q.topic === topic).length !== each)) invalid("per_topic_count_mismatch");
+  } else if (each && names.some((topic) => reconciled.questions.filter((q) => q.topic === topic).length !== each)) invalid("per_topic_count_mismatch");
   const total = requestedQuestionCount(job.customPrompt);
   if (!each && total && plan.questions.length !== total) invalid("question_count_not_requested_total");
   // Coded scope is checked through sourceIds; a multipart question may test several topics.
@@ -53,6 +57,81 @@ function validatePlan(result, job, userMessage, scope = { eligible: [], excluded
   // a request; plannedTimeAllowed derives one from the question estimates.
   if (job.resourceType === "practice-paper" && !plannedTimeAllowed(plan)) invalid("time_allowed_missing");
   validatePlannedCoverage(plan, scope);
+}
+
+// Each planned topic quotes the words in the request or uploads that put it in
+// scope. A quote that cannot be found used to fail the plan, and three failures
+// failed the resource: the model routinely retypes a PDF's curly apostrophes and
+// dashes as plain ones, so a correct quote of "Pythagoras’ theorem" never
+// matched. The other safeguards (clarification for an unknown contents list,
+// sourceIds against coded references, the content review) already stop an
+// invented syllabus, so an unmatched quote is now a review note for the tutor.
+function normaliseQuote(text) {
+  return String(text || "")
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u02BC\u02B9\u0060\u00B4]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, "\"")
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function unmatchedEvidenceTopics(plan, sourceText) {
+  const haystack = normaliseQuote(sourceText);
+  return (plan?.topics || [])
+    .filter((t) => { const quote = normaliseQuote(t?.evidence); return !quote || !haystack.includes(quote); })
+    .map((t) => t.name);
+}
+
+function evidenceWarnings(plan, sourceText) {
+  const unmatched = unmatchedEvidenceTopics(plan, sourceText);
+  if (!unmatched.length) return [];
+  const list = unmatched.map((name) => `"${name}"`).join(", ");
+  const subject = unmatched.length === 1 ? `Topic ${list} couldn't be matched to the request or uploaded files. Check it is` : `Topics ${list} couldn't be matched to the request or uploaded files. Check they are`;
+  return [{ code: "RESOURCE_PLAN_EVIDENCE_WARNING", message: `${subject} in scope.` }];
+}
+
+const topicWords = (text) => new Set(normaliseQuote(text).split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !["and", "the", "for", "with", "chapter", "unit", "topic"].includes(w)));
+
+// The planned topic a question label most likely means, or null when it shares
+// nothing with any of them.
+function closestTopic(label, names) {
+  if (names.includes(label)) return label;
+  const wanted = normaliseQuote(label);
+  if (!wanted) return names[0] || null;
+  const same = names.find((name) => normaliseQuote(name) === wanted);
+  if (same) return same;
+  const containing = names.find((name) => normaliseQuote(name).includes(wanted) || wanted.includes(normaliseQuote(name)));
+  if (containing) return containing;
+  const words = topicWords(label);
+  let best = null;
+  let bestScore = 0;
+  for (const name of names) {
+    const score = [...topicWords(name)].filter((w) => words.has(w)).length;
+    if (score > bestScore) { best = name; bestScore = score; }
+  }
+  return best;
+}
+
+// A question labelled with a topic the plan never listed used to fail the plan.
+// It is reassigned to the closest planned topic, or, sharing no words with any,
+// added as a topic of its own (which then carries an evidence warning).
+function reconcilePlanTopics(plan) {
+  const topics = [...plan.topics];
+  const reassigned = [];
+  const added = [];
+  const questions = plan.questions.map((q) => {
+    const names = topics.map((t) => t.name);
+    if (names.includes(q?.topic)) return q;
+    const match = closestTopic(q?.topic, names);
+    if (match) { reassigned.push({ number: q?.number, from: q?.topic ?? null, to: match }); return { ...q, topic: match }; }
+    const name = String(q.topic).trim();
+    topics.push({ name, evidence: "" });
+    added.push(name);
+    return { ...q, topic: name };
+  });
+  return { plan: { ...plan, topics, questions }, reassigned, added };
 }
 
 // The plan's sitting time, or one derived from its per-question estimates
@@ -99,18 +178,22 @@ async function generatePlannedResource({ job, request, callAi, hasStimulus = fal
   if (each > MAX_QUESTIONS) throw controlError("RESOURCE_SIZE_LIMIT", "Request fewer questions per topic.");
   const scope = sourceScope(job, referenceText);
   if (each && scope.eligible.length * each > MAX_QUESTIONS) throw controlError("RESOURCE_SIZE_LIMIT", `The resolved request needs ${scope.eligible.length * each} questions, above the ${MAX_QUESTIONS}-question limit. Split it by topic or chapter.`);
-  const validateStageResult = (result) => validatePlan(result, job, request.userMessage, scope);
-  const { parsed: plan } = await callAi({ ...request,
+  const planMessage = `${request.userMessage}\n\nREFERENCE-DERIVED SCOPE (use representative chapter coverage for papers unless every subsection is explicitly requested; honour exclusions): ${JSON.stringify(scope)}`;
+  const validateStageResult = (result) => validatePlan(result, job, planMessage, scope);
+  const { parsed: modelPlan } = await callAi({ ...request,
     stageId: "plan.v2", stageLabel: "Planning topics, question counts and sections",
     maxTokens: 16000, responseSchema: PLAN_SCHEMA, validateStageResult,
-    userMessage: `${request.userMessage}\n\nREFERENCE-DERIVED SCOPE (use representative chapter coverage for papers unless every subsection is explicitly requested; honour exclusions): ${JSON.stringify(scope)}`,
+    userMessage: planMessage,
     systemPrompt: `Plan an educational resource; do not write questions or solutions. Return the supplied JSON schema.
 Resolve the tutor's exact scope and exclusions using the supplied references. Topics must each quote exact evidence from the user's message or references. A textbook title alone does not establish its chapter contents. If the topic list or exclusions cannot be established, return a non-empty clarification and empty topics/questions; never invent a contents list.
 For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwise obey any requested total. For timed papers, allocate sections, progressively harder questions and marks that reasonably fit the sitting time. Use a reasonable number of main questions with labelled parts to combine related skills. topics may group by chapter; sourceIds track detailed coverage independently of the primary topic label. Aim for the sitting time with representative chapter coverage. If the coverage is ambitious, produce a usable plan and let the review flag the trade-off; do not return a clarification solely for workload or coverage concerns. Do not silently reduce scope to fit a limit: if the resolved total exceeds ${MAX_QUESTIONS}, set clarification to "SIZE_LIMIT" and leave questions empty. Use consecutive global numbers from 1; assign each a topic, section, difficulty and marks. Give every question sourceIds from the eligible reference inventory (multiple IDs allowed when the actual multipart question tests those skills), and a realistic positive estimatedMinutes. For chapter coverageMode, sample across every eligible chapter; do not force every subsection into a timed paper. For section coverageMode, aim to cover every requested ID. Balance chapter marks fairly. Do not merely attach IDs to questions that do not test them. Sum the question minutes to 75–100% of the requested sitting time; preserve the exact requested timeAllowed. Without coded references use an empty sourceIds array. Supply title and timeAllowed (empty for untimed worksheets). For a paper whose request names no sitting time, choose a realistic one for the year level and question count. clarification must be empty when the scope is resolved.`,
   });
-  validateStageResult({ parsed: plan });
+  validateStageResult({ parsed: modelPlan });
+  const { plan, reassigned, added } = reconcilePlanTopics(modelPlan);
+  const planWarnings = evidenceWarnings(plan, planMessage);
   if (job.resourceType === "practice-paper") plan.timeAllowed = plannedTimeAllowed(plan);
-  resourceEvent(job, "plan.resolved", { stageId: "plan.v2", questionCount: plan.questions.length, generationVersion: 1 });
+  resourceEvent(job, "plan.resolved", { stageId: "plan.v2", questionCount: plan.questions.length, generationVersion: 1,
+    topicsReassigned: reassigned.length, topicsAdded: added.length, unmatchedEvidence: unmatchedEvidenceTopics(plan, planMessage).length });
   const contentOptions = { year: job.year, subject: job.subject, answerMode: "none", hasStimulus, stimulusImages };
   const answerKey = job.subject === "english" ? "markingGuide" : "answers";
   const fullSchema = buildResponseSchema(job.resourceType, { subject: job.subject, answerMode: job.answerMode, hasStimulus });
@@ -182,7 +265,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
   });
   const review = await verifyPlannedContent({ job, request, callAi, plan, parsed: assembled.parsed, scope });
   return { ...assembled, reviewStatus: review.status, contentReview: review.summary,
-    warnings: [...validatePlannedCoverage(plan, scope), ...review.warnings] };
+    warnings: [...planWarnings, ...validatePlannedCoverage(plan, scope), ...review.warnings] };
 }
 
-module.exports = { usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers };
+module.exports = { usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };
