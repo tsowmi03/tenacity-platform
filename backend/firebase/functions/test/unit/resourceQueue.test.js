@@ -1669,6 +1669,34 @@ describe("retryResourceJobImpl", () => {
     }
   });
 
+  // RES-70. A pre-planning job whose single generation call ran out of time
+  // timed out again on every resume; Retry now moves it to planned generation.
+  it("moves a timed-out legacy job to planned generation, only when planning is on", async () => {
+    const cases = [
+      [{ generationVersion: 0, errorCode: "RESOURCE_STAGE_TIMEOUT" }, true, 1],
+      [{ errorCode: "RESOURCE_STAGE_LIMIT" }, true, 1],
+      [{ generationVersion: 0, errorCode: "RESOURCE_STAGE_TIMEOUT" }, false, 0],
+      [{ generationVersion: 0, errorCode: null, failureAttempts: [{ reasonCode: "PROVIDER_BUSY" }] }, true, 0],
+      [{ generationVersion: 1, errorCode: "RESOURCE_STAGE_TIMEOUT" }, true, 1],
+    ];
+    for (const [failure, plannedOn, expectedVersion] of cases) {
+      const db = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", progress: { completedStages: 1 }, ...failure }]);
+      const storage = fakeStorage();
+      await retryResourceJobImpl({
+        payload: { jobId: "job-1" },
+        actor: { uid: "tutor-1", role: "tutor" },
+        deps: { db, clock, storage, durableStages: true, plannedGenerationEnabled: plannedOn },
+      });
+      const label = JSON.stringify({ failure, plannedOn });
+      assert.equal(db.jobs[0].generationVersion || 0, expectedVersion, label);
+      const upgraded = expectedVersion === 1 && (failure.generationVersion || 0) === 0;
+      if (upgraded) {
+        assert.deepEqual(storage.deletedPrefixes, ["resources/checkpoints/job-1/"], label);
+        assert.equal(db.jobs[0].stageRecoveryCount, 0, label);
+      }
+    }
+  });
+
   it("rejects retries by another tutor", async () => {
     const db = fakeQueueDb([
       { id: "job-1", createdBy: "tutor-1", status: "failed" },

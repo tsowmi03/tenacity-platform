@@ -18,9 +18,9 @@ const job = { jobId: "job-1", year: 9, subject: "maths" };
 
 /** A stub that answers each diagram-fill call from a lookup of type -> diagrams. */
 function stubCallAi(byType, calls = []) {
-  return async ({ systemPrompt, responseSchema, userMessage }) => {
+  return async ({ systemPrompt, responseSchema, userMessage, bestEffort, maxTokens }) => {
     const type = /producing "([^"]+)" diagram/.exec(systemPrompt)[1];
-    calls.push({ type, constrained: Boolean(responseSchema), userMessage });
+    calls.push({ type, constrained: Boolean(responseSchema), userMessage, bestEffort: Boolean(bestEffort), maxTokens });
     const answer = byType[type];
     if (answer instanceof Error) throw answer;
     return { parsed: { diagrams: answer || [] }, raw: "{}" };
@@ -62,7 +62,7 @@ describe("maths diagram fill pass", () => {
       clock: [{ index: 1, diagram: { type: "clock", hour: 3, minute: 15 } }],
     }, calls);
 
-    assert.deepEqual(result, { requested: 2, filled: 2 });
+    assert.deepEqual(result, { requested: 2, filled: 2, omitted: [] });
     assert.equal(parsed.questions[0].diagram.type, "rectangle");
     assert.equal(parsed.questions[2].parts[0].diagram.type, "clock");
     // One call per distinct type, not per diagram.
@@ -107,6 +107,25 @@ describe("maths diagram fill pass", () => {
     }), /required diagram/i);
   });
 
+  it("marks only all-optional fills as best effort, and names each omitted diagram (RES-70)", async () => {
+    const calls = [];
+    const parsed = {
+      questions: [
+        { number: 1, stem: "Area.", marks: 2, diagram: null, diagramType: "rectangle", diagramRequired: true, parts: null },
+        { number: 2, stem: "Volume.", marks: 2, diagram: null, diagramType: "cone", diagramRequired: false, parts: null },
+      ],
+    };
+    const result = await run(parsed, {
+      rectangle: [{ index: 1, diagram: { type: "rectangle", dimensions: { width: 4, height: 3 }, unit: "cm" } }],
+      cone: Object.assign(new Error("Invalid schema"), { status: 400 }),
+    }, calls);
+    assert.deepEqual(calls.map((c) => [c.type, c.bestEffort]).sort(), [["cone", true], ["rectangle", false]]);
+    // A stalled fill fails at a ceiling sized to the group, not the 32k verify one.
+    assert.deepEqual(calls.map((c) => c.maxTokens), [2300, 2300]);
+    assert.deepEqual(result.omitted, [{ label: "Question 2", diagramType: "cone", detail: "the diagram could not be generated" }]);
+    assert.equal(parsed.questions[1].diagramRequired, false);
+  });
+
   it("still degrades an explicitly optional diagram", async () => {
     const parsed = {
       questions: [
@@ -114,7 +133,11 @@ describe("maths diagram fill pass", () => {
       ],
     };
     const result = await run(parsed, { rectangle: [] });
-    assert.deepEqual(result, { requested: 1, filled: 0 });
+    assert.deepEqual(result, {
+      requested: 1,
+      filled: 0,
+      omitted: [{ label: "Question 1", diagramType: "rectangle", detail: "the model did not return it" }],
+    });
     assert.equal(parsed.questions[0].diagramRequired, false);
   });
 
@@ -136,7 +159,7 @@ describe("maths diagram fill pass", () => {
     const calls = [];
     const result = await run(parsed, {}, calls);
 
-    assert.deepEqual(result, { requested: 0, filled: 0 });
+    assert.deepEqual(result, { requested: 0, filled: 0, omitted: [] });
     assert.equal(calls.length, 0);
     assert.equal(parsed.questions[0].diagramRequired, false);
   });
@@ -186,6 +209,10 @@ describe("maths diagram schemas", () => {
       if (FIXTURE_DIVERGENCES.has(type)) continue;
       const schema = buildDiagramSchema(type);
       for (const key of schema.required) {
+        // A nullable field is how the schema says "optional" (RES-70): the
+        // model sends null, which is stripped, so a fixture may omit it.
+        const types = [].concat(schema.properties[key].type);
+        if (types.includes("null")) continue;
         assert.ok(key in fixture, `${type} schema requires "${key}" but its fixture omits it`);
       }
       for (const key of Object.keys(fixture)) {

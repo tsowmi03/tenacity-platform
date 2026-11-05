@@ -8,18 +8,27 @@
 // rejects is worse than no schema, so both halves matter.
 //
 // Usage: ANTHROPIC_API_KEY=... node scripts/sweepDiagramSchemas.js [type ...]
+//        OPENAI_API_KEY=... RESOURCE_LLM_MODEL=gpt-6.1-sol node scripts/sweepDiagramSchemas.js
+//
+// RES-70: GPT is the default provider, and its strict mode rejected every
+// schema with an optional field. Sweep both providers after a schema change.
 
 const { callAnthropicForResource } = require("../src/resources/apiClient");
+const { callOpenAiForResource } = require("../src/resources/openaiClient");
 const {
   CONSTRAINABLE_DIAGRAM_TYPES,
   FALLBACK_DIAGRAM_TYPES,
   buildDiagramFillSchema,
+  stripDiagramNulls,
 } = require("../src/resources/diagramSchema");
 const { DIAGRAM_REGISTRY } = require("../src/resources/diagramRegistry");
 const { validateDiagram } = require("../src/resources/builder/validation");
 const { defaultResourceModel } = require("../src/resources/modelRegistry");
 
 const MODEL = process.env.RESOURCE_LLM_MODEL || defaultResourceModel();
+const IS_OPENAI = /^(gpt|o\d)/.test(MODEL);
+const KEY_NAME = IS_OPENAI ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
+const callProvider = IS_OPENAI ? callOpenAiForResource : callAnthropicForResource;
 
 function countOptional(schema, acc = { n: 0 }) {
   if (!schema || typeof schema !== "object") return acc.n;
@@ -54,8 +63,8 @@ async function sweepType(type) {
   const example = JSON.stringify(DIAGRAM_REGISTRY[type].promptExample);
   const started = Date.now();
   try {
-    const { parsed } = await callAnthropicForResource({
-      apiKey: process.env.ANTHROPIC_API_KEY,
+    const { parsed } = await callProvider({
+      apiKey: process.env[KEY_NAME],
       model: MODEL,
       maxTokens: 3000,
       systemPrompt:
@@ -75,7 +84,7 @@ async function sweepType(type) {
       return { type, ok: false, ms, optional, why: "no diagram in response" };
     }
     try {
-      validateDiagram(entry.diagram, `${type}.diagram`);
+      validateDiagram(stripDiagramNulls(entry.diagram), `${type}.diagram`);
     } catch (err) {
       return { type, ok: false, ms, optional, why: `validator: ${err.message.slice(0, 90)}` };
     }
@@ -96,11 +105,11 @@ async function sweepType(type) {
   // fed from `firebase functions:secrets:access`, and an expired Firebase
   // session makes that print an error message to stdout instead — which then
   // sails through as the API key and reports every single type as failing.
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
+  const apiKey = process.env[KEY_NAME];
+  if (!apiKey) throw new Error(`${KEY_NAME} not set`);
   if (!/^sk-[\w-]+$/.test(apiKey)) {
     throw new Error(
-      `ANTHROPIC_API_KEY does not look like an API key (${apiKey.length} chars, starts "${apiKey.slice(0, 12)}"). ` +
+      `${KEY_NAME} does not look like an API key (${apiKey.length} chars, starts "${apiKey.slice(0, 12)}"). ` +
         "If it came from `firebase functions:secrets:access`, the Firebase session has probably expired — run `firebase login --reauth`."
     );
   }
