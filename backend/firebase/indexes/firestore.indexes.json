@@ -258,6 +258,23 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "embedding", "vectorConfig": { "dimension": 512, "flat": {} } }
       ]
+    },
+    {
+      "collectionGroup": "englishStimuli",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "embedding", "vectorConfig": { "dimension": 512, "flat": {} } }
+      ]
+    },
+    {
+      "collectionGroup": "englishStimuli",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "medium", "order": "ASCENDING" },
+        { "fieldPath": "embedding", "vectorConfig": { "dimension": 512, "flat": {} } }
+      ]
     }
   ],
   "fieldOverrides": [

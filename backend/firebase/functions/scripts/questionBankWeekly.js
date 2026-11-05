@@ -10,7 +10,8 @@
  *      file before it is extracted again (its new version replaces them);
  *   3. extract: run new and changed files through the same skip rules and
  *      extraction as the backfill, under this run's own spending cap;
- *   4. embed and merge copies, so the new questions are searchable.
+ *   4. embed and merge copies, so the new questions are searchable, and
+ *      embed any new English stimuli (RES-77).
  *
  *   node scripts/questionBankWeekly.js --projectId=tenacity-tutoring-b8eb2 \
  *     --work-dir=/tmp/qb-weekly [--cap=10] [--commit --yes]
@@ -107,6 +108,8 @@ async function main() {
   const extract = lastJson(runScript("questionBankExtract.js", [project, `--work-dir=${options.workDir}`, `--cap=${options.cap}`, "--firebase-secrets", ...flags]));
   runScript("questionBankEmbed.js", [project, "--firebase-secrets", ...flags]);
   runScript("questionBankDedupe.js", [project, "--show=0", ...flags]);
+  // RES-77: English stimuli written since the last run become searchable.
+  runScript("englishBankEmbed.js", [project, "--firebase-secrets", ...flags]);
 
   const summary = [
     "## Question bank weekly update",
