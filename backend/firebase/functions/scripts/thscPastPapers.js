@@ -34,6 +34,10 @@ const RESOURCES = path.join(
   "Shared drives/Tenacity Tutoring/Tenacity Tutoring/Resources"
 );
 // Each listing names its folder (kind) and the label its file names carry.
+const CURRENT_SYLLABUS_FROM = 2019;
+function senior(kind, label, course, page) {
+  return { kind, label: `${course} ${label}`, course, since: CURRENT_SYLLABUS_FROM, page };
+}
 const SUBJECTS = Object.freeze({
   maths: {
     folder: "Maths",
@@ -45,6 +49,26 @@ const SUBJECTS = Object.freeze({
       10: [
         { kind: "Yearly Papers", label: "Yearly", page: "/s/yr10/Maths/yr10papers.html" },
         { kind: "Assessment Tasks", label: "Assessment Task", page: "/s/yr10/Maths/assessment-tasks.html" },
+      ],
+      // RES-69. Senior papers are filed by course too ("Year 12/Trial
+      // Papers/Extension 1") and default to the current syllabus, first
+      // examined in 2019-2020; older papers test content no longer taught.
+      // THSC's "general" listings hold Standard papers from 2019 on.
+      11: [
+        senior("Prelim Papers", "Prelim", "Advanced", "/s/yr11/Maths/prelimpapers_advanced.html"),
+        senior("Prelim Papers", "Prelim", "Extension 1", "/s/yr11/Maths/prelimpapers_extension1.html"),
+        senior("Prelim Papers", "Prelim", "Standard", "/s/yr11/Maths/prelimpapers_general.html"),
+        senior("Assessment Tasks", "Assessment Task", "Advanced", "/s/yr11/Maths/assessment-tasks_advanced.html"),
+        senior("Assessment Tasks", "Assessment Task", "Extension 1", "/s/yr11/Maths/assessment-tasks_extension1.html"),
+      ],
+      12: [
+        senior("Trial Papers", "Trial", "Advanced", "/s/yr12/Maths/trialpapers_advanced.html"),
+        senior("Trial Papers", "Trial", "Extension 1", "/s/yr12/Maths/trialpapers_extension1.html"),
+        senior("Trial Papers", "Trial", "Extension 2", "/s/yr12/Maths/trialpapers_extension2.html"),
+        senior("Trial Papers", "Trial", "Standard", "/s/yr12/Maths/trialpapers_general.html"),
+        senior("Assessment Tasks", "Assessment Task", "Advanced", "/s/yr12/Maths/assessment-tasks_advanced.html"),
+        senior("Assessment Tasks", "Assessment Task", "Extension 1", "/s/yr12/Maths/assessment-tasks_extension1.html"),
+        senior("Assessment Tasks", "Assessment Task", "Extension 2", "/s/yr12/Maths/assessment-tasks_extension2.html"),
       ],
     },
   },
@@ -67,12 +91,13 @@ const ATTEMPTS = 3;
 const MANIFEST = "THSC sources.json";
 
 function parseArgs(argv) {
-  const options = { subject: "maths", years: null, out: null, dryRun: false };
+  const options = { subject: "maths", years: null, since: null, out: null, dryRun: false };
   for (const arg of argv) {
     if (arg === "--dry-run") options.dryRun = true;
     else if (arg.startsWith("--subject=")) options.subject = arg.slice(10);
     else if (arg.startsWith("--years=")) options.years = arg.slice(8).split(",").map(Number);
     else if (arg.startsWith("--out=")) options.out = arg.slice(6);
+    else if (arg.startsWith("--since=")) options.since = Number(arg.slice(8));
     else throw new Error(`Unknown argument: ${arg}`);
   }
   const subject = SUBJECTS[options.subject];
@@ -126,6 +151,12 @@ function fileNameFor({ title, year, label }) {
   return `${paper} - Year ${year} ${label}.pdf`;
 }
 
+// The latest year a paper's title names, or null.
+function paperYear(title) {
+  const years = String(title).match(/\b(?:19|20)\d\d\b/g);
+  return years ? Math.max(...years.map(Number)) : null;
+}
+
 function legacyUrl(worker, group, title) {
   const url = new URL(`https://script.google.com/macros/s/${worker}/exec`);
   url.searchParams.set("export", "view");
@@ -173,11 +204,15 @@ async function main() {
     for (const listing of options.listings[year]) {
       const response = await fetch(encodeURI(`${SITE}${listing.page}`));
       if (!response.ok) throw new Error(`THSC listing ${listing.page}: HTTP ${response.status}`);
+      const since = options.since || listing.since || null;
+      let count = 0;
       for (const paper of parseListing(await response.text())) {
-        const folder = path.join(options.out, `Year ${year}`, listing.kind);
-        papers.push({ ...paper, year, kind: listing.kind, file: path.join(folder, fileNameFor({ ...paper, year, label: listing.label })) });
+        if (since && !(paperYear(paper.title) >= since)) continue;
+        const folder = path.join(options.out, `Year ${year}`, listing.kind, ...(listing.course ? [listing.course] : []));
+        papers.push({ ...paper, year, kind: listing.kind, course: listing.course || null, file: path.join(folder, fileNameFor({ ...paper, year, label: listing.label })) });
+        count += 1;
       }
-      console.log(`Year ${year} ${listing.kind}: ${papers.filter((p) => p.year === year && p.kind === listing.kind).length} papers`);
+      console.log(`Year ${year} ${listing.kind}${listing.course ? ` ${listing.course}` : ""}: ${count} papers`);
     }
   }
   const todo = papers.filter((paper) => !fs.existsSync(paper.file));
@@ -194,7 +229,7 @@ async function main() {
       fs.mkdirSync(path.dirname(paper.file), { recursive: true });
       fs.writeFileSync(paper.file, pdf);
       manifest.papers[path.relative(options.out, paper.file)] = {
-        year: paper.year, kind: paper.kind, title: paper.title, group: paper.group,
+        year: paper.year, kind: paper.kind, course: paper.course, title: paper.title, group: paper.group,
         originalFileName, withSolutions: /w\.\s*sol/i.test(paper.title), bytes: pdf.length, savedAt: new Date().toISOString(),
       };
       fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -216,4 +251,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fetchPaper, fileNameFor, isMissingFilePdf, legacyUrl, MissingOnThsc, parseArgs, parseListing, parseWorkers, viewerTitle };
+module.exports = { MissingOnThsc, fetchPaper, fileNameFor, isMissingFilePdf, legacyUrl, paperYear, parseArgs, parseListing, parseWorkers, viewerTitle };

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-06 | [Question bank: THSC Year 11-12 papers (RES-69)](#2026-11-06--question-bank-thsc-year-11-12-papers-res-69) |
 | 2026-11-05 | [Resource portal: progress bar, steps and ETA while generating (RES-73)](#2026-11-05--resource-portal-progress-bar-steps-and-eta-while-generating-res-73) |
 | 2026-11-05 | [Every maths diagram comes from the question bank first (RES-71)](#2026-11-05--every-maths-diagram-comes-from-the-question-bank-first-res-71) |
 | 2026-11-05 | [Resource generation: topic quotes and labels no longer fail a paper (RES-72)](#2026-11-05--resource-generation-topic-quotes-and-labels-no-longer-fail-a-paper-res-72) |
@@ -217,6 +218,34 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-06 — Question bank: THSC Year 11-12 papers (RES-69)
+
+**What changed**
+- `thscPastPapers.js` now also downloads THSC Online's Year 11 prelim and
+  assessment papers and Year 12 trial and assessment papers for Advanced,
+  Extension 1, Extension 2 and Standard, filed as Past Papers/Year N/<kind>/
+  <course>. `--since=2019` keeps the current syllabus only: 1,384 of the
+  5,472 papers listed, all downloaded.
+- The bank run read 45,095 pages from 1,266 files (118 papers were exact
+  copies listed under two courses and skipped) and added 19,343 diagram
+  questions for $19.37. The copy merge found 738 more copies (questions
+  schools reused), leaving 91,895 live questions in the bank.
+- Spot check of 60: crops and course tags are right, but about 1 in 10
+  crops has handwriting on it, some of it the answer, from papers scanned
+  after being worked.
+
+**Why:** Tutors teach Years 11-12 too, and the bank had only the HSC
+textbooks for them.
+
+**Status:** Live in production Firestore and Storage. The generator only
+offers Years 5-10, so senior questions wait for a generator change.
+
+**Next steps**
+- Hide crops with handwriting: a cheap model check over the ~19,000 senior
+  crops (about $5), then hide the ones it flags.
 
 ---
 

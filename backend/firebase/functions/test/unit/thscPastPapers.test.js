@@ -3,7 +3,7 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { fetchPaper, fileNameFor, isMissingFilePdf, legacyUrl, MissingOnThsc, parseArgs, parseListing, parseWorkers, viewerTitle } = require("../../scripts/thscPastPapers");
+const { fetchPaper, fileNameFor, isMissingFilePdf, legacyUrl, MissingOnThsc, paperYear, parseArgs, parseListing, parseWorkers, viewerTitle } = require("../../scripts/thscPastPapers");
 const { isAnswerFile } = require("../../src/questionBank/sourceRules");
 
 describe("thscPastPapers", () => {
@@ -67,8 +67,9 @@ describe("thscPastPapers", () => {
 
   it("only takes years it has listings for", () => {
     assert.deepEqual(parseArgs(["--years=9"]).years, [9]);
-    assert.deepEqual(parseArgs([]).years, [9, 10]);
-    assert.throws(() => parseArgs(["--years=12"]), /No THSC maths listing/);
+    assert.deepEqual(parseArgs([]).years, [9, 10, 11, 12]);
+    assert.equal(parseArgs(["--years=11,12", "--since=2022"]).since, 2022);
+    assert.throws(() => parseArgs(["--years=8"]), /No THSC maths listing/);
     assert.throws(() => parseArgs(["--subject=science"]), /Unknown subject/);
   });
 
@@ -78,5 +79,20 @@ describe("thscPastPapers", () => {
     assert.match(options.out, /Resources\/English\/Past Papers$/);
     assert.match(parseArgs([]).out, /Resources\/Maths\/Past Papers$/);
     assert.throws(() => parseArgs(["--subject=english", "--years=9"]), /No THSC english listing/);
+  });
+
+  // RES-69.
+  it("names senior maths papers by course and kind, still never as solutions", () => {
+    const listing = parseArgs(["--years=12"]).listings[12].find((l) => l.course === "Extension 1" && l.kind === "Trial Papers");
+    assert.equal(listing.since, 2019, "the current syllabus by default");
+    const name = fileNameFor({ title: "Abbotsleigh 2021 w. sol", year: 12, label: listing.label });
+    assert.equal(name, "Abbotsleigh 2021 - Year 12 Extension 1 Trial.pdf");
+    assert.equal(isAnswerFile(name), false);
+  });
+
+  it("reads the year a paper is from", () => {
+    assert.equal(paperYear("Sydney Boys 2019 Trial"), 2019);
+    assert.equal(paperYear("Knox 2018-2019 Task 2"), 2019);
+    assert.equal(paperYear("Untitled"), null);
   });
 });
