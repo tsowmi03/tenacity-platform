@@ -20,6 +20,14 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-06 | [Question bank: THSC Year 11-12 papers (RES-69)](#2026-11-06--question-bank-thsc-year-11-12-papers-res-69) |
+| 2026-11-05 | [Resource portal: progress bar, steps and ETA while generating (RES-73)](#2026-11-05--resource-portal-progress-bar-steps-and-eta-while-generating-res-73) |
+| 2026-11-05 | [Every maths diagram comes from the question bank first (RES-71)](#2026-11-05--every-maths-diagram-comes-from-the-question-bank-first-res-71) |
+| 2026-11-05 | [Resource generation: topic quotes and labels no longer fail a paper (RES-72)](#2026-11-05--resource-generation-topic-quotes-and-labels-no-longer-fail-a-paper-res-72) |
+| 2026-11-05 | [English bank: stimulus taxonomy, page schema and records (RES-64)](#2026-11-05--english-bank-stimulus-taxonomy-page-schema-and-records-res-64) |
+| 2026-11-05 | [English bank: which Drive files to extract, with guides paired to papers (RES-65)](#2026-11-05--english-bank-which-drive-files-to-extract-with-guides-paired-to-papers-res-65) |
+| 2026-11-05 | [Resource generation: diagrams work on GPT, failures stop repeating (RES-70)](#2026-11-05--resource-generation-diagrams-work-on-gpt-failures-stop-repeating-res-70) |
+| 2026-11-05 | [English bank: THSC and NESA Year 12 English papers in Drive (RES-65)](#2026-11-05--english-bank-thsc-and-nesa-year-12-english-papers-in-drive-res-65) |
 | 2026-11-05 | [Question bank: weekly update from Drive (RES-62)](#2026-11-05--question-bank-weekly-update-from-drive-res-62) |
 | 2026-11-05 | [Question bank: tutors flag textbook questions, admins fix or hide them (RES-61)](#2026-11-05--question-bank-tutors-flag-textbook-questions-admins-fix-or-hide-them-res-61) |
 | 2026-11-05 | [Generator: textbook questions with their original diagrams (RES-60)](#2026-11-05--generator-textbook-questions-with-their-original-diagrams-res-60) |
@@ -210,6 +218,273 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-06 — Question bank: THSC Year 11-12 papers (RES-69)
+
+**What changed**
+- `thscPastPapers.js` now also downloads THSC Online's Year 11 prelim and
+  assessment papers and Year 12 trial and assessment papers for Advanced,
+  Extension 1, Extension 2 and Standard, filed as Past Papers/Year N/<kind>/
+  <course>. `--since=2019` keeps the current syllabus only: 1,384 of the
+  5,472 papers listed, all downloaded.
+- The bank run read 45,095 pages from 1,266 files (118 papers were exact
+  copies listed under two courses and skipped) and added 19,343 diagram
+  questions for $19.37. The copy merge found 738 more copies (questions
+  schools reused), leaving 91,895 live questions in the bank.
+- Spot check of 60: crops and course tags are right, but about 1 in 10
+  crops has handwriting on it, some of it the answer, from papers scanned
+  after being worked.
+
+**Why:** Tutors teach Years 11-12 too, and the bank had only the HSC
+textbooks for them.
+
+**Status:** Live in production Firestore and Storage. The generator only
+offers Years 5-10, so senior questions wait for a generator change.
+
+**Next steps**
+- Hide crops with handwriting: a cheap model check over the ~19,000 senior
+  crops (about $5), then hide the ones it flags.
+
+---
+
+## 2026-11-05 — Resource portal: progress bar, steps and ETA while generating (RES-73)
+
+**What changed**
+- A generating resource now shows a progress bar, five plain steps (Planning,
+  Writing questions with "42 of 120", Drawing diagrams for maths, Checking
+  quality, Building the PDF) and an ETA such as "About 5 min left". Internal
+  messages like "Saving stage 14" are no longer shown; a retry reads "Taking a
+  little longer — retrying a step".
+- The ETA comes from history plus this run's pace. Every completed resource
+  adds its time and question count to a per-kind fit (time = a + b ×
+  questions) and records how its time split across the steps
+  (`resourceTimingStats` in Firestore, server-only). While a run goes, the
+  remaining time is stretched or shrunk by how fast this run has actually
+  been, which counts for more the further it gets. A range ("About 4–6 min")
+  is shown while the estimate is uncertain and narrows as history agrees.
+- The worker writes the estimate with each stage; between stages the portal
+  counts down and moves the bar locally.
+- `scripts/backfillResourceTiming.js` seeds the history from runs in Cloud
+  Logging. Only the current pipeline's runs are used (6 at launch); the 141
+  older resources ran on the previous pipeline and would skew it.
+
+**Why:** Long resources (up to ~17 min) gave tutors no idea how far along they
+were or when to come back.
+
+**Status:** Live. Merged; resource portal deployed on merge, Functions deployed,
+history seeded in production.
+
+---
+
+## 2026-11-05 — Every maths diagram comes from the question bank first (RES-71)
+
+**What changed**
+- The "Textbook questions" setting (None / Some / Mostly) is gone from the
+  resource portal. Every maths resource now tries the question bank for every
+  question or part that needs a diagram. A diagram is drawn only when the bank
+  has no matching textbook diagram, or when its answer can't be confirmed.
+- The bank step now runs before any diagram is drawn, so no diagram is drawn
+  and then thrown away. A question the bank fills is rewritten to fit the
+  textbook diagram's own numbers.
+- The 8-question cap is gone. Questions with parts (replaced by one question
+  worth the same marks), multiple choice (with four textbook options),
+  practice paper sections and topic booklets are all covered.
+- Searches are saved, so the workers that carry a job on reuse them. The bank's
+  AI calls run four at a time, each saved as it finishes.
+- When the first two solves of a bank question disagree, a third, independent
+  solve is tried, and its answer is used only if a fresh check agrees with it.
+  Bank answers no longer go through the general answer checker, which can't
+  see the textbook diagram.
+- Each resource's details list its textbook questions and every drawn diagram
+  with the reason ("no textbook diagram tested the same skill").
+- Two Sonnet findings: a prompt that showed the model another solver's answer
+  and note, or ran at high effort, was refused ("reasoning_extraction") every
+  time; the plain, medium-effort wording went through every time.
+
+**Why:** Tutors want textbook diagrams, which are consistent and drawn by
+publishers. Drawing should be a last resort.
+
+**Results** (same requests, local replay with production models and bank):
+
+| Request | Before (Some) | After |
+|---|---|---|
+| Year 9 worksheet, 10 diagram questions | 1 of 4 tried from bank, 3.8 min | 5 of 10 from bank, 3.2 min |
+| Year 10 practice paper | none (papers not covered), 5.3 min | 8 of 11 from bank, 6.3 min |
+| Year 9 topic booklet | none (booklets not covered), 4.9 min | 15 of 23 from bank, 5.6 min |
+
+**Status:** Live. Merged; resource portal deployed on merge, Functions deployed.
+
+**Next steps**
+- Most diagrams still drawn have no textbook diagram testing the same skill
+  (for example inverse-trig angle questions); the bank's coverage outside
+  Years 9-10 has not been measured.
+
+---
+
+## 2026-11-05 — Resource generation: topic quotes and labels no longer fail a paper (RES-72)
+
+**What changed**
+- When planning a paper, the generator quotes the line of the request or
+  uploaded file that puts each topic in scope. A quote it can't find no
+  longer rejects the plan. The resource is delivered with a review warning
+  naming the topic ("Topic "X" couldn't be matched to the request or uploaded
+  files. Check it is in scope.").
+- Quote matching now ignores curly vs straight apostrophes and quote marks,
+  dash styles and case, and also searches the reference scope the planner
+  is given.
+- A question labelled with a topic the plan doesn't list is moved to the
+  closest planned topic, or added as a topic of its own (which then gets the
+  warning), instead of rejecting the plan.
+
+**Why:** A Year 10 practice paper made from a school assessment
+notification failed after three rejected plans. The quotes were real lines
+of the PDF, but the PDF used curly apostrophes and the model typed straight
+ones, so they never matched. The other safeguards (asking for clarification
+when the contents are unknown, checking coded references, the content
+review) already stop a made-up syllabus, so a failed quote match is now a
+note for the tutor, not a failure.
+
+**Status:** Live. Merged and deployed to production Functions.
+
+---
+
+## 2026-11-05 — English bank: stimulus taxonomy, page schema and records (RES-64)
+
+**What changed**
+- `src/englishBank/taxonomy.js`: the stimulus types (7 written, 8 visual),
+  written and visual techniques, question types and skills the English bank
+  tags with. Every list has an "other".
+- `src/englishBank/schema.js`: the structured output for one page of an
+  English source, built from the taxonomy: its stimuli (verbatim text or a
+  visual's description, with a box, techniques with quoted evidence, themes,
+  year level and difficulty), its questions (marks, type, skill, the stimuli
+  they're about) and any marking-guide entries. Checked against the live
+  API on Haiku 5.5.
+- `src/englishBank/records.js`: turns a source's page results into
+  `englishStimuli`, `englishQuestions` and `englishGuides` records. A passage
+  split across pages becomes one stimulus. A technique whose quote isn't in
+  the passage, or that doesn't fit its medium, is dropped rather than kept
+  as a made-up quote. Questions link to the stimuli they name (or the one on
+  their page), and guide entries to the paper's question by label.
+- No Firestore rules or indexes change: the new collections are covered by
+  the catch-all deny like the maths bank, and search indexes come with
+  RES-68.
+
+**Why:** RES-66 extraction needs a fixed shape to extract into, and the
+generator must only ever reprint passages exactly as stored.
+
+**Status:** Merged. Nothing to deploy; extraction (RES-66) uses it next.
+
+---
+
+## 2026-11-05 — English bank: which Drive files to extract, with guides paired to papers (RES-65)
+
+**What changed**
+- `scripts/englishBankSync.js` lists Resources/English in the shared drive
+  and records each file the English bank will extract in a new
+  `englishBankSources` collection. It is kept apart from the maths
+  `questionBankSources`, which the maths extraction and weekly job read.
+- Only Past Papers, Practice Papers, Comprehension and Creative are taken.
+  LitCharts (RES-67) and the other folders are left out.
+- Each file is a paper, a guide (marking guidelines, sample answers, NESA
+  sample writing booklets) or an image (the Creative pictures, used as
+  visual stimuli). Each guide is paired with its paper by the words their
+  names share, preferring its own folder.
+- Copies are skipped as in the maths bank (shared helper `skipCopies`).
+
+**Why:** Extraction (RES-66) needs one list of English sources, and the
+marking guides linked to their papers.
+
+**Status:** Live. 635 records on production: 628 to extract (544 papers and
+59 guides in Past Papers; 18 papers and 1 guide in Comprehension; 2 PDFs and
+4 images in Creative), 5 copies and 2 sources files skipped. All 60 guides
+are paired and were checked by eye.
+
+---
+
+## 2026-11-05 — Resource generation: diagrams work on GPT, failures stop repeating (RES-70)
+
+**What changed**
+- Every diagram schema now lists all of its fields as required, with optional
+  ones accepting null (removed before validation). GPT's strict mode had
+  rejected every schema with an optional field before the model ran, so
+  triangles, prisms, cones, Venn diagrams, scatter plots and more were dropped
+  from GPT-generated resources, and a required one failed the job.
+- A failed optional diagram is recorded on the job and not sent again by the
+  next worker (a busy provider or timeout gets one more try). Before, every
+  worker hand-off re-sent all of them: one worksheet made 191 AI calls, about
+  170 of them instant failures.
+- Every optional diagram that couldn't be produced is listed in the job's
+  warnings, and a timed-out optional diagram is omitted instead of failing
+  the resource.
+- Optional diagram calls get two minutes, like optional reviews, instead of
+  six. Their output limit is sized to the number of diagrams (2,000 tokens
+  plus 300 each) instead of 32,000. When a question describes something its
+  diagram type can't draw, GPT can stall and pad its answer with blank space:
+  one cone call ran 256 seconds before failing. Now a stall fails in about 20
+  seconds and gets one retry. Shape units are limited to mm, cm, m, km or
+  units, after GPT wrote "cm 脚".
+- A practice paper whose request names no sitting time gets one from the
+  plan's question estimates instead of failing planning three times. Each
+  plan check now has its own reason, which the retry is told to correct, and
+  a plan that never validates tells the tutor what to add.
+- Retrying an older job (submitted before planned generation) whose single
+  generation call ran out of time moves it to planned generation.
+- When Claude rejects a schema as too large to compile, the call is sent once
+  more without it; the response is still parsed and validated.
+- `scripts/sweepDiagramSchemas.js` can now sweep GPT as well as Claude, and a
+  unit test checks every schema against GPT's strict-mode rules.
+- Checked with real generations (local replay, production keys). A Year 10
+  worksheet with 14 diagrams failed on the old code after 34 calls; with the
+  fixes it completed in 2.8 minutes with 15 calls and all 14 diagrams. The
+  untimed Year 7 poem paper completed in 3.3 minutes. All 38 diagram types
+  pass on both GPT and Claude.
+
+**Why:** Resources were slow and hit-or-miss. A read-only look at 31
+production jobs traced most of it to rejected diagram schemas and to failed
+calls repeating on every hand-off.
+
+**Status:** Live. Merged and Functions deployed.
+
+---
+
+## 2026-11-05 — English bank: THSC and NESA Year 12 English papers in Drive (RES-65)
+
+**What changed**
+- `scripts/thscPastPapers.js` takes `--subject=english`, which copies THSC
+  Online's English papers into Resources/English/Past Papers/Year 12, one
+  folder per listing. THSC only has English for Year 12.
+- 489 papers saved: 257 Trial Paper 1, 157 Trial Paper 2 Advanced, 20 Trial
+  Paper 2 Standard and 55 Extension 1 trials.
+- The script now keeps "(Adv.)" and "(Std.)" in titles, as THSC's viewer
+  does. Without them every Paper 2 trial came back missing.
+- THSC answers a missing file with a "404 Not Found" PDF, often under the
+  paper's own name. The script now recognises it by its bytes and reports
+  the paper as missing instead of saving it.
+- THSC doesn't have its 97 HSC papers and marking guidelines or its 5
+  assessment tasks (its own viewer shows 404 for them), so none were saved.
+- `scripts/nesaHscPapers.js` copies the HSC papers from NESA instead: 119
+  files from 2014 to 2025 (papers, marking guidelines and sample writing
+  booklets for Advanced, Standard and Extension 1) into
+  Past Papers/Year 12/HSC Papers, one folder per course. The common Standard
+  and Advanced Paper 1 is saved once, under "Standard and Advanced".
+  `NESA sources.json` records each file's URL. NESA's site has nothing
+  older than 2014.
+
+**Why:** RES-65 needs the past papers in Drive before the English sync and
+extraction, as the maths THSC papers were. The HSC papers and their marking
+guidelines are the best exam-style stimuli and guides available.
+
+**Status:** Live. The papers are in Drive with `THSC sources.json` and
+`NESA sources.json`; the
+English sync and extraction (RES-65, RES-66) have not started.
+
+**Next steps**
+- Three Maths Year 11 Prelim files saved by an earlier THSC run are the same
+  404 placeholder (Blacktown Boys 2023 Advanced, Cheltenham Girls 2024 and
+  2025 Standard) and should be deleted from Drive.
 
 ---
 

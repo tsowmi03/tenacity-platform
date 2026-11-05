@@ -54,19 +54,12 @@ describe("resource answer options", () => {
   });
 
   // RES-60.
-  it("offers textbook questions for maths only, defaulting to some", () => {
+  // RES-71: textbook (question bank) diagrams are always tried first, so there
+  // is no setting to offer.
+  it("has no textbook questions setting", () => {
     renderBuilder();
 
     fireEvent.click(screen.getByRole("button", { name: "Worksheet" }));
-    const group = screen.getByRole("group", { name: "Textbook questions" });
-    expect(group).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Some" })).toHaveClass("active");
-    fireEvent.click(screen.getByRole("button", { name: "Mostly" }));
-    expect(screen.getByRole("button", { name: "Mostly" })).toHaveClass("active");
-    expect(screen.getByText("Diagram questions come from textbooks wherever a good match exists.")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "English" }));
-    fireEvent.click(screen.getByRole("button", { name: "Annotation Task" }));
     expect(screen.queryByRole("group", { name: "Textbook questions" })).not.toBeInTheDocument();
   });
 

@@ -13,6 +13,7 @@ const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSH
 const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
 const { canKeepDraftAfterReview, unavailableReviewWarning } = require("./contentVerification");
 const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
+const { countResourceQuestions, noteProgress, phaseDurations, recordTimingSample } = require("./progressModel");
 const { callAiForResource } = require("./aiClient");
 const {
   ANSWER_MODES,
@@ -20,7 +21,7 @@ const {
   includesWorking,
 } = require("./answerMode");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
-const { isDiagramRenderError } = require("./builder/diagrams");
+const { isDiagramRenderError, optionalDiagramOmittedWarning } = require("./builder/diagrams");
 const { classifyResourceFailure, describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { mathFallbackWarning } = require("./mathNotation");
@@ -30,15 +31,15 @@ const {
   buildSplitResponseSchemas,
   buildVerifiedAnswersSchema,
 } = require("./responseSchema");
-const { buildDiagramFillSchema } = require("./diagramSchema");
+const { buildDiagramFillSchema, stripDiagramNulls } = require("./diagramSchema");
 const { DIAGRAM_REGISTRY } = require("./diagramRegistry");
 const {
   ResourceCancelledError,
   isCancellationError,
   throwIfCancelled,
 } = require("./cancellation");
-const { repairDiagrams } = require("./diagramRepair");
-const { QUESTION_BANK_MODES, applyQuestionBank } = require("./questionBankFill");
+const { diagramOwnerLabel, repairDiagrams } = require("./diagramRepair");
+const { QUESTION_BANK_MODES, applyQuestionBank, questionBankModeFor } = require("./questionBankFill");
 const { cloneWithSourceImages, loadSourceImages, withoutSourceImageBytes } = require("./sourceImages");
 const {
   buildDiagramFillPrompt,
@@ -165,6 +166,13 @@ const RESOURCE_GENERATION_EFFORT = "high";
 // generation — but it does need more than the old 8000 now that thinking shares
 // the budget.
 const RESOURCE_VERIFY_MAX_TOKENS = 32000;
+// A diagram fill returns well under 100 tokens per diagram, with little
+// reasoning. When a question describes something the type cannot draw (two
+// boats on a single-angle "depression"), GPT can stall and pad the JSON with
+// whitespace until the ceiling: the 32k verify ceiling let that run for over
+// three minutes (RES-70). The ceiling scales with the diagrams requested so a
+// stall fails in seconds and a large legitimate group still fits.
+const diagramFillMaxTokens = (count) => Math.min(16000, 2000 + 300 * count);
 const RESOURCE_VERIFY_EFFORT = "medium";
 const RESOURCE_WORKER_OPTIONS = {
   region: "us-central1",
@@ -277,8 +285,8 @@ function validateSubmitResourceJobPayload(input) {
       if (value === undefined || value === null) return null;
       return assertBoolean(value, "showMarks");
     },
-    // RES-60. How much of a maths resource comes from the question bank.
-    // Older clients send nothing and get none.
+    // RES-60. Older portals still send a mode. Every maths resource is now
+    // bank-first (RES-71), so the value is checked and then ignored.
     questionBank: (value) => {
       if (value === undefined || value === null || value === "") return "none";
       return assertEnum(value, "questionBank", QUESTION_BANK_MODES);
@@ -546,7 +554,7 @@ function buildResourceJobDoc({
     answerMode: payload.answerMode,
     showMarks: payload.showMarks,
     includeWorking: payload.answerMode === "worked",
-    questionBank: payload.subject === "maths" ? payload.questionBank || "none" : "none",
+    questionBank: questionBankModeFor({ subject: payload.subject }),
     questionBankUsage: null,
     customPrompt: payload.customPrompt,
     uploadedFiles: payload.uploadedFiles,
@@ -1492,6 +1500,10 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
   } : null;
   let built;
   let mathRepairUsed = false;
+  // RES-73. Unplanned resources learn their question count only here; history
+  // needs it either way. Then the display moves on to the last step.
+  if (!job.progressTracker?.questionCount) noteProgress(job, { questionCount: countResourceQuestions(parsed) });
+  await job.progressTracker?.markPhase?.("finish", "Building the PDF");
   try {
     // A revision or repair reads generatedJson back without the bank diagrams'
     // bytes (RES-60); fetch them before the build needs them.
@@ -2255,6 +2267,21 @@ function collectDiagramTargets(parsed) {
   return targets;
 }
 
+// Tutor-facing labels ("Question 4 part b") for diagram targets, keyed by node.
+// Parts carry no number of their own, so the enclosing question's is tracked.
+function diagramTargetLabels(parsed) {
+  const labels = new Map();
+  const walk = (node, context) => {
+    if (Array.isArray(node)) return node.forEach((child) => walk(child, context));
+    if (!node || typeof node !== "object") return;
+    const nested = Number.isFinite(node.number) ? { questionNumber: node.number } : context;
+    if (typeof node.diagramType === "string") labels.set(node, diagramOwnerLabel(node, nested));
+    for (const value of Object.values(node)) walk(value, nested);
+  };
+  walk(parsed, {});
+  return labels;
+}
+
 function describeDiagramTargets(targets) {
   return targets
     .map((target, index) => {
@@ -2283,6 +2310,9 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
   const wanted = targets.filter((target) => target.diagramType !== "none");
   if (!wanted.length) resourceEvent(job, "stage.skipped", { stageId: "diagrams.fill", reason: "no_diagrams_requested" });
 
+  const omitted = [];
+  const omissionDetail = new Map();
+  const labels = diagramTargetLabels(parsed);
   const byType = new Map();
   for (const target of wanted) {
     if (!byType.has(target.diagramType)) byType.set(target.diagramType, []);
@@ -2306,11 +2336,13 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
       return;
     }
     const schema = buildDiagramFillSchema(type);
+    const optionalGroup = group.every((target) => target.diagramRequired === false);
     try {
       const { parsed: filled } = await callAi({
+        progressPhase: "diagrams",
         apiKey,
         model,
-        maxTokens: RESOURCE_VERIFY_MAX_TOKENS,
+        maxTokens: diagramFillMaxTokens(group.length),
         effort: RESOURCE_VERIFY_EFFORT,
         systemPrompt: buildDiagramFillPrompt({ job, type, definition, constrained: Boolean(schema) }),
         userMessage: [
@@ -2320,13 +2352,18 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
         signal,
         responseSchema: schema,
         mathBearing: true,
+        // RES-70: a failed optional fill is recorded and not sent again by
+        // later workers; the diagrams are omitted with a warning instead.
+        ...(optionalGroup ? { bestEffort: true } : {}),
       });
       for (const entry of filled?.diagrams || []) {
         const target = group[Number(entry?.index) - 1];
-        if (target && entry.diagram) target.diagram = entry.diagram;
+        if (target && entry.diagram) target.diagram = stripDiagramNulls(entry.diagram);
       }
     } catch (err) {
-      if (isCancellationError(err) || err?.resourceControl) throw err;
+      // A timed-out optional fill omits its diagrams rather than failing the
+      // resource; every other control signal (yield, cancel) still propagates.
+      if (isCancellationError(err) || (err?.resourceControl && !(optionalGroup && err.code === "RESOURCE_STAGE_TIMEOUT"))) throw err;
       if (group.some((target) => target.diagramRequired !== false)) {
         err.modelFailure = true;
         err.diagramRequired = true;
@@ -2339,10 +2376,15 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
         count: group.length,
         reasonCode: classifyResourceFailure(err).reasonCode,
       });
+      const detail = err?.code === "RESOURCE_OPTIONAL_SKIPPED"
+        ? "the diagram could not be generated earlier in this run"
+        : "the diagram could not be generated";
+      for (const target of group) omissionDetail.set(target, detail);
     }
   }));
 
   for (const target of targets) {
+    const diagramType = target.diagramType;
     delete target.diagramType;
     // A question that asked for a diagram and did not get one keeps its stem but
     // loses the requirement — the same degradation buildDocxWithDiagramReliability
@@ -2354,10 +2396,13 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
       err.diagramLabel = target.stem || target.instruction || "a question";
       throw err;
     }
+    if (!target.diagram && diagramType !== "none") {
+      omitted.push({ label: labels.get(target), diagramType, detail: omissionDetail.get(target) || "the model did not return it" });
+    }
     if (!target.diagram) target.diagramRequired = false;
   }
 
-  return { requested: wanted.length, filled: wanted.filter((t) => t.diagram).length };
+  return { requested: wanted.length, filled: wanted.filter((t) => t.diagram).length, omitted };
 }
 
 /**
@@ -2591,7 +2636,8 @@ async function runGenerationPipelineLogged(job, deps) {
     ? await generateSplitResource({
         job,
         schemas: splitSchemas,
-        callAi: trackedCallAi,
+        // These calls carry no stage id or label; they are the writing step.
+        callAi: (request) => trackedCallAi({ progressPhase: "write", ...request }),
         apiKey: null,
         model: generationModel,
         maxTokens,
@@ -2602,6 +2648,7 @@ async function runGenerationPipelineLogged(job, deps) {
         signal: deps.signal,
       })
     : await trackedCallAi({
+        progressPhase: "write",
         model: generationModel,
         maxTokens,
         effort: RESOURCE_GENERATION_EFFORT,
@@ -2622,10 +2669,40 @@ async function runGenerationPipelineLogged(job, deps) {
       });
   throwIfCancelled(deps);
 
+  // RES-71. Every diagram comes from the question bank first. This runs
+  // before any diagram is drawn: a question the bank fills takes the textbook
+  // diagram and its independently checked answer, and only the rest go on to
+  // be drawn below. Nothing here can fail the resource.
+  let questionBank = { mode: "none", used: [], skipped: [], answerRows: [] };
+  try {
+    questionBank = await (deps.applyQuestionBank || applyQuestionBank)({
+      job,
+      parsed,
+      // The local replay runner keeps the job in memory but searches the real
+      // bank, so it passes the bank's database separately.
+      db: deps.questionBankDb || deps.db,
+      bucket: storage.bucket(),
+      callAi: trackedCallAi,
+      openaiApiKey: deps.openaiApiKey,
+      signal: deps.signal,
+      logger,
+    });
+  } catch (err) {
+    if (isCancellationError(err) || err?.resourceControl) throw err;
+    logger.warn("[resource] question bank skipped", { jobId: job.jobId, error: errorMessage(err).slice(0, 300) });
+  }
+  if (questionBank.used?.length) raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
+  // Keyed by what the row answers rather than by object, so the set survives
+  // the draft fallback below swapping in a copy of the document.
+  const answerRowKey = (row) => JSON.stringify([row?.questionNumber, row?.partLabel || null, row?.subTopicTitle || null, row?.section || null]);
+  const bankAnswerKeys = new Set((questionBank.answerRows || []).map(answerRowKey));
+  const isBankAnswer = (row) => bankAnswerKeys.has(answerRowKey(row));
+  throwIfCancelled(deps);
+
   // Maths questions name the diagram they need; build those now. English
   // resources carry no diagramType, so this is a no-op walk for them.
   let diagramFill;
-  const beforeDiagrams = usePlan ? structuredClone(parsed) : null;
+  const beforeDiagrams = usePlan ? cloneWithSourceImages(parsed) : null;
   try {
     diagramFill = await fillDiagrams({
       job,
@@ -2643,6 +2720,9 @@ async function runGenerationPipelineLogged(job, deps) {
     diagramFill = { requested: 0, filled: 0 };
     resourceEvent(job, "review.draft_retained", { stageId: "diagrams.fill", outcome: "draft", recoveryDecision: "keep_draft" }, "warn");
   }
+  // RES-70: every optional diagram the fill could not produce is named to the
+  // tutor, the same way a diagram dropped at render time is.
+  for (const omission of diagramFill.omitted || []) contentWarnings.push(optionalDiagramOmittedWarning(omission));
   if (diagramFill.requested) {
     logger.info("[resource] diagrams filled", {
       jobId: job.jobId,
@@ -2652,7 +2732,7 @@ async function runGenerationPipelineLogged(job, deps) {
     // The generation response described diagrams by name only. What is stored —
     // and what a repair attempt would re-read — has to be the document that
     // actually has them.
-    raw = JSON.stringify(parsed, null, 2);
+    raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
   }
   throwIfCancelled(deps);
 
@@ -2682,7 +2762,7 @@ async function runGenerationPipelineLogged(job, deps) {
   }
   // A repaired or omitted diagram changes the document, and `raw` is what a
   // retry or a revision re-reads — so it has to be the document that was built.
-  if (diagramRepair.changed) raw = JSON.stringify(parsed, null, 2);
+  if (diagramRepair.changed) raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
   throwIfCancelled(deps);
 
   // The verbatim flags exempt a body from the de-AI punctuation backstop, so
@@ -2717,7 +2797,7 @@ async function runGenerationPipelineLogged(job, deps) {
     // Revisions and repair attempts re-read generatedJson, not the DOCX. Store
     // the hydrated verified text and resolved per-topic excerpts rather than
     // the model's selector-only draft, or a later edit would lose its sources.
-    raw = JSON.stringify(parsed, null, 2);
+    raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
   }
 
   // Verification pass: clean and cross-check maths working out. A topic booklet
@@ -2730,14 +2810,18 @@ async function runGenerationPipelineLogged(job, deps) {
   if (includesWorking(answerMode) && job.subject === "maths") {
     for (const group of answerGroupsFor(parsed)) {
       try {
+        // A bank answer was solved twice against the textbook diagram, which
+        // the checker cannot see, so only the generated answers go to it.
+        const generatedRows = group.rows.filter((row) => !isBankAnswer(row));
         const verified = await verifyMathsAnswers({
           job,
-          parsed: { ...parsed, answers: group.rows },
+          parsed: { ...parsed, answers: generatedRows },
           apiKey: null,
           callAi: trackedCallAi,
           signal: deps.signal,
         });
-        group.replace(parsed, verified.answers);
+        const checked = [...verified.answers];
+        group.replace(parsed, group.rows.map((row) => (isBankAnswer(row) ? row : checked.shift())));
       } catch (err) {
         if (!usePlan || !canKeepDraftAfterReview(err)) throw err;
         reviewStatus = "draft";
@@ -2748,27 +2832,6 @@ async function runGenerationPipelineLogged(job, deps) {
       throwIfCancelled(deps);
     }
   }
-
-  // RES-60. Swap some diagram questions for bank questions with their
-  // original diagrams. Runs after answer verification: each bank question
-  // carries its own checked answer, and the verifier cannot see the crop.
-  let questionBank = { mode: "none", used: [] };
-  try {
-    questionBank = await (deps.applyQuestionBank || applyQuestionBank)({
-      job,
-      parsed,
-      db: deps.db,
-      bucket: storage.bucket(),
-      callAi: trackedCallAi,
-      openaiApiKey: deps.openaiApiKey,
-      signal: deps.signal,
-      logger,
-    });
-  } catch (err) {
-    if (isCancellationError(err) || err?.resourceControl) throw err;
-    logger.warn("[resource] question bank skipped", { jobId: job.jobId, error: errorMessage(err).slice(0, 300) });
-  }
-  throwIfCancelled(deps);
 
   try {
     const saved = await saveGeneratedResource({
@@ -2796,7 +2859,7 @@ async function runGenerationPipelineLogged(job, deps) {
       ],
       ...diagramRepairPatch(diagramRepair),
       ...(questionBank.mode !== "none"
-        ? { questionBankUsage: { mode: questionBank.mode, slots: questionBank.slots || 0, used: questionBank.used, skipped: questionBank.skipped || [] } }
+        ? { questionBankUsage: { mode: questionBank.mode, slots: questionBank.slots || 0, used: questionBank.used || [], skipped: questionBank.skipped || [] } }
         : {}),
       effectiveModel: generationModel,
       effectiveProvider: providerForModel(generationModel),
@@ -3568,6 +3631,24 @@ async function emitResourceTerminal({ db, job, outcome, errorCode, clock }) {
   try { const snap = await db.collection("resourceJobs").doc(job.jobId).get(); if (snap.exists) current = snap.data(); }
   catch { resourceEvent(job, "summary.unavailable", { reason: "job_read_failed" }, "warn"); }
   resourceEvent(job, `job.${outcome === "complete" ? "completed" : outcome}`, { ...terminalFields(current, outcome, clock ? clock() : new Date()), errorCode, reviewStatus: current.reviewStatus || "not_requested", warningCount: current.warnings?.length || 0 }, outcome === "failed" ? "error" : "info");
+  if (outcome === "complete") await recordResourceTiming({ db, job: current });
+}
+
+// RES-73. Every completed resource teaches the ETA. Revisions and repairs are
+// a different amount of work from a fresh generation, so they are left out.
+async function recordResourceTiming({ db, job }) {
+  const progress = job.progress || {};
+  if (isRevisionJob(job) || !(job.activeElapsedMs > 0) || !(progress.questionCount > 0)) return;
+  try {
+    await recordTimingSample(db, job, {
+      questions: progress.questionCount,
+      activeMs: job.activeElapsedMs,
+      phaseMs: phaseDurations(progress.phaseStarts, job.activeElapsedMs),
+      predictedMs: progress.initialEstimateMs,
+    });
+  } catch (err) {
+    resourceEvent(job, "timing.unrecorded", { reason: String(err?.code || "write_failed") }, "warn");
+  }
 }
 
 async function runQueueForTutor(createdBy, deps) {
@@ -3944,7 +4025,14 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   // provider. After a content failure (invalid JSON, a missing required
   // diagram, a model error) a saved response may itself be the cause, and
   // replaying it would fail the same way every time, so Retry starts fresh.
-  const canResume = resumableFailure(job);
+  // RES-70. A job submitted before planned generation writes the whole resource
+  // in one call. When that call ran out of time, resuming replays the same call
+  // and times out again, so Retry moves the job to planned generation, which
+  // works in small saved batches. Its legacy checkpoints cannot be reused.
+  const plannedOn = deps.plannedGenerationEnabled ?? plannedGenerationEnabled.value();
+  const upgradeToPlanned = plannedOn && job.generationVersion !== 1 &&
+    ["RESOURCE_STAGE_TIMEOUT", "RESOURCE_STAGE_LIMIT"].includes(job.errorCode);
+  const canResume = resumableFailure(job) && !upgradeToPlanned;
   if (deps.storage && !canResume) {
     await deps.storage.bucket().deleteFiles({ prefix: `resources/checkpoints/${payload.jobId}/` });
   }
@@ -3954,7 +4042,7 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   const retryRunId = randomUUID();
   await jobRef.update({
     runId: retryRunId, runStartedAt: now(clock), activeElapsedMs: 0, queueElapsedMs: 0, queueTurnAt: now(clock),
-    stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0, optionalReviewFailures: {}, reviewStatus: null, contentReview: null,
+    stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0, optionalReviewFailures: {}, optionalStageFailures: {}, reviewStatus: null, contentReview: null,
     progress: canResume ? job.progress || null : null,
     status: "pending",
     modelChoice,
@@ -3968,7 +4056,8 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     failover: null,
     failureAttempts: [],
     recoveryCount: 0,
-    ...(job.generationVersion === 1 ? {
+    ...(upgradeToPlanned ? { generationVersion: 1 } : {}),
+    ...(job.generationVersion === 1 || upgradeToPlanned ? {
       stageRecoveryCount: 0,
       stageRecovery: Object.fromEntries(Object.entries(canResume ? job.stageRecovery || {} : {}).filter(([, v]) => v.split).map(([k]) => [k, { split: true, failures: 0 }])),
     } : {}),
@@ -3987,7 +4076,7 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     completedAt: null,
   });
 
-  resourceEvent({ ...job, runId: retryRunId, attemptId: null }, "job.retry_queued", { recoveryDecision: "manual_retry" });
+  resourceEvent({ ...job, runId: retryRunId, attemptId: null }, "job.retry_queued", { recoveryDecision: upgradeToPlanned ? "manual_retry_planned" : "manual_retry", generationVersion: upgradeToPlanned ? 1 : job.generationVersion || 0 });
   const outcomes = deps.durableStages ? [] : await (deps.runQueueForTutor || runQueueForTutor)(
     job.createdBy,
     deps

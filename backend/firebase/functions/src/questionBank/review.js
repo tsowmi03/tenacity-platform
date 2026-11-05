@@ -143,7 +143,8 @@ async function forJob({ db, bucket, actor, payload }) {
   const flagged = new Set(flags.docs.map((doc) => doc.get("questionId")));
   const questions = docs.filter((doc) => doc.exists).map((doc) => {
     const entry = used.find((u) => u.questionId === doc.id);
-    return { ...questionSummary(doc), questionNumber: entry.questionNumber, use: entry.kind, flaggedByMe: flagged.has(doc.id) };
+    // RES-71: a bank question can sit on a part or in a booklet section.
+    return { ...questionSummary(doc), questionNumber: entry.questionNumber, partLabel: entry.partLabel || null, section: entry.section || null, use: entry.kind, flaggedByMe: flagged.has(doc.id) };
   });
   return { questions: await withImages(bucket, questions) };
 }

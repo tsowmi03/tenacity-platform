@@ -1669,6 +1669,34 @@ describe("retryResourceJobImpl", () => {
     }
   });
 
+  // RES-70. A pre-planning job whose single generation call ran out of time
+  // timed out again on every resume; Retry now moves it to planned generation.
+  it("moves a timed-out legacy job to planned generation, only when planning is on", async () => {
+    const cases = [
+      [{ generationVersion: 0, errorCode: "RESOURCE_STAGE_TIMEOUT" }, true, 1],
+      [{ errorCode: "RESOURCE_STAGE_LIMIT" }, true, 1],
+      [{ generationVersion: 0, errorCode: "RESOURCE_STAGE_TIMEOUT" }, false, 0],
+      [{ generationVersion: 0, errorCode: null, failureAttempts: [{ reasonCode: "PROVIDER_BUSY" }] }, true, 0],
+      [{ generationVersion: 1, errorCode: "RESOURCE_STAGE_TIMEOUT" }, true, 1],
+    ];
+    for (const [failure, plannedOn, expectedVersion] of cases) {
+      const db = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", progress: { completedStages: 1 }, ...failure }]);
+      const storage = fakeStorage();
+      await retryResourceJobImpl({
+        payload: { jobId: "job-1" },
+        actor: { uid: "tutor-1", role: "tutor" },
+        deps: { db, clock, storage, durableStages: true, plannedGenerationEnabled: plannedOn },
+      });
+      const label = JSON.stringify({ failure, plannedOn });
+      assert.equal(db.jobs[0].generationVersion || 0, expectedVersion, label);
+      const upgraded = expectedVersion === 1 && (failure.generationVersion || 0) === 0;
+      if (upgraded) {
+        assert.deepEqual(storage.deletedPrefixes, ["resources/checkpoints/job-1/"], label);
+        assert.equal(db.jobs[0].stageRecoveryCount, 0, label);
+      }
+    }
+  });
+
   it("rejects retries by another tutor", async () => {
     const db = fakeQueueDb([
       { id: "job-1", createdBy: "tutor-1", status: "failed" },
@@ -2589,4 +2617,64 @@ it("keeps a cancel requested mid-attempt when the stage yields", async () => {
   assert.deepEqual(outcomes.map((o) => o.status), ["cancelled"]);
   await runQueueForTutor("t", deps);
   assert.equal(generations, 1, "a cancelled job is never claimed again");
+});
+
+// RES-71. The question bank runs before any diagram is drawn: a question it
+// fills is not drawn, and its answer (checked twice against the textbook
+// diagram) is not sent to the answer checker, which cannot see the crop.
+describe("question bank before drawing", () => {
+  it("draws only what the bank did not fill and leaves bank answers unchecked", async () => {
+    const sharp = require("sharp");
+    const crop = await sharp({ create: { width: 60, height: 40, channels: 3, background: "#fff" } }).png().toBuffer();
+    const generated = {
+      title: "Area", subject: "maths", year: 9, topic: "Area", totalMarks: 4,
+      questions: [1, 2].map((number) => ({ number, stem: `Find the area of rectangle ${number}.`, type: "short-answer", options: null, marks: 2, workingLines: 2, diagram: null, diagramType: "rectangle", diagramRequired: true, parts: null })),
+      answers: [1, 2].map((number) => ({ questionNumber: number, partLabel: null, answer: `${number} cm²`, workingOut: "generated working" })),
+    };
+    const aiCalls = [];
+    const bankCalls = [];
+    const storage = fakeStorage({});
+    const result = await runGenerationPipeline(
+      { jobId: "job-bank", attemptId: "a1", createdBy: "tutor-1", studentName: "Test Student", subject: "maths", year: 9, resourceType: "worksheet", answerMode: "worked", includeWorking: true, customPrompt: "Two area questions." },
+      {
+        storage, anthropicApiKey: "k", openaiApiKey: "k", clock,
+        applyQuestionBank: async ({ parsed }) => {
+          bankCalls.push(parsed.questions.map((q) => q.diagramType || q.diagram?.type));
+          const question = parsed.questions[0];
+          question.stem = "Find the area of this rectangle.";
+          question.diagram = { type: "source-image", image: crop, width: 60, height: 40, storagePath: "questionBank/diagrams/q1_1.png", questionBankId: "q1" };
+          delete question.diagramType;
+          parsed.answers[0].answer = "24 cm²";
+          parsed.answers[0].workingOut = "bank working";
+          return { mode: "first", slots: 2, used: [{ questionNumber: 1, questionId: "q1", kind: "original" }], skipped: [{ questionNumber: 2, reason: "none_suitable" }], answerRows: [parsed.answers[0]] };
+        },
+        callAi: async (payload) => {
+          aiCalls.push(payload);
+          if (/producing "rectangle" diagram/.test(payload.systemPrompt)) {
+            return { parsed: { diagrams: [{ index: 1, diagram: { type: "rectangle", dimensions: { width: 4, height: 3 }, unit: "cm", dimensionLabels: null } }] } };
+          }
+          if (/proof-reading a mark scheme/.test(payload.systemPrompt)) {
+            return { parsed: { corrections: [{ index: 1, answer: "12 cm²", workingOut: "checked working" }] } };
+          }
+          return { parsed: structuredClone(generated), raw: JSON.stringify(generated) };
+        },
+      }
+    );
+
+    assert.deepEqual(bankCalls, [["rectangle", "rectangle"]], "the bank sees the questions before any diagram is drawn");
+    const fills = aiCalls.filter((c) => /producing "rectangle" diagram/.test(c.systemPrompt));
+    assert.equal(fills.length, 1);
+    assert.match(fills[0].userMessage, /1 item\(s\)/, "only the question the bank did not fill is drawn");
+    assert.match(fills[0].userMessage, /rectangle 2/);
+    const verify = aiCalls.find((c) => /proof-reading a mark scheme/.test(c.systemPrompt));
+    assert.doesNotMatch(verify.userMessage, /24 cm²/, "the bank answer is not sent to the checker");
+    const stored = JSON.parse(result.generatedJson);
+    assert.equal(stored.questions[0].diagram.type, "source-image");
+    assert.equal(stored.questions[0].diagram.image, undefined, "image bytes never reach stored JSON");
+    assert.equal(stored.questions[1].diagram.type, "rectangle");
+    assert.equal(stored.answers[0].answer, "24 cm²");
+    assert.equal(stored.answers[1].answer, "12 cm²");
+    assert.equal(result.questionBankUsage.used.length, 1);
+    assert.deepEqual(result.questionBankUsage.skipped, [{ questionNumber: 2, reason: "none_suitable" }]);
+  });
 });

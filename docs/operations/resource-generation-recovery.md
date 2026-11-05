@@ -4,7 +4,9 @@ Resource workers save completed AI responses in private Storage objects under
 `resources/checkpoints/<jobId>/`. The response key includes the model, schema,
 and full prompt. Replay reads the saved response and never resubmits that call.
 Only one new AI call runs in an invocation; the next uncached call yields to
-`pending`, which the existing update worker resumes. Concurrent stages (diagram
+`pending`, which the existing update worker resumes. The exception is the question bank
+step (RES-71): its best-effort calls (`bestEffort` and `concurrent`) run four
+at a time, each saved as it finishes, while the invocation budget allows. Concurrent stages (diagram
 fills) take that slot before any await, and the others wait for the started
 call to be saved before yielding. Output finalization remains
 fenced by the active attempt ID.
@@ -283,3 +285,49 @@ saved real-provider responses can now be recovered offline into a labelled DOCX
 with warnings, without repeating the expensive generation. Such an offline
 recovery must disclose any optional diagrams/reviews for which no saved response
 exists; it is a draft, not a newly verified paper.
+
+## RES-70: optional stages, strict schemas and planning reasons
+
+Diagram schemas (`diagramSchema.js`) list every property in `required`.
+OpenAI strict mode rejects any other shape with `invalid_json_schema` before
+generation. Optional fields are nullable instead, and `stripDiagramNulls`
+removes the nulls from a filled or repaired diagram before validation.
+`test/unit/resourceOpenAiStrictSchemas.test.js` checks every diagram and
+resource schema against the strict-mode rules. After a schema change, sweep
+both providers live:
+
+```sh
+ANTHROPIC_API_KEY=... node scripts/sweepDiagramSchemas.js
+OPENAI_API_KEY=... RESOURCE_LLM_MODEL=gpt-6.1-sol node scripts/sweepDiagramSchemas.js
+```
+
+A diagram fill whose diagrams are all optional is a best-effort stage. When it
+fails, the job records `optionalStageFailures[<checkpoint key>]` with the
+error code and count. Later workers skip it (`stage.skipped`,
+`reason: best_effort_failed_before`) instead of sending it again. A 429 or
+5xx is given up after two attempts. Anything else is given up after one,
+including the two-minute optional-stage timeout (`OPTIONAL_STAGE_TIMEOUT_MS`,
+shared with optional reviews). A response cut off at its token limit is
+retried once. A fill's output ceiling is `2000 + 300 × diagrams` tokens (at
+most 16,000). When a question describes something its diagram type cannot
+draw, GPT can stall and pad the JSON with whitespace until the ceiling. Each
+omitted diagram becomes an `OPTIONAL_DIAGRAM_OMITTED` warning. Manual Retry
+clears the record. Shape `unit` is an enum (`mm`, `cm`, `m`, `km`, `units`).
+
+Plan validation reasons are specific: `plan_topics_empty`,
+`questions_not_numbered_1_to_n`, `question_topic_not_in_topics`,
+`question_section_missing`, `question_marks_outside_1_to_30`,
+`question_count_not_requested_total`, `section_questions_not_consecutive`,
+`time_allowed_missing` and `source_evidence_not_found`. A practice paper with
+no requested sitting time takes one from the sum of the questions'
+`estimatedMinutes`, rounded up to five minutes. When planning exhausts its
+retries, the tutor is told to add topics, a question count or a sitting time.
+
+Manual Retry of a `generationVersion` 0 job that failed with
+`RESOURCE_STAGE_TIMEOUT` or `RESOURCE_STAGE_LIMIT` sets `generationVersion: 1`
+(when `RESOURCE_PLANNED_GENERATION_ENABLED` is on). It also discards the
+legacy checkpoints, which planned generation cannot reuse.
+
+When Claude rejects a schema at compile time (`compiled grammar is too large`,
+`schema is too complex`, compile timeout), `callAnthropicForResource` sends the
+same request once without `output_config.format`.

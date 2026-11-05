@@ -233,18 +233,21 @@ question number, and the record points at that part's crop (`sharedFrom`)
 rather than a second copy. `questionBankSharedFigures.js` re-saved the
 backfill's pages from the stored batch results, with no model calls.
 
-## 10. The generator (RES-60)
+## 10. The generator (RES-60, bank-first since RES-71)
+
+Every maths diagram comes from the bank first; a drawn diagram is the fallback.
 
 | Piece | How it works |
 |---|---|
-| Tutor setting | "Textbook questions" on a maths resource: None, Some (about a third of the diagram questions, spread through the resource) or Mostly (every diagram question with a good match, up to 8). An older portal sends nothing and gets None |
-| Slots | Numbered questions with a diagram, no sub-parts, not multiple choice, and an answer row that can be found unambiguously. Topic booklets, whose numbering restarts by section, are left out |
-| Search | Per slot: the bank questions nearest "topic: generated stem", for the student's year and the difficulty its position calls for (first third easy, then medium, then hard), falling back to any difficulty. No question is offered to two slots |
-| Choose and solve | Sonnet 5.5 sees three candidate crops and picks one that tests the same skill, is complete and suits the year, or none. It restates the original question, or every third time asks something new about the same diagram, and solves it |
-| Check | A second, independent solve from the crop must agree with the answer, or the generated question stays |
-| Budget | 150 s for the whole step, four slots at a time; a slot still running then keeps its generated question. A live run took 39–50 s for six slots |
+| Setting | None. Every maths resource is bank-first; an older portal's `questionBank` value is accepted and ignored, and new jobs store `first` |
+| When | After the questions are written and before any diagram is drawn. A question the bank fills is never drawn; the rest go on to the diagram fill as before |
+| Slots | Every question or part that asks for a diagram (`diagramType` other than `none`, or a drawn diagram on older paths), including multiple choice, practice paper sections and topic booklet sub-topics and quiz sections. A question whose parts share its diagram is replaced by one question worth the same marks, with one answer row. A slot whose answer row cannot be matched safely is drawn, and recorded with the reason |
+| Search | Per slot: the bank questions nearest "topic: generated question", for the student's year and the difficulty its position calls for (first third easy, then medium, then hard), falling back to any difficulty. No question is offered to two slots. Searches are saved in `resources/checkpoints/<jobId>/bank-search-*.json`, so a later worker reuses them |
+| Choose and solve | Sonnet 5.5 sees three candidate crops and picks one that tests the same skill, is complete and suits the year, or none. It restates the original question, or every third time asks something new about the same diagram, and solves it. A multiple-choice question gets four textbook options |
+| Check | A second, independent solve from the crop must agree with the answer, or the slot is drawn. Bank answers skip the later answer check, which cannot see the crop |
+| Calls | Each call is saved as it finishes. Bank calls are best effort and run four at a time in one worker (the only calls allowed to run side by side); a failed one is recorded and its slot is drawn. A worker spends at most 150 s on the step; anything unfinished carries on in the next worker |
 | Storage | A bank diagram is a `source-image` with its Storage path; its bytes are loaded only to build the DOCX, so `generatedJson` stays small and a revision rebuilds it. The diagram repair pass leaves it alone |
-| Record | The job's `questionBankUsage` lists each bank question used, its question number and whether it was the original or a new question |
+| Record | The job's `questionBankUsage` lists each bank question used (question number, part, section, original or new) and, in `skipped`, every diagram that was drawn and why. The portal shows both in the resource's details |
 
 ## 11. Flags (RES-61)
 
