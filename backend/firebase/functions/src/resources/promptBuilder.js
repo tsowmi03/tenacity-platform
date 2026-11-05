@@ -44,6 +44,8 @@ Whenever "diagramType" is not "none", also set "diagramRequired" on the same que
 - false when the diagram is helpful but the written question remains complete without it.
 When "diagramType" is "none", set "diagramRequired" to false.
 
+Set "difficulty" on every question and part: "easy", "medium" or "hard" for a student in this year. Follow the tutor's instructions: a hard, extension or selective paper is mostly hard, a revision or catch-up sheet mostly easy and medium, and where difficulty builds (through the resource, within each topic, or from one topic to the next) the labels show that build. Label the difficulty each question actually has, not its position.
+
 Choose the type whose shape matches what the question needs. The examples below show what each type depicts:
 ${buildDiagramPromptExamples()}
 
@@ -106,7 +108,8 @@ function diagramFields(subject) {
     ? `
       "diagram": null,
       "diagramType": ${DIAGRAM_TYPE_ENUM},
-      "diagramRequired": boolean,`
+      "diagramRequired": boolean,
+      "difficulty": "easy" | "medium" | "hard",`
     : `
       "diagram": null,
       "diagramRequired": boolean,`;

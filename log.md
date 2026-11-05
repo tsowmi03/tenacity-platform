@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-06 | [Question bank matching follows the brief: difficulty, year ±1, restate or adapt (RES-76)](#2026-11-06--question-bank-matching-follows-the-brief-difficulty-year-1-restate-or-adapt-res-76) |
 | 2026-11-06 | [Question bank: THSC Year 11-12 papers (RES-69)](#2026-11-06--question-bank-thsc-year-11-12-papers-res-69) |
 | 2026-11-05 | [Resource portal: progress bar, steps and ETA while generating (RES-73)](#2026-11-05--resource-portal-progress-bar-steps-and-eta-while-generating-res-73) |
 | 2026-11-05 | [Every maths diagram comes from the question bank first (RES-71)](#2026-11-05--every-maths-diagram-comes-from-the-question-bank-first-res-71) |
@@ -218,6 +219,36 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-06 — Question bank matching follows the brief: difficulty, year ±1, restate or adapt (RES-76)
+
+**What changed**
+- The generator now labels every maths question and part easy, medium or
+  hard, following the tutor's brief (a hard paper, step-ups topic by topic,
+  and so on). The label is part of the structured output, so it can't be
+  dropped.
+- The bank searches the student's year and the years either side, then ranks
+  candidates on one scale of year and difficulty: a hard Year 8 question is
+  matched with Year 8 hard or Year 9 easy. Anything more than a step away is
+  dropped. Position in the resource is used only when a question has no label.
+- The choosing model now sees the tutor's brief, the difficulty wanted and the
+  year each candidate was printed for. It accepts a question only if its
+  content is taught by the student's year.
+- The fixed "every third question is rewritten" rule is gone. The model
+  decides per question whether to restate the original or adapt it (another
+  unknown, working backwards, an extra step to make it harder).
+- The job record now shows each bank question's difficulty and printed year.
+- Checked live on the production bank: a 5-question Year 8 worksheet filled
+  4 slots in 52 s, with easy, medium and hard slots taking Year 7, 8 and 9
+  questions, one adapted. The fifth failed the answer check and was drawn.
+
+**Why:** Exact-year search and difficulty by position ignored the brief, and
+a booklet that steps up topic by topic was matched as if it got harder only
+from start to finish.
+
+**Status:** Live. Merged; Functions deployed to production.
 
 ---
 
