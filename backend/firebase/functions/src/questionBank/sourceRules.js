@@ -95,6 +95,18 @@ function planSources(files) {
     if (student) skip(plan, SKIP_REASONS.teacherEdition, { duplicateOf: student.id });
   }
 
+  skipCopies(pending(), skip);
+  return [...plans.values()];
+}
+
+/**
+ * Skips the copies among pending plans: the Word twin of a PDF, and
+ * byte-identical files (keeping the canonical one). Shared with the English
+ * bank's source rules.
+ */
+function skipCopies(pendingPlans, skip) {
+  const pending = () => pendingPlans.filter((plan) => plan.status === "pending");
+
   // The same worksheet saved as PDF and as Word: keep the PDF.
   const byStem = new Map();
   for (const plan of pending()) {
@@ -125,18 +137,18 @@ function planSources(files) {
       if (plan !== keep) skip(plan, SKIP_REASONS.duplicate, { duplicateOf: keep.id });
     }
   }
-
-  return [...plans.values()];
 }
 
 module.exports = {
   EXCLUDED_FOLDER,
   GOOGLE_DOCUMENT_MIME_TYPES,
   SKIP_REASONS,
+  baseName,
   canonicalOf,
   extensionOf,
   isAnswerFile,
   isBelowYear5,
   isDocument,
   planSources,
+  skipCopies,
 };

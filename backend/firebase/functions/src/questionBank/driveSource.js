@@ -14,6 +14,8 @@ const DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 // Resources/Maths in the Tenacity Tutoring shared drive.
 const MATHS_FOLDER_ID = "1ExbOl6WoAtz6Rg-ZhNp_nvU50coC_IHV";
+// Resources/English, for the English bank (RES-65).
+const ENGLISH_FOLDER_ID = "1mBijQF-8YuCf8gEqNvFe4EimoF8r9ps_";
 const QUESTION_BANK_DRIVE_ACCOUNT = "question-bank-drive@tenacity-tutoring-b8eb2.iam.gserviceaccount.com";
 const FILE_FIELDS = "id,name,mimeType,size,md5Checksum,modifiedTime";
 const PAGE_SIZE = 1000;
@@ -138,6 +140,7 @@ async function listTree(drive, rootFolderId = MATHS_FOLDER_ID, rootName = "Maths
 
 module.exports = {
   DRIVE_READONLY_SCOPE,
+  ENGLISH_FOLDER_ID,
   MATHS_FOLDER_ID,
   QUESTION_BANK_DRIVE_ACCOUNT,
   createDriveClient,

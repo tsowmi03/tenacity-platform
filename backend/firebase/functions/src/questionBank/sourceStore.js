@@ -22,17 +22,19 @@ function versionOf(file) {
  *
  * @param {Map<string, object>} existing Firestore data by Drive file ID
  * @param {Array<object>} plans output of planSources()
+ * @param {{fields?: string[]}} [options] the fields the sync owns (the English
+ *   bank adds its own)
  */
-function planSourceWrites(existing, plans) {
+function planSourceWrites(existing, plans, { fields = SYNCED_FIELDS } = {}) {
   const writes = [];
   const seen = new Set();
   for (const plan of plans) {
     seen.add(plan.id);
-    const record = Object.fromEntries(SYNCED_FIELDS.map((field) => [field, field === "version" ? versionOf(plan) : plan[field] ?? null]));
+    const record = Object.fromEntries(fields.map((field) => [field, field === "version" ? versionOf(plan) : plan[field] ?? null]));
     const current = existing.get(plan.id);
     if (!current) {
       writes.push({ id: plan.id, change: "new", data: record });
-    } else if (SYNCED_FIELDS.some((field) => (current[field] ?? null) !== record[field])) {
+    } else if (fields.some((field) => (current[field] ?? null) !== record[field])) {
       writes.push({ id: plan.id, change: current.version === record.version ? "updated" : "changed", data: record });
     }
   }
@@ -44,16 +46,16 @@ function planSourceWrites(existing, plans) {
   return writes;
 }
 
-async function loadSources(db) {
-  const snapshot = await db.collection(SOURCES_COLLECTION).get();
+async function loadSources(db, { collection = SOURCES_COLLECTION } = {}) {
+  const snapshot = await db.collection(collection).get();
   return new Map(snapshot.docs.map((doc) => [doc.id, doc.data()]));
 }
 
-async function applySourceWrites(db, writes, { now = new Date() } = {}) {
+async function applySourceWrites(db, writes, { now = new Date(), collection = SOURCES_COLLECTION } = {}) {
   for (let start = 0; start < writes.length; start += BATCH_LIMIT) {
     const batch = db.batch();
     for (const write of writes.slice(start, start + BATCH_LIMIT)) {
-      batch.set(db.collection(SOURCES_COLLECTION).doc(write.id), { ...write.data, syncedAt: now }, { merge: true });
+      batch.set(db.collection(collection).doc(write.id), { ...write.data, syncedAt: now }, { merge: true });
     }
     await batch.commit();
   }
@@ -61,6 +63,7 @@ async function applySourceWrites(db, writes, { now = new Date() } = {}) {
 
 module.exports = {
   SOURCES_COLLECTION,
+  SYNCED_FIELDS,
   applySourceWrites,
   loadSources,
   planSourceWrites,
