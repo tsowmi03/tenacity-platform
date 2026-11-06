@@ -249,10 +249,12 @@ the only check before, and could be wrong on a diagram it misread.
 - Random audit of 100 links: 77 fit, 14 could not be judged, 9 judged wrong,
   of which about 3 were linked to the wrong part. The second solve catches
   those before they print.
-- Same three RES-71 requests, local replay with production models and bank:
-  Year 9 worksheet 4 → 7 textbook questions (3.3 → 2.9 min); Year 10 paper
-  4 → 10 (6.4 → 6.0 min); Year 9 booklet 23 → 18 with 3 book answers
-  (6.4 → 6.3 min).
+- Same three RES-71 requests, local replay with production models and bank
+  (main → this branch): Year 9 worksheet 4 → 8 textbook questions, 1 with a
+  book answer and 1 unconfirmed (3.3 → 3.0 min); Year 10 paper 4 → 10, none
+  restated with a book answer (6.4 → 6.3 min); Year 9 booklet 23 → 17, 3 with
+  book answers (6.4 → 7.0 min). Textbook question counts move run to run, so
+  the book answers, not the counts, are the change.
 
 **Status:** Live. Answers are written to production; generator change merged
 and Functions deployed.
