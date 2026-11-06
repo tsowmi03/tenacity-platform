@@ -189,10 +189,11 @@ describe("worksheet DOCX builder", () => {
     const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
     const text = extractXmlText(buffer, "word/document.xml");
 
-    assert.match(text, /\[2 marks\]/);
-    assert.match(text, /\[1 mark\]/);
-    assert.match(text, /\[3 marks\]/);
-    assert.doesNotMatch(text, /\[4 marks\]/);
+    // Marks are joined with a non-breaking space so they never wrap (RES-81).
+    assert.match(text, /\[2[\s\u00A0]marks\]/);
+    assert.match(text, /\[1[\s\u00A0]mark\]/);
+    assert.match(text, /\[3[\s\u00A0]marks\]/);
+    assert.doesNotMatch(text, /\[4[\s\u00A0]marks\]/);
     assert.equal((xml.match(/w:color="BBBBB[AB]"/g) || []).length, 18);
   });
 

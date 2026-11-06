@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-06 | [Questions with diagrams: diagram beside the question, answer lines alongside (RES-81)](#2026-11-06--questions-with-diagrams-diagram-beside-the-question-answer-lines-alongside-res-81) |
 | 2026-11-06 | [Question bank: textbook questions carry the book's own answers (RES-63)](#2026-11-06--question-bank-textbook-questions-carry-the-books-own-answers-res-63) |
 | 2026-11-06 | [English bank: embeddings and search, with the stimulus year rule (RES-77)](#2026-11-06--english-bank-embeddings-and-search-with-the-stimulus-year-rule-res-77) |
 | 2026-11-06 | [English bank: passages, questions, guides and set texts extracted (RES-66, RES-67)](#2026-11-06--english-bank-passages-questions-guides-and-set-texts-extracted-res-66-res-67) |
@@ -225,6 +226,21 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-11-06 — Questions with diagrams: diagram beside the question, answer lines alongside (RES-81)
+
+**What changed**
+- Maths questions with a diagram are laid out like a printed workbook: the question text on the left, the diagram top-right, and answer lines starting straight under the text and running beside the diagram before continuing at full width. Parts (a), (b)… carry on beside the diagram while there is room.
+- Wide, flat diagrams, and questions whose text contains a table, are centred under the question with the lines directly below.
+- Diagrams in the side column print at their natural size up to 7 × 5 cm (small question bank crops are raised to 4.5 cm wide); centred ones up to 9 × 6 cm.
+- Page breaks: a question's text, diagram and first two answer lines stay together, list lines in a question stay with its diagram, and section headings (now a shaded paragraph rather than a one-cell table) stay with the next question. Marks such as "[3 marks]" no longer wrap.
+- Applies to every resource built from questions: practice papers, worksheets, diagnostic tests, mixed reviews, custom resources and booklets.
+
+**Why:** Diagrams sat left-aligned under each question with a blank band beside them and the working space only starting below the picture, and page breaks split questions from their diagrams or stranded section headings at the foot of a page.
+
+**Status:** Live. Checked on the 5 Nov Year 7 paper and the resource fixtures in both the LibreOffice preview and Word (same page breaks in both).
+
+---
+
 ## 2026-11-06 — Question bank: textbook questions carry the book's own answers (RES-63)
 
 **What changed**
@@ -264,6 +280,9 @@ and Functions deployed.
   sources), about an hour.
 - Scanned books link only 15% of questions; 14 Word solutions files need
   LibreOffice in the run environment.
+
+---
+
 ## 2026-11-06 — English bank: embeddings and search, with the stimulus year rule (RES-77)
 
 **What changed**
