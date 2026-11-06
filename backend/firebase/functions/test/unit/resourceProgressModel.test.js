@@ -219,3 +219,34 @@ it("moves the bar within a batch, toward the next count, without reaching it", (
   const nextCount = estimateProgress({ ...base, tracker: { ...base.tracker, questionsDone: 20 }, activeMs: 2_000_000, countChangedAtMs: 2_000_000 }).fraction;
   assert.ok(counted < midBatch && midBatch < long && long <= nextCount, `${counted} ${midBatch} ${long} ${nextCount}`);
 });
+
+it("gives English no diagram step in the bar or the ETA", () => {
+  const stats = { all: history([1, 2, 3].map(() => ({ questions: 10, activeMs: 300_000, phaseMs: { plan: 10, write: 70, diagrams: 20, check: 0, finish: 0 } }))) };
+  const english = { resourceType: "practice-paper", subject: "english", answerMode: "worked" };
+  const done = estimateProgress({ job: english, statsByKey: stats, tracker: { phase: "write", questionCount: 8, questionsDone: 8 }, activeMs: 280_000, countChangedAtMs: 280_000, phaseStarts: { plan: 0, write: 30_000 } });
+  // Writing done and nothing but writing after planning: almost no time left.
+  assert.ok(done.remainingMs < 15_000, `${done.remainingMs}`);
+  const maths = estimateProgress({ job: { ...english, subject: "maths" }, statsByKey: stats, tracker: { phase: "write", questionCount: 8, questionsDone: 8 }, activeMs: 280_000, countChangedAtMs: 280_000, phaseStarts: { plan: 0, write: 30_000 } });
+  assert.ok(maths.remainingMs > done.remainingMs * 3);
+});
+
+it("counts unnamed work before the first step as planning", async () => {
+  let t = 3_000_000;
+  const current = { status: "processing", attemptId: "a", runId: "r", startedAt: new Date(t), ...job, subject: "english" };
+  const db = { runTransaction: async (fn) => fn({ get: async () => ({ exists: true, data: () => current }), update: (_r, patch) => Object.assign(current, patch) }) };
+  const saved = new Map();
+  const storage = { bucket: () => ({ file: (path) => ({
+    download: async () => { if (!saved.has(path)) throw Object.assign(new Error("missing"), { code: 404 }); return [Buffer.from(saved.get(path))]; },
+    save: async (data) => saved.set(path, data),
+  }) }) };
+  // One fresh call per worker invocation: the second replays the first.
+  const invocation = () => createDurableCaller({ job: { jobId: "j", attemptId: "a", ref: {}, customPrompt: "paper", ...job, subject: "english", timingStats: {} },
+    db, storage, clock: () => new Date(t), callAi: async () => { t += 120_000; return { parsed: {} }; } });
+  await invocation()({ userMessage: "s1" });
+  const second = invocation();
+  await second({ userMessage: "s1" });
+  await second({ userMessage: "s2" });
+  assert.equal(current.progress.phase, "plan");
+  assert.equal(current.progress.phaseStarts.plan, 0);
+  assert.ok(current.progress.fraction > 0, `${current.progress.fraction}`);
+});

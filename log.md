@@ -279,7 +279,23 @@ new model on the same reconstructed reports and production timing history)
 
 A local run of a Year 9 maths worksheet with the question bank (real
 models) never lowered the bar across 115 reports, and the bar followed
-diagram questions settled from 0 to 12. ETA accuracy itself barely changed:
+diagram questions settled from 0 to 12.
+
+**Follow-up after the first live run.** A Year 8 English practice paper in
+production (11 minutes) never lowered the bar across 23 reports and showed
+Generating through its hand-offs, but exposed two estimator bugs, fixed the
+same day:
+- Finding the reading passage belonged to no step, so the bar sat at 0% for
+  nearly six minutes and that time read as slow progress (ETA up to 19 min
+  with under 5 left). Work before the first named step now counts as
+  planning, and the run's pace is measured only on work after planning.
+- English borrowed the all-resource step shares, including 14% for
+  diagrams, which English doesn't have, so the ETA still said 2–3 minutes
+  when the paper was done. English now gives diagrams no share.
+
+Replayed on that run's recorded reports, the median ETA error falls from
+259% (what was shown live) to 36%, and the last report before completion
+says 8 seconds instead of 157. ETA accuracy itself barely changed:
 history holds only 3 completed runs, and the logs before this change don't
 record diagram progress, so the replay approximates it. The new
 `progress.reported` events fix the second problem for future measurement.
