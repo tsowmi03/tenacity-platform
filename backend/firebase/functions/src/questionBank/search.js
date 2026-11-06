@@ -19,6 +19,8 @@ const MAX_CANDIDATES = 1000; // Firestore's findNearest limit
 const RESULT_FIELDS = [
   "status", "sourceId", "sourcePath", "pageNumber", "kind", "label", "diagramType", "diagramTypes", "skill",
   "description", "context", "steps", "difficulty", "topic", "yearLevel", "years", "stem", "text", "figures", "sources",
+  // RES-63: the book's own answer, when its answer key has been linked.
+  "bookAnswer",
 ];
 
 const STAGE_YEARS = { 1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8], 5: [9, 10], 6: [11, 12] };

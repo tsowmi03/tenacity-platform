@@ -180,6 +180,28 @@ async function flag({ db, actor, payload, now }) {
   return { flagId: flagRef.id };
 }
 
+/**
+ * RES-63. A flag the resource generator raises itself, when a textbook
+ * question's printed answer disagrees with independent solves (a likely
+ * misprint or a wrong answer link). Never throws: a lost flag must not fail
+ * the resource that found it.
+ */
+async function systemFlag({ db, questionId, jobId, note, now = () => new Date() }) {
+  try {
+    const batch = db.batch();
+    batch.set(db.collection(FLAGS_COLLECTION).doc(), {
+      questionId, jobId: jobId || null, reason: "answer", note: String(note || "").slice(0, MAX_NOTE), status: "open",
+      createdBy: "resource-generator", createdByName: "Resource generator", createdAt: now(),
+      resolvedBy: null, resolvedAt: null, resolution: null,
+    });
+    batch.update(db.collection(QUESTIONS_COLLECTION).doc(questionId), { flagCount: admin.firestore.FieldValue.increment(1), lastFlaggedAt: now() });
+    await batch.commit();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function listFlags({ db, bucket, actor }) {
   requireAdmin(actor);
   const snap = await db.collection(FLAGS_COLLECTION).where("status", "==", "open").limit(LIST_LIMIT).get();
@@ -260,4 +282,4 @@ const manageQuestionBank = onCall({ region: "us-central1", memory: "512MiB", tim
   }
 });
 
-module.exports = { FLAGS_COLLECTION, FLAG_REASONS, manageQuestionBank, manageQuestionBankImpl, validateUpdates };
+module.exports = { FLAGS_COLLECTION, FLAG_REASONS, manageQuestionBank, manageQuestionBankImpl, systemFlag, validateUpdates };

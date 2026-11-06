@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-06 | [Question bank: textbook questions carry the book's own answers (RES-63)](#2026-11-06--question-bank-textbook-questions-carry-the-books-own-answers-res-63) |
 | 2026-11-06 | [English bank: embeddings and search, with the stimulus year rule (RES-77)](#2026-11-06--english-bank-embeddings-and-search-with-the-stimulus-year-rule-res-77) |
 | 2026-11-06 | [English bank: passages, questions, guides and set texts extracted (RES-66, RES-67)](#2026-11-06--english-bank-passages-questions-guides-and-set-texts-extracted-res-66-res-67) |
 | 2026-11-06 | [Question bank matching follows the brief: difficulty, year ±1, restate or adapt (RES-76)](#2026-11-06--question-bank-matching-follows-the-brief-difficulty-year-1-restate-or-adapt-res-76) |
@@ -224,6 +225,43 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-11-06 — Question bank: textbook questions carry the book's own answers (RES-63)
+
+**What changed**
+- 30,100 of the bank's 56,763 numbered questions now carry the answer printed
+  in their book (`bookAnswer`), read from 1,820 books for $18: answer sections
+  at the back of textbooks (scanned ones too), separate solutions files,
+  Mathletics teacher editions and past paper solutions.
+- The generator uses the book's answer whenever it restates a textbook
+  question as printed (an adapted question is checked as before), solving it
+  once to write the working. If the solve
+  disagrees, a second solve decides: agreement with the book uses the book;
+  two solves agreeing against the book use theirs and flag the question for
+  admins; three different answers use the book's, mark the working
+  unconfirmed, flag it, and warn on the job.
+- `scripts/questionBankAnswers.js` (`plan`, `run`, `write`) pairs each book
+  with its answers, reads them with Haiku, links them, and writes them.
+
+**Why:** The book's answer is the authority; the generator's own solve was
+the only check before, and could be wrong on a diagram it misread.
+
+**Results**
+- Random audit of 100 links: 77 fit, 14 could not be judged, 9 judged wrong,
+  of which about 3 were linked to the wrong part. The second solve catches
+  those before they print.
+- Same three RES-71 requests, local replay with production models and bank:
+  Year 9 worksheet 4 → 7 textbook questions (3.3 → 2.9 min); Year 10 paper
+  4 → 10 (6.4 → 6.0 min); Year 9 booklet 23 → 18 with 3 book answers
+  (6.4 → 6.3 min).
+
+**Status:** Live. Answers are written to production; generator change merged
+and Functions deployed.
+
+**Next steps**
+- Link answers for books the weekly update adds (`run` and `write` on new
+  sources), about an hour.
+- Scanned books link only 15% of questions; 14 Word solutions files need
+  LibreOffice in the run environment.
 ## 2026-11-06 — English bank: embeddings and search, with the stimulus year rule (RES-77)
 
 **What changed**

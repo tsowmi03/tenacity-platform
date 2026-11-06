@@ -167,7 +167,7 @@ Agreed with Tom on 2026-11-04.
 | Decision | Choice |
 |---|---|
 | How the generator uses the bank | Original questions and diagrams exactly as printed, plus new questions asked about the same diagram (a different unknown, with the answer checked). A tutor setting (none / some / mostly) controls how much of a booklet comes from the bank |
-| Answers until answer linking exists | The generator solves and checks each bank question, as it does for generated ones. Phase 2 replaces these with the book's own answers |
+| Answers | The book's own printed answer where one is linked (`bookAnswer`, RES-63, section 13); otherwise the generator solves and checks the question as before |
 | Review | Questions go live once the 200-page quality check passes. Tutors flag a bad crop or tag from the portal, and admins fix or hide it |
 | Tutor UI in v1 | None new: the generator pulls from the bank behind the scenes. A browse-and-pick screen comes later |
 | Search | Filters on type, skill, year, context and steps, plus OpenAI embeddings in Firestore vector search. The OpenAI SDK and key are already in Functions |
@@ -244,7 +244,7 @@ Every maths diagram comes from the bank first; a drawn diagram is the fallback.
 | Slots | Every question or part that asks for a diagram (`diagramType` other than `none`, or a drawn diagram on older paths), including multiple choice, practice paper sections and topic booklet sub-topics and quiz sections. A question whose parts share its diagram is replaced by one question worth the same marks, with one answer row. A slot whose answer row cannot be matched safely is drawn, and recorded with the reason |
 | Search | Per slot: the bank questions nearest "topic: generated question", for the student's year and the difficulty its position calls for (first third easy, then medium, then hard), falling back to any difficulty. No question is offered to two slots. Searches are saved in `resources/checkpoints/<jobId>/bank-search-*.json`, so a later worker reuses them |
 | Choose and solve | Sonnet 5.5 sees three candidate crops and picks one that tests the same skill, is complete and suits the year, or none. It restates the original question, or every third time asks something new about the same diagram, and solves it. A multiple-choice question gets four textbook options |
-| Check | A second, independent solve from the crop must agree with the answer, or the slot is drawn. Bank answers skip the later answer check, which cannot see the crop |
+| Check | A second, independent solve from the crop must agree with the answer, or the slot is drawn. With a book answer, see section 13. Bank answers skip the later answer check, which cannot see the crop |
 | Calls | Each call is saved as it finishes. Bank calls are best effort and run four at a time in one worker (the only calls allowed to run side by side); a failed one is recorded and its slot is drawn. A worker spends at most 150 s on the step; anything unfinished carries on in the next worker |
 | Storage | A bank diagram is a `source-image` with its Storage path; its bytes are loaded only to build the DOCX, so `generatedJson` stays small and a revision rebuilds it. The diagram repair pass leaves it alone |
 | Record | The job's `questionBankUsage` lists each bank question used (question number, part, section, original or new) and, in `skipped`, every diagram that was drawn and why. The portal shows both in the resource's details |
@@ -270,3 +270,32 @@ A retired question never comes back from a search, and the merge ignores it.
 It runs as `tenacity-prod-question-bank` through Workload Identity; that
 account and its grants (Firestore, Storage, the two API key secrets, and
 Token Creator on `question-bank-drive`) are a one-time setup.
+
+## 13. Book answers (RES-63)
+
+Each bank question can carry its book's printed answer:
+`bookAnswer = { answer, via, key, route, answerSource, runId, linkedAt }`.
+
+| Where the answers are | How they are linked |
+|---|---|
+| Answer section at the back of a book | Haiku reads each answer page; entries match by exercise and number (`ex:7A\|2\|b`) or printed page (`pg:103\|1\|a`). A scanned book's section is found from page images |
+| Separate solutions file | Paired by file name, or as the only solutions file in the book's folder; read the same way |
+| Mathletics teacher edition | The teacher page with the same words as the student page; answers matched by label |
+| Past paper | Solutions after the questions (typed or scanned), a separate solutions file, or an answered second copy; matched by section, number and part |
+
+Guards: no link on a key two answers share; the exercise is dropped where
+numbering restarts with no new heading; exercises must run in book order (a
+chapter review question naming the exercise it revises is not linked by it);
+a sectioned paper question never takes another section's answer.
+
+When the generator restates a question as printed and it has a book answer,
+it solves it once (an adapted question is checked as in section 10). Agreement uses the book answer with that working; else a
+second solve; if both solves agree against the book, their answer is used and
+the question is flagged; if all three differ, the book answer is used with the
+working marked unconfirmed, the question is flagged, and the job warns
+`BOOK_ANSWER_UNCONFIRMED`.
+
+**Backfill (2026-11-06):** `scripts/questionBankAnswers.js plan|run|write`
+linked 30,100 of 56,763 numbered live questions from 1,820 books for $18.
+A random audit of 100 links found about 3% linked to the wrong part. Scanned
+books link worst (15%). Books added by the weekly update are not yet linked.
