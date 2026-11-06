@@ -33,6 +33,7 @@ const { searchQuestions, createEmbedder } = require("../questionBank/search");
 const { pngSize, SOURCE_IMAGE } = require("./sourceImages");
 const { sameAnswer } = require("../questionBank/answerKeys");
 const { systemFlag } = require("../questionBank/review");
+const { noteProgress } = require("./progressModel");
 
 // Older clients still send a mode. RES-71 made every maths job bank-first, so
 // the value is accepted and ignored.
@@ -591,6 +592,10 @@ async function applyQuestionBank({
   // try per slot in a wave, since each wave settles at least one of them. The
   // waves are worked out the same way on every worker, so a worker that
   // carries a job on replays the saved calls instead of making new ones.
+  // RES-84. The progress bar counts settled diagram questions: slots with no
+  // candidate settle now, the rest as their wave finishes.
+  const settledEarly = slots.length - plans.length;
+  noteProgress(job, { diagramCount: slots.length, diagramsDone: settledEarly });
   const queue = plans
     .map((plan, index) => ({ plan, index, tries: 0 }))
     .sort((a, b) => (HARDEST_FIRST[a.plan.difficulty] ?? 1) - (HARDEST_FIRST[b.plan.difficulty] ?? 1) || a.index - b.index);
@@ -615,6 +620,7 @@ async function applyQuestionBank({
       if (out?.candidate) chosen.add(questionFamily(out.candidate));
     });
     queue.unshift(...again);
+    noteProgress(job, { diagramsDone: settledEarly + outcomes.filter(Boolean).length });
   }
 
   async function fillSlot(plan) {

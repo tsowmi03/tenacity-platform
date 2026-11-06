@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Icon from "../Icon";
 
 // RES-73. A generating resource shows a bar, its steps in plain words and an
@@ -26,32 +26,33 @@ function minutes(ms) {
   return Math.max(1, Math.round(ms / 60_000));
 }
 
-export function etaLabel({ remainingMs, lowMs, highMs }) {
+// RES-84. One figure, never a range. Past the estimate it says so instead of
+// sitting on "Almost done".
+export function etaLabel({ remainingMs, overdueMs = 0 }) {
+  if (overdueMs > 60_000) return "Taking a little longer than expected";
   if (remainingMs <= 0) return "Almost done";
   if (remainingMs < 60_000) return "Less than a minute left";
-  const low = minutes(lowMs ?? remainingMs);
-  const high = minutes(highMs ?? remainingMs);
-  if (high - low >= 2) return `About ${low}–${high} min left`;
-  const mid = minutes(remainingMs);
-  return `About ${mid} min left`;
+  return `About ${minutes(remainingMs)} min left`;
 }
 
+const CREEP_MAX = 0.03;
+const CREEP_MS = 60_000;
+
 // What the panel shows at `now`, given the last estimate the worker wrote.
-export function liveProgress(progress, now) {
+// `floor` is the highest value this run has already shown: the bar never goes
+// below it. Between reports it creeps a little (at most three points, slowing
+// as it goes) so it never looks frozen, and a report that lands below the
+// creep holds the bar still rather than pulling it back.
+export function liveProgress(progress, now, floor = 0) {
   const updatedAt = toMillis(progress.updatedAt) ?? now;
   const since = Math.max(0, now - updatedAt);
   const remaining = Math.max(0, progress.remainingMs - since);
-  // The bar creeps toward where the countdown says it should be, but never
-  // more than a little past the last real report.
-  const total = since + progress.remainingMs;
-  const creep = total > 0 ? (1 - progress.fraction) * Math.min(1, since / total) : 0;
-  const fraction = Math.min(0.99, progress.fraction + Math.min(creep, 0.08));
-  const scale = progress.remainingMs > 0 ? remaining / progress.remainingMs : 0;
+  const creep = Math.min(CREEP_MAX, (1 - progress.fraction) / 2) * (1 - Math.exp(-since / CREEP_MS));
+  const fraction = Math.min(0.99, Math.max(floor, progress.fraction + creep));
   return {
     fraction,
     remainingMs: remaining,
-    lowMs: Math.round((progress.lowMs ?? progress.remainingMs) * scale),
-    highMs: Math.round((progress.highMs ?? progress.remainingMs) * scale),
+    overdueMs: Math.max(0, since - progress.remainingMs),
   };
 }
 
@@ -69,13 +70,18 @@ export default function ResourceProgress({ job }) {
   const progress = job.progress || {};
   const hasEstimate = typeof progress.fraction === "number" && typeof progress.remainingMs === "number";
   const now = useNow(hasEstimate);
+  // Highest value shown for this run; a new run (manual Retry) starts again.
+  const shown = useRef({ key: null, fraction: 0 });
+  const runKey = `${job.jobId || job.id || ""}:${job.runId || ""}`;
+  if (shown.current.key !== runKey) shown.current = { key: runKey, fraction: 0 };
 
   // Older workers (and the moments before the first stage) only have a message.
   if (!hasEstimate) {
     return progress.message ? <p className="muted" role="status">{progress.message}</p> : null;
   }
 
-  const live = liveProgress(progress, now);
+  const live = liveProgress(progress, now, shown.current.fraction);
+  shown.current.fraction = live.fraction;
   const steps = STEPS.filter((s) => !s.mathsOnly || job.subject !== "english");
   const current = ORDER.indexOf(progress.phase);
   const percent = Math.round(live.fraction * 100);
@@ -102,8 +108,11 @@ export default function ResourceProgress({ job }) {
         {steps.map((step) => {
           const index = ORDER.indexOf(step.key);
           const state = index < current ? "done" : index === current ? "active" : "todo";
-          const detail = state === "active" && step.key === "write" && progress.questionCount > 0
+          const detail = state !== "active" ? null
+            : step.key === "write" && progress.questionCount > 0
             ? `${Math.min(progress.questionsDone || 0, progress.questionCount)} of ${progress.questionCount}`
+            : step.key === "diagrams" && progress.diagramCount > 0
+            ? `${Math.min(progress.diagramsDone || 0, progress.diagramCount)} of ${progress.diagramCount}`
             : null;
           return (
             <li className={`rg-gen-step rg-gen-step-${state}`} key={step.key}>

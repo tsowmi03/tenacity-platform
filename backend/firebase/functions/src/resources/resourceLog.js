@@ -5,7 +5,7 @@ const { randomUUID } = require("node:crypto");
 const logger = require("firebase-functions/logger");
 const { isCancellationError } = require("./cancellation");
 const context = new AsyncLocalStorage();
-const FIELDS = new Set(`jobId runId attemptId invocationId stageId stageExecutionId batchIndex batchCount event outcome reason errorCode recoveryDecision durationMs timeoutMs remainingMs completedStages retryCount fallbackCount model provider responseId inputTokens outputTokens reasoningTokens cachedInputTokens queueWaitMs totalElapsedMs generationVersion questionCount stageCount activeElapsedMs queueElapsedMs recoveryCount leaseRecoveryCount providerCallCount requiredTopicCount coveredTopicCount estimatedMinutes requestedMinutes issueCount scopePass timingPass difficultyPass missingTopicCount excludedTopicCount reviewStatus warningCount`.split(" "));
+const FIELDS = new Set(`jobId runId attemptId invocationId stageId stageExecutionId batchIndex batchCount event outcome reason errorCode recoveryDecision durationMs timeoutMs remainingMs completedStages retryCount fallbackCount model provider responseId inputTokens outputTokens reasoningTokens cachedInputTokens queueWaitMs totalElapsedMs generationVersion questionCount stageCount activeElapsedMs queueElapsedMs recoveryCount leaseRecoveryCount providerCallCount requiredTopicCount coveredTopicCount estimatedMinutes requestedMinutes issueCount scopePass timingPass difficultyPass missingTopicCount excludedTopicCount reviewStatus warningCount progressPhase progressFraction etaMs questionsDone diagramCount diagramsDone`.split(" "));
 
 function resourceEvent(job, event, fields = {}, severity = "info") {
   const current = context.getStore() || {};

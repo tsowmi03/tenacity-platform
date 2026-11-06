@@ -4,7 +4,7 @@ const { createHash } = require("crypto");
 const { providerForModel } = require("./modelRegistry");
 const { resourceEvent, resourceStage } = require("./resourceLog");
 const { fromDate } = require("../shared/timestamps");
-const { estimateProgress, loadTimingStats, noteProgress, phaseForStage, phaseIndex } = require("./progressModel");
+const { estimateProgress, loadTimingStats, noteProgress, phaseForStage, phaseIndex, trackWait } = require("./progressModel");
 
 const STAGE_TIMEOUT_MS = 360_000;
 // Optional work (a content review, an optional diagram fill) never gets the full
@@ -63,31 +63,52 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
   const requestedQuestions = requestedQuestionCount(job.customPrompt);
   const progressFields = (current, message, stats) => {
     const now = clock();
-    const prev = current.progress || {};
+    // RES-84. A manual Retry starts a new run (new runId, worker time reset)
+    // but may keep the last run's progress; nothing carries over from it.
+    const runId = current.runId || null;
+    const prev = (current.progress?.runId ?? null) === runId ? current.progress || {} : {};
     const startedMs = typeof current.startedAt?.toMillis === "function" ? current.startedAt.toMillis()
       : current.startedAt instanceof Date ? current.startedAt.getTime() : null;
     const activeMs = (current.activeElapsedMs || 0) + (startedMs ? Math.max(0, now.getTime() - startedMs) : 0);
     const firstStartedAtMs = prev.firstStartedAtMs || now.getTime();
     const phaseStarts = { ...(prev.phaseStarts || {}) };
     if (tracker.phase && phaseStarts[tracker.phase] == null) phaseStarts[tracker.phase] = activeMs;
+    const prevUpdatedMs = typeof prev.updatedAt?.toMillis === "function" ? prev.updatedAt.toMillis()
+      : prev.updatedAt instanceof Date ? prev.updatedAt.getTime() : null;
+    const previous = Number.isFinite(prev.fraction) ? { fraction: prev.fraction, remainingMs: prev.remainingMs,
+      elapsedMs: prevUpdatedMs ? now.getTime() - prevUpdatedMs : 0 } : null;
+    const wait = trackWait(prev.wait, { nowMs: now.getTime(), activeMs });
+    // When the current step's count (questions written, diagram questions
+    // settled) last moved, in worker time.
+    const countKey = `${tracker.phase}:${tracker.questionsDone || 0}:${tracker.diagramsDone || 0}`;
+    const countChangedAtMs = prev.countKey === countKey && Number.isFinite(prev.countChangedAtMs) ? prev.countChangedAtMs : activeMs;
     const estimate = estimateProgress({ job: current.resourceType ? current : job, statsByKey: stats, tracker, activeMs,
-      wallMs: Math.max(activeMs, now.getTime() - firstStartedAtMs), phaseStarts, requestedQuestions });
-    return { message, completedStages: completed, updatedAt: fromDate(now), firstStartedAtMs, phaseStarts, ...estimate,
+      wallMs: Math.max(activeMs, now.getTime() - firstStartedAtMs), phaseStarts, requestedQuestions, previous, recentWait: wait, countChangedAtMs });
+    return { message, completedStages: completed, updatedAt: fromDate(now), runId, firstStartedAtMs, phaseStarts, wait, countKey, countChangedAtMs, ...estimate,
       initialEstimateMs: prev.initialEstimateMs || estimate.expectedTotalMs };
   };
   const progress = async (message, executing = false, recovery = {}) => {
     const stats = await timingStats();
-    return db.runTransaction(async (tx) => {
+    let reported = null;
+    const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(job.ref);
     const current = snap.data() || {};
     if (!snap.exists || current.status !== "processing" || current.attemptId !== job.attemptId || current.cancelRequested) {
       throw controlError("RESOURCE_SUPERSEDED", "This worker no longer owns the resource.");
     }
-    tx.update(job.ref, { progress: progressFields(current, message, stats),
+    const fields = progressFields(current, message, stats);
+    reported = fields;
+    tx.update(job.ref, { progress: fields,
       ...(executing ? { providerCallCount: (current.providerCallCount || 0) + 1,
         stageRetryCount: (current.stageRetryCount || 0) + (recovery.failures && !recovery.fallback ? 1 : 0),
         stageFallbackCount: (current.stageFallbackCount || 0) + (recovery.fallback ? 1 : 0) } : {}) });
     });
+    // RES-84. What the tutor was shown, so ETA accuracy can be measured
+    // against when the resource actually finished.
+    if (reported) resourceEvent(job, "progress.reported", { progressPhase: reported.phase, progressFraction: reported.fraction,
+      etaMs: reported.remainingMs, questionsDone: reported.questionsDone, questionCount: reported.questionCount,
+      diagramsDone: reported.diagramsDone, diagramCount: reported.diagramCount });
+    return result;
   };
   const durableCall = async (request) => {
     const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, bestEffort, concurrent, validateStageResult, progressPhase, ...publicRequest } = request;
