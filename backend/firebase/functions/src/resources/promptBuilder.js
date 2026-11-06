@@ -46,6 +46,8 @@ When "diagramType" is "none", set "diagramRequired" to false.
 
 Set "difficulty" on every question and part: "easy", "medium" or "hard" for a student in this year. Follow the tutor's instructions: a hard, extension or selective paper is mostly hard, a revision or catch-up sheet mostly easy and medium, and where difficulty builds (through the resource, within each topic, or from one topic to the next) the labels show that build. Label the difficulty each question actually has, not its position.
 
+Whenever "diagramType" is not "none", set "skill" on the same question or part to the broad skill it tests, the way a textbook exercise is headed: the quantity and the kind of shape, such as "area of composite shapes", "perimeter of rectangles", "surface area of prisms" or "volume of cylinders". No numbers, names, scenario or method. When "diagramType" is "none", set "skill" to "". Vary the skills of the diagram questions within a topic rather than repeating one shape.
+
 Choose the type whose shape matches what the question needs. The examples below show what each type depicts:
 ${buildDiagramPromptExamples()}
 
@@ -109,7 +111,8 @@ function diagramFields(subject) {
       "diagram": null,
       "diagramType": ${DIAGRAM_TYPE_ENUM},
       "diagramRequired": boolean,
-      "difficulty": "easy" | "medium" | "hard",`
+      "difficulty": "easy" | "medium" | "hard",
+      "skill": string,`
     : `
       "diagram": null,
       "diagramRequired": boolean,`;

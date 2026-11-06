@@ -8,7 +8,7 @@ const { parseArgs, localStorage } = require("../../scripts/replayResourceLocally
 
 it("requires explicit replay inputs, output and a bounded call budget", () => {
   assert.throws(() => parseArgs([]), /required/);
-  assert.throws(() => parseArgs(["--input", "input.json", "--output", "out", "--max-calls", "101"]), /1–100/);
+  assert.throws(() => parseArgs(["--input", "input.json", "--output", "out", "--max-calls", "301"]), /1–300/);
   assert.throws(() => parseArgs(["--production"]), /Unknown option/);
   assert.equal(parseArgs(["--input", "i", "--output", "o"]).firebaseSecrets, false);
 });

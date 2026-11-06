@@ -12,9 +12,10 @@ export const FLAG_REASONS = [
   ["other", "Something else"],
 ];
 
-// RES-71: why a diagram was drawn rather than taken from a textbook.
+// RES-71 / RES-80: why a diagram was drawn rather than taken from a textbook.
 const DRAWN_REASONS = {
-  none_suitable: "no textbook diagram tested the same skill",
+  none_suitable: "no textbook diagram fitted the skill",
+  crop_taken: "its best textbook diagrams were used by other questions",
   check_disagreed: "the textbook question's answer could not be confirmed",
   no_candidates: "no textbook diagram for this year and topic",
   answer_row_unclear: "its answer could not be matched safely",

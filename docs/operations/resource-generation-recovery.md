@@ -6,7 +6,9 @@ and full prompt. Replay reads the saved response and never resubmits that call.
 Only one new AI call runs in an invocation; the next uncached call yields to
 `pending`, which the existing update worker resumes. The exception is the question bank
 step (RES-71): its best-effort calls (`bestEffort` and `concurrent`) run four
-at a time, each saved as it finishes, while the invocation budget allows. Concurrent stages (diagram
+at a time, each saved as it finishes, while the invocation budget allows. Its
+waves of four (RES-80) are worked out from the saved searches and saved
+responses alone, so a worker that carries the step on replays the same calls. Concurrent stages (diagram
 fills) take that slot before any await, and the others wait for the started
 call to be saved before yielding. Output finalization remains
 fenced by the active attempt ID.

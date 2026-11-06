@@ -20,6 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-06 | [Textbook questions are no longer dropped over the writer's arithmetic (RES-82)](#2026-11-06--textbook-questions-are-no-longer-dropped-over-the-writers-arithmetic-res-82) |
+| 2026-11-06 | [Textbook diagrams decide the question, not the other way round (RES-80)](#2026-11-06--textbook-diagrams-decide-the-question-not-the-other-way-round-res-80) |
 | 2026-11-06 | [Questions with diagrams: diagram beside the question, answer lines alongside (RES-81)](#2026-11-06--questions-with-diagrams-diagram-beside-the-question-answer-lines-alongside-res-81) |
 | 2026-11-06 | [Question bank: textbook questions carry the book's own answers (RES-63)](#2026-11-06--question-bank-textbook-questions-carry-the-books-own-answers-res-63) |
 | 2026-11-06 | [English bank: embeddings and search, with the stimulus year rule (RES-77)](#2026-11-06--english-bank-embeddings-and-search-with-the-stimulus-year-rule-res-77) |
@@ -223,6 +225,107 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-06 — Textbook questions are no longer dropped over the writer's arithmetic (RES-82)
+
+**What changed**
+- When the answer check disagrees with the answer written for a textbook
+  question, the check's own answer now goes to a second, independent check,
+  and is used if that agrees. Before, a fresh third solve was tried, and it
+  usually repeated the writer's kind of slip, so a good textbook diagram was
+  thrown away and the question drawn instead.
+- A small text-only call reads the final answer from the check's solution and
+  says whether it reached one. A question the check finds broken ("the
+  conditions are inconsistent") is drawn, never printed with that verdict as
+  its answer.
+- The question bank writes a complement as A′, the house notation, and the
+  document renderer now draws a bar over an expression (`\overline{A \cup B}`)
+  and a command written straight before an accent (`A \cap\bar{B}`) correctly.
+  Both had blocked probability booklets with "maths couldn't be formatted".
+
+**Why:** A review of the 20 questions the check rejected across three RES-80
+replays found the check right in 19: the writer's arithmetic was wrong (a room
+painted all over given as 107.2 m² instead of 97.6 m²; P(A ∪ B) given as 19/25
+instead of 1). Only one question was genuinely broken.
+
+**Results** (local replays of real production requests, production models and
+bank):
+
+| Request | `main` | RES-80 | RES-82, final code |
+| --- | --- | --- | --- |
+| Year 10 probability booklet, 3 runs | 19% | 62% | **95% (90/95)** |
+| Year 7 practice paper, 2 runs | 68% | 71% | **86% (24/28)** |
+| Year 9 worksheet, 2 runs | 70% | 60% | **95% (19/20)** |
+| All | 44% | 65% | **93% (133/143)** |
+
+No accepted answer said a question could not be answered. Spot-checked
+answers against their diagrams were right. Generation time is unchanged or
+shorter (worksheet about 3 minutes, paper 5–6, booklet 11–20 by size).
+
+Tried first and reverted: solving the question in its own call and having the
+writer state every assumption. Disagreements did not fall, and Sonnet refused
+more single-diagram calls. Asking the check to set out its working in a
+separate field was refused 13–17 times per booklet, which is why the final
+answer is read from its solution in a separate call.
+
+**Status:** Live. Merged; Functions and resource portal deployed.
+
+---
+
+## 2026-11-06 — Textbook diagrams decide the question, not the other way round (RES-80)
+
+**What changed**
+- The generator now tags every maths diagram question with a broad skill, the
+  way a textbook exercise is headed ("area of composite shapes", "volume of
+  cylinders"). Covers every maths resource type: worksheets, practice papers,
+  topic booklets, study guides, diagnostic tests, mixed reviews and custom.
+- The question bank step finds a textbook diagram for that skill, difficulty
+  and marks, then writes the question around the diagram. Before, a diagram had
+  to test the same skill as the question already written, in the same way, so
+  multi-step questions were nearly always drawn ("no textbook diagram tested
+  the same skill"). The generated question is now only the fallback when no
+  diagram fits.
+- Every slot is searched before any is filled, and no search holds back
+  another slot's diagrams (before, the last and hardest slots got the weakest
+  ones). Hardest slots go first, in waves of four, worked out the same way on
+  every worker so a hand-off replays saved calls. A resource never uses one
+  diagram, or two parts of one printed question, twice.
+- A refused question bank call (Sonnet "reasoning_extraction", 0–3 per
+  resource, at random) is retried once. The durable-stage layer had been
+  recording refusals as permanent, so the retry was skipped; it now gives them
+  the second attempt a busy provider gets.
+- The portal's reasons for a drawn diagram are updated ("no textbook diagram
+  fitted the skill", and a new one for a diagram used by another question).
+- The local replay runner allows up to 300 calls: a booklet with about 30
+  diagram questions makes over 100 bank calls.
+
+**Why:** Tutors want textbook diagrams, and the hardest questions were the ones
+being drawn. In a production Year 7 paper all four hard questions were drawn.
+
+**Results** (local replays of real production requests, production models and
+bank, `main` vs this branch):
+
+| Request | `main` | RES-80 |
+| --- | --- | --- |
+| Year 10 probability topic booklet | 5/28 and 7/34 (19%) | **18/29 (62%)** |
+| Year 7 practice paper, 3 runs | 23/34 (68%) | 24/34 (71%) |
+| Year 9 worksheet, 3 runs | 21/30 (70%) | 18/30 (60%) |
+| All | 56/126 (44%) | **60/93 (65%)** |
+
+"No textbook diagram suited" fell from 22–24 per booklet to none. Generation
+time is unchanged (booklet about 15 minutes, paper about 5). On papers and
+worksheets the gain is cancelled by the answer check: an adapted multi-step
+question is more often rejected because two independent solves disagree,
+often a genuine ambiguity in how the textbook diagram reads, which is why the
+check is not relaxed. Study guide and diagnostic test requests tried had no
+diagram questions.
+
+**Status:** Live. Merged; Functions and resource portal deployed.
+
+Papers and worksheets were lifted by RES-82 (above), which stopped the answer
+check's disagreements throwing away good textbook diagrams.
 
 ---
 
@@ -8124,6 +8227,7 @@ three original repositories.
     with working out" cannot add working there (RES-36 left it alone). Adding
     `workingOut` grows the largest schema sent (~4.4KB), so it needs a live
     check against the API's grammar-size limit first. About an hour.
+
 
 
 

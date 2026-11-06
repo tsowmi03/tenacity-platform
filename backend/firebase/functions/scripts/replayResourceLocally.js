@@ -26,7 +26,8 @@ function parseArgs(argv) {
   }
   if (!options.input || !options.output) throw new Error("--input and --output are required");
   options.maxCalls = Number(options.maxCalls);
-  if (!Number.isInteger(options.maxCalls) || options.maxCalls < 1 || options.maxCalls > 100) throw new Error("--max-calls must be 1–100");
+  // A topic booklet with ~30 diagram questions makes 100+ bank calls (RES-80).
+  if (!Number.isInteger(options.maxCalls) || options.maxCalls < 1 || options.maxCalls > 300) throw new Error("--max-calls must be 1–300");
   return options;
 }
 

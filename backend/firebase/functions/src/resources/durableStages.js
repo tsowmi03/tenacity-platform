@@ -214,7 +214,11 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
           const current = snap.data() || {};
           if (!snap.exists || current.status !== "processing" || current.attemptId !== job.attemptId || current.cancelRequested) throw controlError("RESOURCE_SUPERSEDED", "This worker no longer owns the resource.");
           const previous = current.optionalStageFailures?.[key] || {};
-          const next = { code: String(err?.code || err?.status || "PROVIDER_FAILURE").slice(0, 60), failures: (previous.failures || 0) + 1, transient: isTransient(err) };
+          // RES-80: a refusal of a best-effort call is random (Sonnet refused
+          // 0–3 question bank calls per resource, and the same prompt usually
+          // went through the second time), so it earns the second attempt a
+          // busy provider gets.
+          const next = { code: String(err?.code || err?.status || "PROVIDER_FAILURE").slice(0, 60), failures: (previous.failures || 0) + 1, transient: isTransient(err) || err?.refusal === true };
           tx.update(job.ref, { optionalStageFailures: { ...current.optionalStageFailures, [key]: next } });
           return next;
         });
