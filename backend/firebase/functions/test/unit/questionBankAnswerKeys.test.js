@@ -223,5 +223,15 @@ describe("answer keys: comparing answers", () => {
     assert.equal(sameAnswer("2.4", "2.5"), false);
     assert.equal(sameAnswer("Strong", "strong"), true);
     assert.equal(sameAnswer("Strong positive", "Weak"), null);
+    assert.equal(sameAnswer("$18\\frac{6}{7}$ cm", "18.857"), true);
+    assert.equal(sameAnswer("x = 4", "4"), true);
+  });
+
+  it("never confirms a different expression or a different exact fraction", () => {
+    assert.equal(sameAnswer("$\\sqrt{2}$", "2"), null);
+    assert.equal(sameAnswer("$x < 2$", "$x > 2$"), null);
+    assert.equal(sameAnswer("$\\frac{1}{4}$", "$\\frac{3}{4}$"), false);
+    assert.equal(sameAnswer("$\\frac{1}{4}$", "0.7"), false);
+    assert.equal(sameAnswer("$\\frac{1}{3}$", "0.33"), true);
   });
 });

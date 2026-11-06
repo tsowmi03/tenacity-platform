@@ -598,32 +598,46 @@ function linkAnswers({ questions, index, entries }) {
 
 // --- comparing answers -----------------------------------------------------------
 
-function numbersIn(text) {
-  return (String(text || "").replace(/\\frac\{(-?\d+(?:\.\d+)?)\}\{(-?\d+(?:\.\d+)?)\}/g, (_, a, b) => String(Number(a) / Number(b)))
-    .replace(/(\d),(\d{3})/g, "$1$2").match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+const UNIT = /(cm|mm|km|m|kg|g|l|ml|kl|s|min|h|°|\^\\circ|\\circ|degrees?)(\^?2|\^?3|²|³)?$/;
+
+/**
+ * An answer that is a single value: a number or a fraction, optionally after
+ * "x =", with an optional unit. Returns { value, places } (places null for an
+ * exact fraction), or null for anything with more structure (roots, powers,
+ * inequalities, coordinates, words).
+ */
+function scalarOf(text) {
+  let t = String(t0(text));
+  t = t.replace(/^[a-z]\s*=\s*/i, "").replace(UNIT, "").replace(/(\d),(\d{3})/g, "$1$2");
+  let m = /^(-?)\\[dt]?frac\{(\d+)\}\{(\d+)\}$/.exec(t) || /^(-?)(\d+)\/(\d+)$/.exec(t);
+  if (m) return Number(m[3]) ? { value: (m[1] ? -1 : 1) * Number(m[2]) / Number(m[3]), places: null } : null;
+  m = /^(-?\d+)\\[dt]?frac\{(\d+)\}\{(\d+)\}$/.exec(t); // mixed number 18\frac{6}{7}
+  if (m && Number(m[3])) return { value: Math.sign(Number(m[1]) || 1) * (Math.abs(Number(m[1])) + Number(m[2]) / Number(m[3])), places: null };
+  m = /^-?\d+(?:\.(\d+))?$/.exec(t);
+  return m ? { value: Number(t), places: (m[1] || "").length } : null;
 }
 
-function decimalsOf(text) {
-  return Math.max(0, ...(String(text || "").match(/\d+\.(\d+)/g) || []).map((m) => m.split(".")[1].length));
+// Strips only what never changes meaning: $ delimiters, spacing and \left/\right.
+function t0(text) {
+  return String(text || "").toLowerCase().replace(/\$/g, "").replace(/\\left|\\right|\\[,;! ]|\s+/g, "").replace(/\\text\{([^}]*)\}/g, "$1").replace(/\\mathrm\{([^}]*)\}/g, "$1");
 }
 
 /**
- * Whether two answers say the same thing, decided without a model when it can
- * be: the same numbers, each within the rounding the coarser answer shows, or
- * the same text once spacing, LaTeX delimiters and units are ignored. Returns
- * true, false, or null when it cannot tell (worded answers), in which case the
- * caller asks a model.
+ * Whether two answers say the same thing, decided without a model only when
+ * it is safe: the same text once delimiters and spacing are ignored, or two
+ * single values equal within the rounding a decimal answer shows (an exact
+ * fraction allows none). Returns true, false, or null when it cannot tell
+ * (anything with more structure), in which case the caller asks a model.
  */
 function sameAnswer(a, b) {
-  const plain = (t) => String(t || "").toLowerCase().replace(/\$|\\[a-z]+\{?|[{}\s]|\\,/g, "").replace(/(cm|mm|km|m|kg|g|l|ml)(\^?2|\^?3|²|³)?$/, "");
-  if (plain(a) && plain(a) === plain(b)) return true;
-  const na = numbersIn(a); const nb = numbersIn(b);
-  if (!na.length || !nb.length) return null;
-  if (na.length !== nb.length) return na.length > 3 || nb.length > 3 ? null : false;
-  const places = Math.min(decimalsOf(a), decimalsOf(b));
-  const tolerance = 0.5 * 10 ** -places + 1e-9;
-  // Rounding only: 585.3 and 585.27 agree, 6.62 and 6.63 do not.
-  return na.every((x, i) => Math.abs(x - nb[i]) <= tolerance);
+  const pa = t0(a).replace(UNIT, ""); const pb = t0(b).replace(UNIT, "");
+  if (pa && pa === pb) return true;
+  const sa = scalarOf(a); const sb = scalarOf(b);
+  if (!sa || !sb) return null;
+  const shown = [sa.places, sb.places].filter((p) => p !== null);
+  // Two exact fractions must be equal; otherwise allow the coarser decimal's rounding.
+  const tolerance = shown.length ? 0.5 * 10 ** -Math.min(...shown) + 1e-9 : 1e-9;
+  return Math.abs(sa.value - sb.value) <= tolerance;
 }
 
 module.exports = {
