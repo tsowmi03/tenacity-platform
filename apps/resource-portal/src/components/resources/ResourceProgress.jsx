@@ -67,7 +67,11 @@ function useNow(active) {
 }
 
 export default function ResourceProgress({ job }) {
-  const progress = job.progress || {};
+  // A resumable Retry starts a new run but keeps the last run's progress until
+  // the worker's first report; that old report is neither shown nor allowed to
+  // set this run's floor. (Reports from before RES-84 carry no runId.)
+  const stale = Boolean(job.progress?.runId && job.runId && job.progress.runId !== job.runId);
+  const progress = stale ? {} : job.progress || {};
   const hasEstimate = typeof progress.fraction === "number" && typeof progress.remainingMs === "number";
   const now = useNow(hasEstimate);
   // Highest value shown for this run; a new run (manual Retry) starts again.

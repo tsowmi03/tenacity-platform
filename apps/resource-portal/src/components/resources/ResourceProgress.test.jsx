@@ -78,6 +78,14 @@ describe("ResourceProgress across reports (RES-84)", () => {
     expect(percent()).toBe(crept);
   });
 
+  it("ignores the previous run's report after a Retry, then follows the new run from its own start", () => {
+    const old = { ...report(0.8, 0), runId: "r2", progress: { ...report(0.8, 0).progress, runId: "r1" } };
+    const { rerender } = render(<ResourceProgress job={old} />);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    rerender(<ResourceProgress job={{ ...report(0.2, 0), runId: "r2", progress: { ...report(0.2, 0).progress, runId: "r2" } }} />);
+    expect(percent()).toBe(20);
+  });
+
   it("starts again for a new run", () => {
     const { rerender } = render(<ResourceProgress job={report(0.765, 0)} />);
     rerender(<ResourceProgress job={{ ...report(0.05, 0), runId: "r2" }} />);
