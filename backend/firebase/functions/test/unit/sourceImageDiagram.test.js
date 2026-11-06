@@ -44,7 +44,8 @@ describe("source-image diagrams", () => {
     const media = Object.keys(zip.files).filter((name) => name.startsWith("word/media/"));
     assert.equal(media.length >= 1, true);
     const xml = await zip.file("word/document.xml").async("string");
-    // 900px at half scale is 450px, which Word stores as 450 * 9525 EMU.
-    assert.match(xml, /cx="4286250"/);
+    // RES-81: the crop sits beside the question, fitted to the 7 cm diagram
+    // column (265px, which Word stores as 265 * 9525 EMU).
+    assert.match(xml, /cx="2524125"/);
   });
 });

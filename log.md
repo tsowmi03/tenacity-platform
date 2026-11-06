@@ -22,6 +22,8 @@ omitted, and open follow-ups are tracked at the bottom.
 | --- | --- |
 | 2026-11-06 | [Textbook questions are no longer dropped over the writer's arithmetic (RES-82)](#2026-11-06--textbook-questions-are-no-longer-dropped-over-the-writers-arithmetic-res-82) |
 | 2026-11-06 | [Textbook diagrams decide the question, not the other way round (RES-80)](#2026-11-06--textbook-diagrams-decide-the-question-not-the-other-way-round-res-80) |
+| 2026-11-06 | [Questions with diagrams: diagram beside the question, answer lines alongside (RES-81)](#2026-11-06--questions-with-diagrams-diagram-beside-the-question-answer-lines-alongside-res-81) |
+| 2026-11-06 | [Question bank: textbook questions carry the book's own answers (RES-63)](#2026-11-06--question-bank-textbook-questions-carry-the-books-own-answers-res-63) |
 | 2026-11-06 | [English bank: embeddings and search, with the stimulus year rule (RES-77)](#2026-11-06--english-bank-embeddings-and-search-with-the-stimulus-year-rule-res-77) |
 | 2026-11-06 | [English bank: passages, questions, guides and set texts extracted (RES-66, RES-67)](#2026-11-06--english-bank-passages-questions-guides-and-set-texts-extracted-res-66-res-67) |
 | 2026-11-06 | [Question bank matching follows the brief: difficulty, year ±1, restate or adapt (RES-76)](#2026-11-06--question-bank-matching-follows-the-brief-difficulty-year-1-restate-or-adapt-res-76) |
@@ -324,6 +326,63 @@ diagram questions.
 
 Papers and worksheets were lifted by RES-82 (above), which stopped the answer
 check's disagreements throwing away good textbook diagrams.
+
+---
+
+## 2026-11-06 — Questions with diagrams: diagram beside the question, answer lines alongside (RES-81)
+
+**What changed**
+- Maths questions with a diagram are laid out like a printed workbook: the question text on the left, the diagram top-right, and answer lines starting straight under the text and running beside the diagram before continuing at full width. Parts (a), (b)… carry on beside the diagram while there is room.
+- Wide, flat diagrams, and questions whose text contains a table, are centred under the question with the lines directly below.
+- Diagrams in the side column print at their natural size up to 7 × 5 cm (small question bank crops are raised to 4.5 cm wide); centred ones up to 9 × 6 cm.
+- Page breaks: a question's text, diagram and first two answer lines stay together, list lines in a question stay with its diagram, and section headings (now a shaded paragraph rather than a one-cell table) stay with the next question. Marks such as "[3 marks]" no longer wrap.
+- Applies to every resource built from questions: practice papers, worksheets, diagnostic tests, mixed reviews, custom resources and booklets.
+
+**Why:** Diagrams sat left-aligned under each question with a blank band beside them and the working space only starting below the picture, and page breaks split questions from their diagrams or stranded section headings at the foot of a page.
+
+**Status:** Live. Checked on the 5 Nov Year 7 paper and the resource fixtures in both the LibreOffice preview and Word (same page breaks in both).
+
+---
+
+## 2026-11-06 — Question bank: textbook questions carry the book's own answers (RES-63)
+
+**What changed**
+- 30,100 of the bank's 56,763 numbered questions now carry the answer printed
+  in their book (`bookAnswer`), read from 1,820 books for $18: answer sections
+  at the back of textbooks (scanned ones too), separate solutions files,
+  Mathletics teacher editions and past paper solutions.
+- The generator uses the book's answer whenever it restates a textbook
+  question as printed (an adapted question is checked as before), solving it
+  once to write the working. If the solve
+  disagrees, a second solve decides: agreement with the book uses the book;
+  two solves agreeing against the book use theirs and flag the question for
+  admins; three different answers use the book's, mark the working
+  unconfirmed, flag it, and warn on the job.
+- `scripts/questionBankAnswers.js` (`plan`, `run`, `write`) pairs each book
+  with its answers, reads them with Haiku, links them, and writes them.
+
+**Why:** The book's answer is the authority; the generator's own solve was
+the only check before, and could be wrong on a diagram it misread.
+
+**Results**
+- Random audit of 100 links: 77 fit, 14 could not be judged, 9 judged wrong,
+  of which about 3 were linked to the wrong part. The second solve catches
+  those before they print.
+- Same three RES-71 requests, local replay with production models and bank
+  (main → this branch): Year 9 worksheet 4 → 8 textbook questions, 1 with a
+  book answer and 1 unconfirmed (3.3 → 3.0 min); Year 10 paper 4 → 10, none
+  restated with a book answer (6.4 → 6.3 min); Year 9 booklet 23 → 17, 3 with
+  book answers (6.4 → 7.0 min). Textbook question counts move run to run, so
+  the book answers, not the counts, are the change.
+
+**Status:** Live. Answers are written to production; generator change merged
+and Functions deployed.
+
+**Next steps**
+- Link answers for books the weekly update adds (`run` and `write` on new
+  sources), about an hour.
+- Scanned books link only 15% of questions; 14 Word solutions files need
+  LibreOffice in the run environment.
 
 ---
 

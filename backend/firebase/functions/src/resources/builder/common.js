@@ -17,7 +17,7 @@ const {
 } = require("docx");
 
 const { BRAND, PAGE } = require("./branding");
-const { renderDiagramBlock } = require("./diagrams");
+const { estimateTextHeight, layoutDiagramBlock, lineItems, textItem } = require("./questionLayout");
 const { makeImageContent, makePassageContent } = require("./passage");
 const {
   cleanText,
@@ -330,18 +330,20 @@ function renderStemBlocks(blocks, firstParagraph, opts = {}) {
   return elements;
 }
 
-function renderQuestionStem(number, stem, marks, opts = {}) {
+// `layout.tabPosition` moves the marks to the end of a narrower text column
+// when the question sits beside its diagram.
+function renderQuestionStem(number, stem, marks, opts = {}, layout = {}) {
   return renderStemBlocks(
     splitMarkdownTableBlocks(stem),
-    (text) => makeQuestionParagraph(number, text, marks),
+    (text) => makeQuestionParagraph(number, text, marks, layout),
     opts
   );
 }
 
-function renderPartStem(label, stem, marks, opts = {}) {
+function renderPartStem(label, stem, marks, opts = {}, layout = {}) {
   return renderStemBlocks(
     splitMarkdownTableBlocks(stem),
-    (text) => makePartParagraph(label, text, marks),
+    (text) => makePartParagraph(label, text, marks, layout),
     { indent: { left: 360 }, spacing: { after: 80 }, ...opts }
   );
 }
@@ -382,9 +384,41 @@ function multipleChoiceOptions(question) {
     const label = String.fromCharCode(65 + index);
     return paragraph(`${label}. ${option}`, {
       indent: { left: 360 },
+      keepNext: true,
       spacing: { after: 60 },
     });
   });
+}
+
+// Layout items for one question or part. Every text paragraph carries
+// keepNext, and so do the first two answer lines, so a question's text, its
+// diagram and the start of its working space always share a page.
+const MARKS_CHARS = 10; // "[3 marks]" after the stem
+const RULED_LINE_HEIGHT = 400; // twips, matches makeRuledLines
+
+function stemItems(stem, marks, render, { before, after, indent }) {
+  const hasTable = splitMarkdownTableBlocks(stem).some((block) => block.type === "table");
+  return [textItem({
+    hasTable,
+    render,
+    estimate: (width) => estimateTextHeight(stem, width, {
+      before,
+      after,
+      indent,
+      extraChars: 4 + (marks ? MARKS_CHARS : 0),
+    }),
+  })];
+}
+
+function optionItems(question) {
+  return asArray(question?.options).map((option, index) => textItem({
+    render: () => [multipleChoiceOptions(question)[index]],
+    estimate: (width) => estimateTextHeight(option, width, { after: 60, indent: 360, extraChars: 3 }),
+  }));
+}
+
+function answerLineItems(question, makeLines) {
+  return lineItems(makeLines(responseLineCount(question), { keepFirst: 2 }), RULED_LINE_HEIGHT);
 }
 
 async function renderQuestion(question, opts = {}) {
@@ -394,6 +428,7 @@ async function renderQuestion(question, opts = {}) {
   // Mark allocations always stay in the data because they determine response
   // space. Rendering them is an independent tutor-controlled option.
   const showMarks = opts.showMarks === true;
+  const makeLines = opts.responseLines ? makeResponseLines : makeWorkingLines;
 
   if (opts.preLabel) {
     elements.push(paragraph(opts.preLabel(question), {
@@ -404,31 +439,66 @@ async function renderQuestion(question, opts = {}) {
     }));
   }
 
-  elements.push(...renderQuestionStem(number, questionStem(question), parts.length || !showMarks ? null : question?.marks));
-  elements.push(...multipleChoiceOptions(question));
-  elements.push(...(await renderDiagramBlock(question?.diagram, {
-    label: `Q${number}`,
-    required: question?.diagramRequired !== false,
-  })));
+  const stem = questionStem(question);
+  const stemMarks = parts.length || !showMarks ? null : question?.marks;
+  const questionLead = [
+    ...stemItems(stem, stemMarks, (width) => renderQuestionStem(number, stem, stemMarks, { keepNext: true }, { tabPosition: width }), {
+      before: 220,
+      after: 100,
+      indent: 0,
+    }),
+    ...optionItems(question),
+  ];
 
-  if (parts.length) {
-    for (const part of parts) {
-      elements.push(...renderPartStem(part.label, questionStem(part), showMarks ? part.marks : null));
-      elements.push(...multipleChoiceOptions(part));
-      elements.push(
-        ...(await renderDiagramBlock(part.diagram, {
+  // A part's own items: its stem and options (the lead its diagram belongs
+  // to) and its answer lines.
+  const partBlocks = parts.map((part) => {
+    const partText = questionStem(part);
+    const partMarks = showMarks ? part.marks : null;
+    return {
+      part,
+      lead: [
+        ...stemItems(partText, partMarks, (width) => renderPartStem(part.label, partText, partMarks, { keepNext: true }, { tabPosition: width }), {
+          before: 100,
+          after: 80,
+          indent: 360,
+        }),
+        ...optionItems(part),
+      ],
+      lines: answerLineItems(part, makeLines),
+    };
+  });
+
+  // Group into blocks: the question's diagram is laid out with every part up
+  // to the first part that has a diagram of its own, which then starts a
+  // block of its own, and so on.
+  const blocks = [{
+    lead: questionLead,
+    follow: parts.length ? [] : answerLineItems(question, makeLines),
+    diagram: question?.diagram,
+    context: { label: `Q${number}`, required: question?.diagramRequired !== false },
+    alignBefore: 220,
+  }];
+  for (const { part, lead, lines } of partBlocks) {
+    if (part.diagram) {
+      blocks.push({
+        lead,
+        follow: lines,
+        diagram: part.diagram,
+        context: {
           label: `Q${number}${part.label ? `(${part.label})` : ""}`,
           required: part.diagramRequired !== false,
-        }))
-      );
-      const makeLines = opts.responseLines ? makeResponseLines : makeWorkingLines;
-      elements.push(...makeLines(responseLineCount(part)));
+        },
+        alignBefore: 100,
+      });
+    } else {
+      blocks[blocks.length - 1].follow.push(...lead, ...lines);
     }
-    return elements;
   }
 
-  const makeLines = opts.responseLines ? makeResponseLines : makeWorkingLines;
-  elements.push(...makeLines(responseLineCount(question)));
+  for (const block of blocks) {
+    elements.push(...(await layoutDiagramBlock(block)));
+  }
   return elements;
 }
 

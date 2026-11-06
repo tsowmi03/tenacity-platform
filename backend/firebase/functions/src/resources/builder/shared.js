@@ -1005,37 +1005,38 @@ function makeFooter(studentName) {
   });
 }
 
+// A navy bar heading. It is a shaded paragraph rather than a one-cell table so
+// that keep-with-next holds in LibreOffice (the preview) as well as Word: a
+// heading must never sit alone at the foot of a page. Navy borders the same
+// colour as the shading give the bar its padding; the side borders sit inside
+// the margins, so the bar spans the text width exactly as the table did.
+const SECTION_HEADING_PAD = 120; // twips of navy above and below the text
+const SECTION_HEADING_SIDE_BORDER = 6; // pt
+const SECTION_HEADING_SIDE_SPACE = 2; // pt
+
 function makeSectionHeading(text, opts = {}) {
   setMathLocation(`${cleanText(text)} section`);
-  return new Table({
-    width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
-    columnWidths: [PAGE.CONTENT_WIDTH],
-    layout: TableLayoutType.FIXED,
-    rows: [
-      new TableRow({
-        children: [
-          cell(
-            [
-              new Paragraph({
-                heading: opts.heading,
-                spacing: { after: 0 },
-                children: textRuns(text, {
-                  bold: true,
-                  color: BRAND.WHITE,
-                  size: BRAND.FONT_SIZE_H3,
-                }),
-              }),
-            ],
-            PAGE.CONTENT_WIDTH,
-            {
-              fill: BRAND.NAVY,
-              borders: noBorders,
-              margins: { top: 120, bottom: 120, left: 160, right: 160 },
-            }
-          ),
-        ],
-      }),
-    ],
+  const sideIndent = (SECTION_HEADING_SIDE_BORDER + SECTION_HEADING_SIDE_SPACE) * 20;
+  const band = { style: BorderStyle.SINGLE, size: (SECTION_HEADING_PAD / 20) * 8, color: BRAND.NAVY, space: 0 };
+  const side = {
+    style: BorderStyle.SINGLE,
+    size: SECTION_HEADING_SIDE_BORDER * 8,
+    color: BRAND.NAVY,
+    space: SECTION_HEADING_SIDE_SPACE,
+  };
+  return new Paragraph({
+    heading: opts.heading,
+    keepNext: true,
+    keepLines: true,
+    shading: { type: ShadingType.CLEAR, color: "auto", fill: BRAND.NAVY },
+    border: { top: band, bottom: band, left: side, right: side },
+    indent: { left: sideIndent, right: sideIndent },
+    spacing: { before: 120, after: 0 },
+    children: textRuns(text, {
+      bold: true,
+      color: BRAND.WHITE,
+      size: BRAND.FONT_SIZE_H3,
+    }),
   });
 }
 
@@ -1061,7 +1062,7 @@ function formatMarks(marks) {
   return `${value} mark${value === 1 ? "" : "s"}`;
 }
 
-function makeQuestionParagraph(number, stem, marks) {
+function makeQuestionParagraph(number, stem, marks, opts = {}) {
   setMathLocation(`Q${cleanText(number)}`);
   const marksText = formatMarks(marks);
   const children = [
@@ -1070,17 +1071,20 @@ function makeQuestionParagraph(number, stem, marks) {
   ];
   if (marksText) {
     children.push(new TextRun({ text: "\t", font: BRAND.FONT, size: BRAND.FONT_SIZE_BODY }));
-    children.push(textRun(`[${marksText}]`, { italics: true, color: "555555" }));
+    // A non-breaking space keeps "[3 marks]" on one line in a narrow column.
+    children.push(rawTextRun(`[${marksText.replace(" ", "\u00A0")}]`, { italics: true, color: "555555" }));
   }
   return new Paragraph({
     spacing: { before: 220, after: 100 },
     keepNext: true,
-    tabStops: [{ type: TabStopType.RIGHT, position: PAGE.CONTENT_WIDTH }],
+    // Beside a diagram the marks sit at the end of the text column, not the
+    // page margin under the picture.
+    tabStops: [{ type: TabStopType.RIGHT, position: opts.tabPosition || PAGE.CONTENT_WIDTH }],
     children,
   });
 }
 
-function makePartParagraph(label, stem, marks) {
+function makePartParagraph(label, stem, marks, opts = {}) {
   const question = /^Q[^(]+/.exec(getMathLocation() || "")?.[0];
   const partLabel = cleanText(label).replace(/[()]/g, "");
   setMathLocation(question ? `${question}(${partLabel})` : `Part (${partLabel})`);
@@ -1091,18 +1095,19 @@ function makePartParagraph(label, stem, marks) {
   ];
   if (marksText) {
     children.push(new TextRun({ text: "\t", font: BRAND.FONT, size: BRAND.FONT_SIZE_BODY }));
-    children.push(textRun(`[${marksText}]`, { italics: true, color: "555555" }));
+    // A non-breaking space keeps "[3 marks]" on one line in a narrow column.
+    children.push(rawTextRun(`[${marksText.replace(" ", "\u00A0")}]`, { italics: true, color: "555555" }));
   }
   return new Paragraph({
     spacing: { before: 100, after: 80 },
     indent: { left: 360 },
     keepNext: true,
-    tabStops: [{ type: TabStopType.RIGHT, position: PAGE.CONTENT_WIDTH }],
+    tabStops: [{ type: TabStopType.RIGHT, position: opts.tabPosition || PAGE.CONTENT_WIDTH }],
     children,
   });
 }
 
-function makeRuledLines(count, border) {
+function makeRuledLines(count, border, opts = {}) {
   // Twenty-mark extended responses need 60 lines under the marks policy. The
   // upper bound is only a defensive guard against malformed direct callers;
   // normal resource questions are validated before they reach this function.
@@ -1114,9 +1119,13 @@ function makeRuledLines(count, border) {
   const alternateColor = Number.isFinite(lastNibble)
     ? `${baseColor.slice(0, -1)}${((lastNibble + 15) % 16).toString(16).toUpperCase()}`
     : baseColor;
+  // The first few lines carry keepNext so a question never ends a page with
+  // its text and no room to start working.
+  const keepFirst = Math.max(0, Number(opts.keepFirst) || 0);
   const lines = [];
   for (let i = 0; i < safeCount; i += 1) {
     lines.push(new Paragraph({
+      keepNext: i < keepFirst,
       border: {
         // Alternating by one imperceptible colour step prevents Word and
         // LibreOffice from merging consecutive borders into one outer box.
@@ -1136,23 +1145,23 @@ function makeRuledLines(count, border) {
   return lines;
 }
 
-function makeWorkingLines(count) {
+function makeWorkingLines(count, opts = {}) {
   return makeRuledLines(count, {
     style: BorderStyle.DOTTED,
     size: 4,
     color: "BBBBBB",
-  });
+  }, opts);
 }
 
 // English responses need familiar ruled writing space rather than the dotted
 // working area used for maths calculations. Keep this separate so changing an
 // English layout cannot silently alter maths worksheets and papers.
-function makeResponseLines(count) {
+function makeResponseLines(count, opts = {}) {
   return makeRuledLines(count, {
     style: BorderStyle.SINGLE,
     size: 4,
     color: "AEB6BF",
-  });
+  }, opts);
 }
 
 // Writing space is derived from assessment weight, not a second model guess.
@@ -1201,6 +1210,7 @@ function makeListItem(text, opts = {}) {
   const size = opts.size || BRAND.FONT_SIZE_BODY;
   return new Paragraph({
     spacing: opts.spacing || { after: 80 },
+    keepNext: opts.keepNext,
     indent: { left, hanging: left - markerIndent },
     tabStops: [{ type: TabStopType.LEFT, position: left }],
     children: [

@@ -167,7 +167,7 @@ Agreed with Tom on 2026-11-04.
 | Decision | Choice |
 |---|---|
 | How the generator uses the bank | Original questions and diagrams exactly as printed, plus new questions asked about the same diagram (a different unknown, with the answer checked). A tutor setting (none / some / mostly) controls how much of a booklet comes from the bank |
-| Answers until answer linking exists | The generator solves and checks each bank question, as it does for generated ones. Phase 2 replaces these with the book's own answers |
+| Answers | The book's own printed answer where one is linked (`bookAnswer`, RES-63, section 13); otherwise the generator solves and checks the question as before |
 | Review | Questions go live once the 200-page quality check passes. Tutors flag a bad crop or tag from the portal, and admins fix or hide it |
 | Tutor UI in v1 | None new: the generator pulls from the bank behind the scenes. A browse-and-pick screen comes later |
 | Search | Filters on type, skill, year, context and steps, plus OpenAI embeddings in Firestore vector search. The OpenAI SDK and key are already in Functions |
@@ -250,7 +250,7 @@ drawn.
 | Skill | The generator gives every maths question and part a `skill`: for a diagram question, the broad skill it tests, worded like a textbook exercise heading ("area of composite shapes", "volume of cylinders"), with no numbers, scenario or method; otherwise "". A part without one uses its question's. A question written before RES-80 has none and is searched and judged on its own wording |
 | Search | Per slot: the bank questions nearest "skill, diagram type, topic", from the student's year and the years either side, ranked by year and difficulty (RES-76); the best 8 with one diagram are kept. Every slot is searched before any is filled, and no search holds back another slot's crops. Searches are saved in `resources/checkpoints/<jobId>/bank-search-*.json`, so a later worker reuses them |
 | Choose and write | Hardest slots first, in waves of four. Sonnet 5.5 sees up to four crops no earlier wave kept, picks the one that best carries the skill (complete, taught by the student's year), and restates its textbook question or writes a new one on it at the slot's difficulty and marks: a context, a cost, a unit conversion or working backwards, but no other topic, and nothing on the textbook page except the diagram. A crop two slots in one wave choose goes to the harder one; the other tries again without it (recorded as `crop_taken` if it runs out of tries). A refused call is retried once. A multiple-choice question gets four options |
-| Check | A second, independent solve from the crop must agree with the answer. When it disagrees, a text-only call reads the final answer from the check's solution and says whether the solution reached one at all; a definite answer goes to a second independent check, and is used (with the check's solution as its working) only if that agrees. Otherwise the slot is drawn, including when the check finds the question itself broken (RES-82: in 19 of 20 rejected questions reviewed the check was right and the writer's arithmetic wrong, and a fresh third solve repeated the writer's slips). Bank answers skip the later answer check, which cannot see the crop |
+| Check | A second, independent solve from the crop must agree with the answer. When it disagrees, a text-only call reads the final answer from the check's solution and says whether the solution reached one at all; a definite answer goes to a second independent check, and is used (with the check's solution as its working) only if that agrees. Otherwise the slot is drawn, including when the check finds the question itself broken. With a book answer, see section 13 (RES-82: in 19 of 20 rejected questions reviewed the check was right and the writer's arithmetic wrong, and a fresh third solve repeated the writer's slips). Bank answers skip the later answer check, which cannot see the crop |
 | Calls | Each call is saved as it finishes. Bank calls are best effort and run four at a time in one worker (the only calls allowed to run side by side); a failed one is recorded and its slot is drawn. A worker spends at most 150 s on the step; anything unfinished carries on in the next worker |
 | Storage | A bank diagram is a `source-image` with its Storage path; its bytes are loaded only to build the DOCX, so `generatedJson` stays small and a revision rebuilds it. The diagram repair pass leaves it alone |
 | Record | The job's `questionBankUsage` lists each bank question used (question number, part, section, original or new) and, in `skipped`, every diagram that was drawn and why. The portal shows both in the resource's details |
@@ -276,3 +276,32 @@ A retired question never comes back from a search, and the merge ignores it.
 It runs as `tenacity-prod-question-bank` through Workload Identity; that
 account and its grants (Firestore, Storage, the two API key secrets, and
 Token Creator on `question-bank-drive`) are a one-time setup.
+
+## 13. Book answers (RES-63)
+
+Each bank question can carry its book's printed answer:
+`bookAnswer = { answer, via, key, route, answerSource, runId, linkedAt }`.
+
+| Where the answers are | How they are linked |
+|---|---|
+| Answer section at the back of a book | Haiku reads each answer page; entries match by exercise and number (`ex:7A\|2\|b`) or printed page (`pg:103\|1\|a`). A scanned book's section is found from page images |
+| Separate solutions file | Paired by file name, or as the only solutions file in the book's folder; read the same way |
+| Mathletics teacher edition | The teacher page with the same words as the student page; answers matched by label |
+| Past paper | Solutions after the questions (typed or scanned), a separate solutions file, or an answered second copy; matched by section, number and part |
+
+Guards: no link on a key two answers share; the exercise is dropped where
+numbering restarts with no new heading; exercises must run in book order (a
+chapter review question naming the exercise it revises is not linked by it);
+a sectioned paper question never takes another section's answer.
+
+When the generator restates a question as printed and it has a book answer,
+it solves it once (an adapted question is checked as in section 10). Agreement uses the book answer with that working; else a
+second solve; if both solves agree against the book, their answer is used and
+the question is flagged; if all three differ, the book answer is used with the
+working marked unconfirmed, the question is flagged, and the job warns
+`BOOK_ANSWER_UNCONFIRMED`.
+
+**Backfill (2026-11-06):** `scripts/questionBankAnswers.js plan|run|write`
+linked 30,100 of 56,763 numbered live questions from 1,820 books for $18.
+A random audit of 100 links found about 3% linked to the wrong part. Scanned
+books link worst (15%). Books added by the weekly update are not yet linked.

@@ -238,35 +238,23 @@ function twoWayTableBlock(spec) {
 const SOURCE_IMAGE_SCALE = 0.5;
 const SOURCE_IMAGE_MAX_WIDTH = 480;
 
-function sourceImageBlock(spec) {
+function sourceImageSize(spec) {
   const scale = Math.min(SOURCE_IMAGE_SCALE, SOURCE_IMAGE_MAX_WIDTH / spec.width);
-  return [
-    new Paragraph({
-      spacing: { before: 80, after: 140 },
-      keepNext: true,
-      children: [
-        new ImageRun({
-          data: spec.image,
-          type: "png",
-          transformation: {
-            width: Math.round(spec.width * scale),
-            height: Math.round(spec.height * scale),
-          },
-        }),
-      ],
-    }),
-  ];
+  return { width: Math.round(spec.width * scale), height: Math.round(spec.height * scale) };
 }
 
-async function renderDiagramBlock(spec, context = {}) {
-  if (!spec || typeof spec !== "object") return [];
+// Resolves a diagram spec to what the question layout places: an image at its
+// natural printed size (pixels at 96 dpi, as docx's ImageRun expects), or, for
+// diagrams drawn natively in Word (two-way tables), the finished blocks.
+async function renderDiagramImage(spec, context = {}) {
+  if (!spec || typeof spec !== "object") return null;
 
   try {
     if (spec.type === "two-way-table") {
-      return twoWayTableBlock(spec);
+      return { blocks: twoWayTableBlock(spec) };
     }
     if (spec.type === "source-image") {
-      return sourceImageBlock(spec);
+      return { image: { data: spec.image, ...sourceImageSize(spec) } };
     }
     const diagram = await withMathLocation(context.label, () => generateDiagram(spec));
     if (!diagram?.buffer) {
@@ -275,27 +263,38 @@ async function renderDiagramBlock(spec, context = {}) {
         { code: DIAGRAM_RENDER_ERROR }
       );
     }
-
     const scale = Math.min(1, DIAGRAM_TARGET_WIDTH / diagram.width);
-    return [
-      new Paragraph({
-        spacing: { before: 80, after: 140 },
-        keepNext: true,
-        children: [
-          new ImageRun({
-            data: diagram.buffer,
-            type: "png",
-            transformation: {
-              width: Math.round(diagram.width * scale),
-              height: Math.round(diagram.height * scale),
-            },
-          }),
-        ],
-      }),
-    ];
+    return {
+      image: {
+        data: diagram.buffer,
+        width: Math.round(diagram.width * scale),
+        height: Math.round(diagram.height * scale),
+      },
+    };
   } catch (err) {
     throw attachDiagramContext(err, spec, context);
   }
+}
+
+function diagramImageRun(image, size = image) {
+  return new ImageRun({
+    data: image.data,
+    type: "png",
+    transformation: { width: Math.round(size.width), height: Math.round(size.height) },
+  });
+}
+
+async function renderDiagramBlock(spec, context = {}) {
+  const resolved = await renderDiagramImage(spec, context);
+  if (!resolved) return [];
+  if (resolved.blocks) return resolved.blocks;
+  return [
+    new Paragraph({
+      spacing: { before: 80, after: 140 },
+      keepNext: true,
+      children: [diagramImageRun(resolved.image)],
+    }),
+  ];
 }
 
 module.exports = {
@@ -305,6 +304,8 @@ module.exports = {
   attachDiagramContext,
   isDiagramRenderError,
   optionalDiagramOmittedWarning,
+  diagramImageRun,
   renderDiagramBlock,
+  renderDiagramImage,
   twoWayTableBlock,
 };
