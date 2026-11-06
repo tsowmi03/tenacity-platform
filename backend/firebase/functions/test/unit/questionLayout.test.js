@@ -72,6 +72,13 @@ describe("question layout with diagrams (RES-81)", () => {
     assert.ok(Math.abs(widthCm(small) - 4.5) < 0.05, `small crop is ${widthCm(small)} cm`);
   });
 
+  it("never lets the minimum width push a tall, narrow crop past the height limit", async () => {
+    const xml = await documentXml(paper([{ number: 1, stem: "Tall.", marks: 1, diagram: await crop(100, 1000) }]));
+    const [, cx, cy] = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(xml);
+    assert.ok(Number(cy) / 360000 <= 5.01, `height is ${Number(cy) / 360000} cm`);
+    assert.ok(Number(cx) / 360000 < 4.5);
+  });
+
   it("centres a wide, flat diagram with the answer lines straight below", async () => {
     const xml = await documentXml(paper([
       { number: 1, stem: "Use the number line.", marks: 2, diagram: await crop(1000, 300) },
@@ -107,6 +114,24 @@ describe("question layout with diagrams (RES-81)", () => {
     const leftParagraphs = paragraphs(left);
     assert.match(left, /\(a\)|a\)/);
     assert.ok(isRule(leftParagraphs[leftParagraphs.length - 1]), "the column ends on an answer line");
+  });
+
+  it("keeps a later part whose text holds a table out of the narrow column", async () => {
+    const xml = await documentXml(paper([{
+      number: 1,
+      stem: "A garden is a rectangle.",
+      marks: 3,
+      diagram: await crop(500, 500),
+      parts: [
+        { label: "a", stem: "Use the table.\n\n| Side | Length |\n| --- | --- |\n| a | 3 m |", marks: 1 },
+        { label: "b", stem: "Find its area.", marks: 2 },
+      ],
+    }]));
+    // The layout row runs until the first </w:tc> closing its text column;
+    // neither the part's text nor its table may appear before that.
+    const row = body(xml).slice(body(xml).indexOf("<w:tbl>"));
+    const left = row.slice(0, row.indexOf("</w:tc>"));
+    assert.doesNotMatch(left, /Use the table/);
   });
 
   it("keeps a question's text, diagram and first two answer lines together", async () => {

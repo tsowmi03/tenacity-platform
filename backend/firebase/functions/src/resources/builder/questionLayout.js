@@ -107,12 +107,16 @@ function fitSize(image, maxWidth, maxHeight, minWidth) {
 
 // The printed size of a diagram in the side column, in pixels: its natural
 // size, shrunk to fit the column and raised to the minimum width.
+// The height limit always wins: a tall, narrow crop is raised only as far as
+// the column height allows, never to the full minimum width.
 function sideColumnSize(image) {
+  const maxHeight = SIDE_MAX_HEIGHT_CM * PX_PER_CM;
+  const minWidth = Math.min(SIDE_MIN_WIDTH_CM * PX_PER_CM, maxHeight * (image.width / image.height));
   return fitSize(
     image,
     Math.min(image.width, SIDE_MAX_WIDTH_CM * PX_PER_CM),
-    Math.min(image.height, SIDE_MAX_HEIGHT_CM * PX_PER_CM),
-    SIDE_MIN_WIDTH_CM * PX_PER_CM
+    Math.min(image.height, maxHeight),
+    minWidth
   );
 }
 
@@ -124,12 +128,13 @@ function placement(image, lead) {
 // How many items go in the left column: always the lead (the stem and any
 // options), then answer lines and later parts until the column is at least as
 // tall as the diagram. The column never ends on a part's text, or that part's
-// lines would start below the diagram.
+// lines would start below the diagram, and it stops before a part whose text
+// holds a table: tables are sized to the full text width.
 function columnCount(lead, follow, width, target) {
   const items = [...lead, ...follow];
   let used = 0;
   let count = 0;
-  while (count < items.length && (count < lead.length || used < target)) {
+  while (count < items.length && (count < lead.length || (used < target && !items[count].hasTable))) {
     used += items[count].estimate(width);
     count += 1;
   }
