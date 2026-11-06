@@ -30,6 +30,7 @@ const {
   makePageBreak,
   makePartParagraph,
   makeQuestionParagraph,
+  makeBlankSpace,
   makeResponseLines,
   makeSectionHeading,
   makeShadedBox,
@@ -417,6 +418,16 @@ function optionItems(question) {
   }));
 }
 
+// English always gets ruled writing lines. A maths question or part gets
+// dotted working lines unless it says its answer goes on the page (graphing,
+// constructions, completing a table), when it gets blank space (RES-20). A part
+// that does not say inherits its question's choice.
+function answerSpaceMaker(item, opts, parent) {
+  if (opts.responseLines) return makeResponseLines;
+  const space = item?.answerSpace || parent?.answerSpace;
+  return space === "blank" ? makeBlankSpace : makeWorkingLines;
+}
+
 function answerLineItems(question, makeLines) {
   return lineItems(makeLines(responseLineCount(question), { keepFirst: 2 }), RULED_LINE_HEIGHT);
 }
@@ -428,7 +439,6 @@ async function renderQuestion(question, opts = {}) {
   // Mark allocations always stay in the data because they determine response
   // space. Rendering them is an independent tutor-controlled option.
   const showMarks = opts.showMarks === true;
-  const makeLines = opts.responseLines ? makeResponseLines : makeWorkingLines;
 
   if (opts.preLabel) {
     elements.push(paragraph(opts.preLabel(question), {
@@ -465,7 +475,7 @@ async function renderQuestion(question, opts = {}) {
         }),
         ...optionItems(part),
       ],
-      lines: answerLineItems(part, makeLines),
+      lines: answerLineItems(part, answerSpaceMaker(part, opts, question)),
     };
   });
 
@@ -474,7 +484,7 @@ async function renderQuestion(question, opts = {}) {
   // block of its own, and so on.
   const blocks = [{
     lead: questionLead,
-    follow: parts.length ? [] : answerLineItems(question, makeLines),
+    follow: parts.length ? [] : answerLineItems(question, answerSpaceMaker(question, opts)),
     diagram: question?.diagram,
     context: { label: `Q${number}`, required: question?.diagramRequired !== false },
     alignBefore: 220,
@@ -587,6 +597,7 @@ function makeAnswerTable(answers = [], opts = {}) {
   const includeWorking = opts.includeWorking !== false;
   const rows = [
     makeAnswerRow(opts.firstHeader || "Q#", opts.secondHeader || "Answer", {
+      header: true,
       bold: true,
       color: BRAND.WHITE,
       fill: BRAND.NAVY,

@@ -180,6 +180,38 @@ describe("worksheet DOCX builder", () => {
     assert.match(text, /B\. Simile/, "multiple-choice options should render as lettered lines (RES-16)");
   });
 
+  it("gives maths questions answered on the page blank space instead of working lines (RES-20)", async () => {
+    const buffer = await buildWorksheetDocx({
+      title: "Answer Space",
+      subject: "maths",
+      year: 9,
+      topic: "Linear relationships",
+      totalMarks: 8,
+      questions: [
+        { number: 1, stem: "Plot y = 2x + 1 for x from 0 to 3.", marks: 2, answerSpace: "blank", parts: null },
+        {
+          number: 2,
+          stem: "For the line y = 3x - 2:",
+          marks: 4,
+          answerSpace: "lines",
+          parts: [
+            { label: "a", stem: "Find y when x = 4.", marks: 1, answerSpace: "lines" },
+            { label: "b", stem: "Complete the table of values.", marks: 3, answerSpace: "blank" },
+          ],
+        },
+        { number: 3, stem: "Which point lies on the line?", type: "multiple-choice", options: null, marks: 1, parts: null },
+        { number: 4, stem: "Solve 5x = 20.", marks: 1, parts: null },
+      ],
+    }, { answerMode: "none", studentName: "Mei Tanaka" });
+    const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+
+    // Working lines only for 2(a) (1 mark) and Q4, which says nothing and keeps lines.
+    assert.equal((xml.match(/w:color="BBBBB[AB]"/g) || []).length, 6);
+    // Blank space keeps the same height: Q1 (2 marks) and 2(b) (3 marks) as
+    // borderless 20 pt rows, alongside the six ruled ones.
+    assert.equal((xml.match(/w:line="400" w:lineRule="exact"/g) || []).length, 6 + 15);
+  });
+
   it("shows whole-question and part marks when requested without changing writing space", async () => {
     const buffer = await buildWorksheetDocx(sampleWorksheet, {
       answerMode: "none",
@@ -763,5 +795,24 @@ describe("worksheet DOCX builder", () => {
       }),
       "Worksheet - Mei Tanaka - Year 8 Maths - Rates and ratios intro - 2026-05-23.docx"
     );
+  });
+});
+
+describe("table headings stay with their content (RES-33)", () => {
+  it("repeats the header row and keeps it with the first row", async () => {
+    const { Document, Packer } = require("docx");
+    const { makeDefinitionTable, makeWorkedExampleTable } = require("../../src/resources/builder/shared");
+    for (const table of [
+      makeDefinitionTable([{ term: "Metaphor", definition: "A direct comparison." }]),
+      makeWorkedExampleTable([{ working: "2x = 8", explanation: "Subtract 3." }]),
+    ]) {
+      const buffer = await Packer.toBuffer(new Document({ sections: [{ children: [table] }] }));
+      const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+      const rows = xml.split("<w:tr>").slice(1);
+      assert.match(rows[0], /<w:tblHeader\/>/);
+      assert.match(rows[0], /<w:cantSplit\/>/);
+      assert.equal((rows[0].match(/<w:keepNext\/>/g) || []).length, 2);
+      assert.match(rows[1], /<w:cantSplit\/>/);
+    }
   });
 });

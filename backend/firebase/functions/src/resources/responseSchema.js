@@ -84,13 +84,17 @@ const DIAGRAM_TYPE_FIELD = enumOf([...Object.keys(DIAGRAM_REGISTRY), "none"]);
 // so the question bank can match a textbook question of the same difficulty.
 const DIFFICULTY_FIELD = enumOf(["easy", "medium", "hard"]);
 
+// RES-20. Whether a maths answer is worked on lines or drawn/written on the
+// page (graphs, constructions, tables), which gets blank space instead.
+const ANSWER_SPACE_FIELD = enumOf(["lines", "blank"]);
+
 // Mirrors questionSchemaText() in promptBuilder.js. `diagram` is pinned to null
 // in both subjects: English questions never have one, and maths fills it in
 // after generation rather than during it. `skill` (RES-80) is the broad skill a
 // diagram question tests; the question bank finds a textbook diagram for it.
 function diagramProperties(subject) {
   return subject === "maths"
-    ? { diagram: NO_DIAGRAM, diagramType: DIAGRAM_TYPE_FIELD, diagramRequired: bool, difficulty: DIFFICULTY_FIELD, skill: str }
+    ? { diagram: NO_DIAGRAM, diagramType: DIAGRAM_TYPE_FIELD, diagramRequired: bool, difficulty: DIFFICULTY_FIELD, skill: str, answerSpace: ANSWER_SPACE_FIELD }
     : { diagram: NO_DIAGRAM, diagramRequired: bool };
 }
 

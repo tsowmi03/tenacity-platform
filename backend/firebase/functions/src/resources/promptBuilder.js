@@ -112,7 +112,8 @@ function diagramFields(subject) {
       "diagramType": ${DIAGRAM_TYPE_ENUM},
       "diagramRequired": boolean,
       "difficulty": "easy" | "medium" | "hard",
-      "skill": string,`
+      "skill": string,
+      "answerSpace": "lines" | "blank" ("lines" when the student writes working: calculations, algebra, equations, explanations; "blank" when they draw or write on the page itself: plotting or sketching a graph, a construction or geometric drawing, completing a table or diagram. Multiple choice gets no space either way),`
     : `
       "diagram": null,
       "diagramRequired": boolean,`;

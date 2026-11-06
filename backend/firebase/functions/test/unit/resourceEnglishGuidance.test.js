@@ -77,6 +77,14 @@ describe("English marking follows the guidance", () => {
     assert.doesNotMatch(prompt("worksheet", "english", { answerMode: "none" }), /Write each question's marking criteria/);
   });
 
+  it("keeps the answer out of the marking criteria (RES-48)", () => {
+    assert.match(ENGLISH_CRITERIA_RULE, /never what the answer is/);
+    assert.match(ENGLISH_CRITERIA_RULE, /"1 mark: selects the correct answer"/);
+    assert.doesNotMatch(ENGLISH_CRITERIA_RULE, /[—–]/);
+    // The model answer still gives the option: it is the answer, not a criterion.
+    assert.match(prompt("worksheet", "english", { answerMode: "worked" }), /For multiple choice, give the correct option/);
+  });
+
   it("builds model answers from the short-answer table and plans essays in TETAL", () => {
     const text = prompt("practice-paper", "english", { answerMode: "worked" });
     assert.match(text, /SHORT-ANSWER QUESTIONS table/);
