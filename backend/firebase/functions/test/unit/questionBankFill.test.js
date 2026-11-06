@@ -37,8 +37,10 @@ function worksheet(count = 6) {
   };
 }
 
+// Each bank question is its own printed question (its own source file), so
+// none is a sibling part of another unless a test says so.
 function bankQuestion(id) {
-  return { id, status: "live", sourcePath: "Maths/Year 9/Book.pdf", pageNumber: 4, label: "Q1a", stem: "Find x.", text: "", description: "Find the hypotenuse", figures: [{ storagePath: `questionBank/diagrams/${id}_1.png` }] };
+  return { id, status: "live", sourcePath: `Maths/Year 9/${id}.pdf`, pageNumber: 4, label: "Q1a", stem: "Find x.", text: "", description: "Find the hypotenuse", figures: [{ storagePath: `questionBank/diagrams/${id}_1.png` }] };
 }
 
 // Storage: diagram crops download as PNGs; anything the step saves (its
@@ -212,22 +214,48 @@ describe("question bank fill: swapping questions", () => {
     }
   });
 
-  it("solves a third time when the two solves disagree, and uses that answer only if a fresh check agrees", async () => {
+  // RES-82. In 19 of 20 rejected questions reviewed, the check was right and
+  // the writer wrong; a fresh third solve repeated the writer's slips.
+  it("offers a disagreeing check's own answer to a second check, and uses it only if that agrees", async () => {
     const parsed = worksheet(1);
     const checks = [];
+    const solution = "$c^2 = 5^2 + 12^2 - 25$... so the side is 12 cm";
     const env = setup({
-      choose: (request) => (request.responseSchema.required.includes("choice") ? fits() : { answer: "13.0 cm", workingOut: "careful working" }),
-      check: (request) => { checks.push(request); return checks.length === 1 ? { answer: "13.0 cm", agrees: false, note: "arithmetic slip" } : agrees(); },
+      choose: (request) => (request.responseSchema.required.join() === "answered,answer" ? { answered: true, answer: "12 cm" } : fits()),
+      check: (request) => { checks.push(request); return checks.length === 1 ? { answer: solution, agrees: false, note: "arithmetic slip" } : { answer: "12 cm", agrees: true, note: "" }; },
     });
     const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
     assert.equal(result.used.length, 1);
-    assert.equal(parsed.answers[0].answer, "13.0 cm");
-    assert.equal(parsed.answers[0].workingOut, "careful working");
-    const resolve = env.calls.find((c) => c.responseSchema.required.join() === "answer,workingOut");
-    assert.match(resolve.userMessage.at(-1).text, /^Solve this question from its diagram/);
-    assert.doesNotMatch(resolve.userMessage.at(-1).text, /arithmetic slip|13 cm/, "the third solve never sees the earlier answers, which the model refused");
-    assert.equal(resolve.effort, "medium", "high effort was refused by the model");
-    assert.equal(checks.length, 2);
+    assert.equal(parsed.answers[0].answer, "12 cm");
+    assert.equal(parsed.answers[0].workingOut, solution, "the check's solution is the working");
+    assert.equal(checks.length, 2, "no third solve");
+    const final = env.calls.find((c) => c.responseSchema.required.join() === "answered,answer");
+    assert.equal(final.userMessage.some((b) => b.type === "image"), false, "the final answer is read from the solution, text only");
+    assert.match(final.userMessage.at(-1).text, /Do not change it/);
+    const recheck = checks[1].userMessage.at(-1).text;
+    assert.match(recheck, /Proposed answer: 12 cm$/);
+    assert.doesNotMatch(recheck, /arithmetic slip|13 cm/, "the second check never sees the earlier answer or note, which the model refused");
+    assert.equal(checks[1].effort, "medium", "high effort was refused by the model");
+    assert.deepEqual(checks[0].responseSchema.required, ["answer", "agrees", "note"], "the check is not asked to set out its working, which the model refused");
+  });
+
+  it("draws the diagram when the check finds the question itself broken", async () => {
+    const env = setup({
+      choose: (request) => (request.responseSchema.required.join() === "answered,answer" ? { answered: false, answer: "No valid value exists: the conditions are inconsistent" } : fits()),
+      check: () => ({ answer: "The totals come to 46, never 40, so no value works.", agrees: false, note: "inconsistent" }),
+    });
+    const result = await applyQuestionBank({ job, parsed: worksheet(1), ...env, embed, logger: {} });
+    assert.equal(result.used.length, 0);
+    assert.equal(result.skipped[0].reason, "check_disagreed");
+    assert.equal(env.calls.filter((c) => c.responseSchema.required.includes("agrees")).length, 1, "a broken question never reaches a second check");
+  });
+
+  it("draws the diagram when the second check disagrees too", async () => {
+    let n = 0;
+    const env = setup({ choose: (request) => (request.responseSchema.required.join() === "answered,answer" ? { answered: true, answer: "12 cm" } : fits()), check: () => ({ answer: n++ === 0 ? "12 cm" : "11 cm", agrees: false, note: "no" }) });
+    const result = await applyQuestionBank({ job, parsed: worksheet(1), ...env, embed, logger: {} });
+    assert.equal(result.used.length, 0);
+    assert.equal(result.skipped[0].reason, "check_disagreed");
   });
 
   it("searches on the question and its diagram before the resource's topic", async () => {
@@ -370,13 +398,13 @@ describe("question bank fill: year and difficulty", () => {
     await applyQuestionBank({ job: { ...job, customPrompt: "A tough revision paper for a selective school test" }, parsed, ...env, embed, logger: {} });
     const prompt = env.calls[0].userMessage.at(-1).text;
     assert.match(prompt, /The tutor asked for: "A tough revision paper/);
-    assert.match(prompt, /should be hard for a Year 9 student/);
+    assert.match(prompt, /hard for a Year 9 student/);
     assert.match(prompt, /Printed for: Year 9/);
     assert.match(prompt, /taught by Year 9/);
     assert.match(prompt, /approach to "original"/);
   });
 
-  it("records the model's choice of restating or adapting, not a fixed schedule", async () => {
+  it("records the model's choice of restating or adapting, not a fixed schedule (RES-76)", async () => {
     const env = setup({ choose: () => ({ ...fits(), approach: "adapted" }), check: agrees });
     const result = await applyQuestionBank({ job, parsed: worksheet(3), ...env, embed, logger: {} });
     assert.ok(result.used.length > 0);
@@ -385,3 +413,142 @@ describe("question bank fill: year and difficulty", () => {
   });
 });
 
+// RES-80. The generated question only sets the slot's skill, difficulty and
+// marks; the textbook diagram decides the question.
+describe("question bank fill: diagram first", () => {
+  // Every search returns the same crops, best first, as a real bank does for
+  // several questions on one skill.
+  function sharedBank({ choose, check = agrees, crops = 6, refuse = 0 }) {
+    const searches = [];
+    const db = {
+      collection: () => {
+        const query = {
+          where: (...args) => { searches.at(-1).where.push(args); return query; },
+          findNearest: () => ({ get: async () => ({ docs: Array.from({ length: crops }, (_, i) => {
+            const q = bankQuestion(`crop${i + 1}`);
+            return { id: q.id, data: () => ({ ...q, years: [9], distance: 0.1 + i / 100 }) };
+          }) }) }),
+        };
+        searches.push({ where: [] });
+        return query;
+      },
+    };
+    const calls = [];
+    let refusals = refuse;
+    const callAi = async (request) => {
+      calls.push(request);
+      if (request.responseSchema.required.includes("choice") && refusals > 0) {
+        refusals -= 1;
+        throw Object.assign(new Error("AI declined to generate this resource (reasoning_extraction)."), { refusal: true });
+      }
+      return { parsed: request.responseSchema.required.includes("agrees") ? check(request) : choose(request) };
+    };
+    return { db, bucket: memoryBucket(), callAi, calls, searches };
+  }
+  const shownIds = (request) => [...request.userMessage.at(-1).text.matchAll(/^Candidate \d+ \(image \d+\): .*$/gm)].length;
+  const pickFirst = () => ({ ...fits(), choice: 1 });
+
+  it("searches on the skill and diagram type, and writes the question from the diagram, not the generated one", async () => {
+    const parsed = worksheet(1);
+    parsed.questions[0].skill = "lengths in right-angled triangles";
+    const briefs = [];
+    const env = sharedBank({ choose: pickFirst });
+    await applyQuestionBank({ job, parsed, ...env, embed: async (texts) => { briefs.push(...texts); return texts.map(() => [1]); }, logger: {} });
+    assert.match(briefs[0], /^lengths in right-angled triangles\nDiagram: right-triangle\nTopic: Pythagoras/);
+    const prompt = env.calls[0].userMessage.at(-1).text;
+    assert.match(prompt, /needs a question testing lengths in right-angled triangles/);
+    assert.doesNotMatch(prompt, /Find the hypotenuse of triangle 1/, "the generated question is not a target to match");
+    assert.doesNotMatch(prompt, /near miss is worse/, "a crop no longer has to test the generated question's exact skill");
+    assert.match(prompt, /never to a table, row or other question/);
+  });
+
+  it("takes a part's skill from its question when the part has none", async () => {
+    const parsed = worksheet(1);
+    parsed.questions[0].diagramType = "none";
+    parsed.questions[0].skill = "area of composite shapes";
+    parsed.questions[0].parts = [{ label: "a", stem: "Find the area.", marks: 2, diagramType: "L-shape" }];
+    parsed.answers[0].partLabel = "a";
+    const env = sharedBank({ choose: pickFirst });
+    await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    assert.match(env.calls[0].userMessage.at(-1).text, /testing area of composite shapes/);
+  });
+
+  it("falls back to the generated question for a question written without a skill", async () => {
+    const env = sharedBank({ choose: pickFirst });
+    await applyQuestionBank({ job, parsed: worksheet(1), ...env, embed, logger: {} });
+    assert.match(env.calls[0].userMessage.at(-1).text, /The question it replaces:\nFind the hypotenuse of triangle 1\./);
+  });
+
+  it("holds nothing back in the search, so the last slots are not left with the weakest crops", async () => {
+    const env = sharedBank({ choose: pickFirst });
+    await applyQuestionBank({ job, parsed: worksheet(3), ...env, embed, logger: {} });
+    assert.equal(env.searches.length, 3);
+    assert.ok(env.searches.every((s) => !s.where.some(([field]) => field === "__name__")), "no search excludes another slot's crops");
+  });
+
+  it("fills the hardest slots first and never uses a crop twice", async () => {
+    const parsed = worksheet(3);
+    parsed.questions[0].difficulty = "easy";
+    parsed.questions[1].difficulty = "medium";
+    parsed.questions[2].difficulty = "hard";
+    const env = sharedBank({ choose: pickFirst });
+    const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    const byNumber = Object.fromEntries(result.used.map((u) => [u.questionNumber, u.questionId]));
+    assert.equal(byNumber[3], "crop1", "the hard slot gets the best crop");
+    assert.equal(new Set(Object.values(byNumber)).size, 3);
+    assert.equal(result.used.length, 3, "a slot that lost its crop to a harder one tries again with the rest");
+  });
+
+  it("frees a crop a slot looked at but did not keep", async () => {
+    const parsed = worksheet(5);
+    // The hardest slot looks at crops 1-4 first and keeps none; the others
+    // can still use all of them.
+    let first = true;
+    const env = sharedBank({ choose: () => {
+      if (first) { first = false; return { choice: 0, reason: "none fit", stem: "", options: [], answer: "", workingOut: "" }; }
+      return pickFirst();
+    }, crops: 5 });
+    const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    assert.equal(result.used.length, 4, "one slot found none suitable; the four others filled");
+    assert.ok(result.used.some((u) => u.questionId === "crop1"), "a crop the first slot passed over was used");
+    assert.ok(env.calls.filter((c) => c.responseSchema.required.includes("choice")).every((c) => shownIds(c) >= 1));
+  });
+
+  it("never uses two parts of one textbook question", async () => {
+    const env = sharedBank({ choose: pickFirst, crops: 4 });
+    // crop1 and crop2 are parts a and b of one printed question; crop3 and crop4 are others.
+    const db = env.db;
+    env.db = { collection: () => {
+      const query = db.collection();
+      const nearest = query.findNearest;
+      query.findNearest = (...args) => ({ get: async () => {
+        const snap = await nearest(...args).get();
+        return { docs: snap.docs.map((doc, i) => ({ id: doc.id, data: () => ({ ...doc.data(), sourcePath: "Maths/Year 9/Book.pdf", label: ["Exercise 8G Q4a", "Exercise 8G Q4d", "Q5", "Q6"][i] }) })) };
+      } });
+      return query;
+    } };
+    const result = await applyQuestionBank({ job, parsed: worksheet(2), ...env, embed, logger: {} });
+    assert.deepEqual(result.used.map((u) => u.questionId).sort(), ["crop1", "crop3"]);
+  });
+
+  it("retries a refused call once, then leaves the slot to be drawn", async () => {
+    const once = sharedBank({ choose: pickFirst, refuse: 1 });
+    const filled = await applyQuestionBank({ job, parsed: worksheet(1), ...once, embed, logger: {} });
+    assert.equal(filled.used.length, 1, "the second attempt goes through");
+    const twice = sharedBank({ choose: pickFirst, refuse: 2 });
+    const drawn = await applyQuestionBank({ job, parsed: worksheet(1), ...twice, embed, logger: {} });
+    assert.equal(drawn.used.length, 0);
+    assert.match(drawn.skipped[0].reason, /^failed: AI declined/);
+  });
+
+  it("asks the generator for a broad skill on every maths question", () => {
+    const { buildResponseSchema } = require("../../src/resources/responseSchema");
+    const { buildSystemPrompt } = require("../../src/resources/promptBuilder");
+    const schema = buildResponseSchema("worksheet", { subject: "maths", answerMode: "answers" });
+    assert.equal(schema.properties.questions.items.properties.skill.type, "string");
+    assert.ok(schema.properties.questions.items.required.includes("skill"));
+    const english = buildResponseSchema("worksheet", { subject: "english", answerMode: "answers" });
+    assert.equal(english.properties.questions.items.properties.skill, undefined);
+    assert.match(buildSystemPrompt("worksheet", { year: 9, subject: "maths", answerMode: "answers" }), /set "skill" on the same question or part to the broad skill/);
+  });
+});

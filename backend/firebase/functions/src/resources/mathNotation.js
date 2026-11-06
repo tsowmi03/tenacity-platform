@@ -182,9 +182,16 @@ const ACCENTS = {
 };
 
 function accentText(inner, mark) {
-  const text = String(inner).trim();
+  const raw = String(inner).trim();
+  // A command under the accent (\overline{A \cup B}) becomes its symbol
+  // first. Marking the letters of its name drew "\c\u0305u\u0305p\u0305" (RES-82).
+  const hasCommand = /\\[A-Za-z]+/.test(raw);
+  const text = raw.replace(/\\([A-Za-z]+)/g, (command, name) => SYMBOL_COMMANDS[name] ?? command);
   // A bar over a run of characters is an overline, so it joins up.
   const perChar = mark === "\u0304" && [...text].length > 1 ? "\u0305" : mark;
+  // An overline over an expression covers all of it, symbols included:
+  // marking only A and B in A \u222a B would read as \u0100 \u222a B\u0304, a different set.
+  if (hasCommand && perChar === "\u0305") return [...text.replace(/\s+/g, "")].map((ch) => ch + perChar).join("");
   return text.replace(/[\p{L}\p{N}]/gu, (ch) => ch + perChar);
 }
 
@@ -220,7 +227,10 @@ function normaliseLaTeXCommands(value) {
     .replace(/\\(?:text|textrm|textit|textbf|textsf|texttt|mathrm|mathbf|mathit|mathsf|mathtt|mathcal|mathfrak|operatorname|boxed)\s*\{([^{}]*)\}/g, "$1")
     // --- Accents → combining marks on each letter/digit: \bar{x} → x̄,
     // 0.\dot{3} → 0.3̇, \overline{AB} → A̅B̅. Dropping them changes the maths
-    // (a recurring decimal, a mean, a complement).
+    // (a recurring decimal, a mean, a complement). A command written straight
+    // before an accent (A \cap\bar{B}) is spaced off first, or the marked
+    // letter joins its name and "\capB̅" is no longer a command (RES-82).
+    .replace(new RegExp(String.raw`(\\[A-Za-z]+)(?=\\(?:${Object.keys(ACCENTS).join("|")})${END})`, "g"), "$1 ")
     .replace(new RegExp(String.raw`\\(${Object.keys(ACCENTS).join("|")})${END}\s*(?:\{([^{}]*)\}|([A-Za-z0-9]))`, "g"),
       (_, name, braced, single) => accentText(braced ?? single, ACCENTS[name]))
     // Arc over two points: \overset{\frown}{AB} → A͡B. Any other \overset

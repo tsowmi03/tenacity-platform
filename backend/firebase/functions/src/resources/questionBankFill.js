@@ -1,20 +1,27 @@
 "use strict";
 
-// RES-60 / RES-71. Every maths diagram comes from the question bank (RES-54)
-// first; a drawn diagram is the fallback.
+// RES-60 / RES-71 / RES-80. Every maths diagram comes from the question bank
+// (RES-54) first; a drawn diagram is the fallback.
 //
 // Runs after the questions are written and before any diagram is drawn. Every
-// question or part that asks for a diagram is a slot:
+// question or part that asks for a diagram is a slot. The generated question
+// only sets the slot's broad skill ("area of composite shapes"), difficulty
+// and marks; the textbook diagram decides the question (RES-80):
 //
-//   1. search: the bank questions nearest the generated question, from the
-//      student's year and the years either side, ranked by how close their
-//      year and difficulty are to the difficulty the generator gave the
-//      question (RES-76; saved, so a later worker does not search again);
-//   2. choose and solve: the model sees up to four candidate crops and the
-//      tutor's brief, picks one whose diagram fits, is complete and is taught
-//      by the student's year, and either restates the original question or
-//      adapts it to the skill and difficulty wanted, then solves it;
+//   1. search: the bank questions nearest the slot's skill and diagram type,
+//      from the student's year and the years either side, ranked by how close
+//      their year and difficulty are to the slot's (RES-76). Every slot is
+//      searched before any is filled, with nothing held back, and the
+//      searches are saved so a later worker does not search again;
+//   2. choose and write: hardest slots first, the model sees up to four crops
+//      no other slot has taken or is considering, picks one that carries the
+//      skill, is complete and is taught by the student's year, and writes the
+//      question on it at the slot's difficulty and marks, then solves it;
 //   3. check: a second, independent solve must agree with that answer.
+//
+// Before RES-80 the model had to find a crop testing the same skill as the
+// generated question, in the same way; multi-step questions almost never
+// matched, so the hardest ones were nearly always drawn.
 //
 // A slot that finds no passing match keeps its generated question and its
 // diagram is drawn as before. The job records every slot's outcome. Anything
@@ -29,10 +36,15 @@ const { pngSize, SOURCE_IMAGE } = require("./sourceImages");
 // the value is accepted and ignored.
 const QUESTION_BANK_MODES = Object.freeze(["none", "some", "mostly", "first"]);
 const BANK_FIRST = "first";
+// Crops shown to the model at once.
 const CANDIDATES = 4;
 // Searched before ranking by year and difficulty, so a close match on level
 // can outrank a slightly nearer question on wording.
 const SEARCH_POOL = 16;
+// Ranked crops kept per slot, so a slot whose best crops another slot took
+// still has others to look at.
+const POOL_KEEP = 8;
+const HARDEST_FIRST = Object.freeze({ hard: 0, medium: 1, easy: 2 });
 // RES-76. Year and difficulty on one scale: a hard Year 8 question sits level
 // with an easy Year 9 one. Candidates more than one step away are dropped.
 const DIFFICULTY_OFFSET = Object.freeze({ easy: -0.5, medium: 0, hard: 0.5 });
@@ -51,7 +63,7 @@ const SEARCH_TIMEOUT_MS = 20000;
 // so slots still running when this runs out carry on in the next worker.
 const DEFAULT_BUDGET_MS = 150000;
 
-const SYSTEM_PROMPT = "You choose, adapt and solve questions from NSW school maths textbooks for a tutor's worksheet. Each question is shown with its original printed diagram. Put expressions and equations in LaTeX between $...$ (for example $V = \\pi r^2 h$). Write single numbers and units as plain text, with square and cubic units as cm², m³ and so on, never cm^2 or $^2$. Separate lines of working with line breaks. Answers state units and follow the rounding the question asks for.";
+const SYSTEM_PROMPT = "You choose, adapt and solve questions from NSW school maths textbooks for a tutor's worksheet. Each question is shown with its original printed diagram. Put expressions and equations in LaTeX between $...$ (for example $V = \\pi r^2 h$). Write single numbers and units as plain text, with square and cubic units as cm², m³ and so on, never cm^2 or $^2$. Separate lines of working with line breaks. Write the complement of a set or event as A' or (A \\cup B)', never with a bar over it, which is kept for the mean. Answers state units and follow the rounding the question asks for.";
 
 const CHOOSE_SCHEMA = {
   type: "object",
@@ -71,22 +83,28 @@ const CHOOSE_SCHEMA = {
   },
 };
 
-const RESOLVE_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["answer", "workingOut"],
-  properties: { answer: { type: "string" }, workingOut: { type: "string" } },
-};
-// Medium, like the other bank calls: at high effort Sonnet refused the
-// re-solve ("reasoning_extraction") every time it was tried (2026-11-05).
-const RESOLVE_EFFORT = "medium";
-
 const CHECK_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["answer", "agrees", "note"],
   properties: { answer: { type: "string" }, agrees: { type: "boolean" }, note: { type: "string" } },
 };
+
+// RES-82: a check's answer is its whole solution. When it disagrees, its
+// final answer is taken from that solution in a text-only call, to be offered
+// to a second check. Asking the check itself to set out its working
+// separately was refused ("reasoning_extraction") 13–17 times per booklet
+// (2026-11-06).
+// `answered` is false when the solution finds the question itself broken
+// ("the conditions are inconsistent"). A second check once agreed with such a
+// verdict, and the broken question went into a booklet with it as its answer.
+const FINAL_ANSWER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["answered", "answer"],
+  properties: { answered: { type: "boolean" }, answer: { type: "string" } },
+};
+const FINAL_ANSWER_EFFORT = "low";
 
 // Where a node's questions sit, and how its answers are addressed. A topic
 // booklet restarts numbering in each sub-topic and quiz section, so its answer
@@ -264,9 +282,30 @@ function slotQuestionText(slot) {
   return slot.owner.stem;
 }
 
+/**
+ * A crop's printed question: the parts of one textbook question ("Exercise 8G
+ * Q4a", "Q4d") share a page and a number, and usually a scenario. Once one is
+ * used the others are not, so a resource never asks the same thing twice.
+ */
+function questionFamily(candidate) {
+  const number = String(candidate.label || "").match(/\d+/)?.[0] ?? candidate.label ?? candidate.id;
+  return `${candidate.sourcePath}|${candidate.pageNumber}|${number}`;
+}
+
+/**
+ * The broad skill a slot tests (RES-80): the generator's label on the part or
+ * question, then the parent question's. Empty for questions written before the
+ * field existed; those search on the question itself.
+ */
+function slotSkill(slot) {
+  const clean = (value) => (typeof value === "string" ? value.trim() : "");
+  return clean(slot.owner?.skill) || clean(slot.parent?.skill);
+}
+
 function choosePrompt({ job, topic, slot, candidates, difficulty }) {
   const marks = slotMarks(slot);
   const multipleChoice = slot.owner.type === "multiple-choice";
+  const skill = slotSkill(slot);
   const listing = candidates
     .map((candidate, index) => [
       `Candidate ${index + 1} (image ${index + 1}): ${candidate.sourcePath} p${candidate.pageNumber} ${candidate.label || ""}`.trim(),
@@ -279,27 +318,29 @@ function choosePrompt({ job, topic, slot, candidates, difficulty }) {
   const brief = typeof job.customPrompt === "string" && job.customPrompt.trim()
     ? `\n\nThe tutor asked for: "${job.customPrompt.trim().slice(0, BRIEF_LIMIT)}"`
     : "";
-  const wanted = difficulty ? ` It should be ${difficulty} for a Year ${job.year} student${brief ? ", in keeping with what the tutor asked for" : ""}.` : "";
-  const task = `Then decide how to use it. Set approach to "original" and restate the original question as a single standalone question, keeping its wording and any rounding instruction ("Find the area of each shape." becomes "Find the area of this shape."), when it already tests the skill above at the difficulty wanted. Otherwise set approach to "adapted" and write one question about the diagram that does: for example a different unknown, working backwards from the answer, or an extra step to make it harder, using only the measurements and labels printed on the diagram.`;
-  const shape = slot.kind === "whole"
-    ? " The question above has parts; write the replacement as one question (it may ask for more than one thing) worth the same total marks."
-    : "";
+  const level = difficulty ? `${difficulty} for a Year ${job.year} student` : `suitable for a Year ${job.year} student`;
+  // Without a skill (a question written before RES-80) the question itself is
+  // the only statement of what the slot tests.
+  const wanted = skill ? `testing ${skill}` : "testing the same skill as the question below";
+  const replaced = skill ? "" : `\n\nThe question it replaces:\n${slotQuestionText(slot)}`;
+  const task = `Then write the question. Set approach to "original" and restate the textbook question as a single standalone question, keeping its wording and any rounding instruction ("Find the area of each shape." becomes "Find the area of this shape."), when it already fits the skill, the difficulty and the marks. Otherwise set approach to "adapted" and write one question about the diagram that does: for example a different unknown, working backwards from the answer, a real-world context, or extra steps such as a cost or a unit conversion to make it harder, using only the measurements and labels printed on the diagram. It may ask for more than one thing.`;
   const format = multipleChoice
     ? " It is multiple choice: give exactly four options as plain text without letters, one of them correct and the others plausible mistakes, and give the correct option's text as the answer."
     : " Leave options empty.";
-  return `A Year ${job.year} maths resource on "${topic}" has this question, worth ${marks} mark(s):${brief}
+  return `A Year ${job.year} maths resource on "${topic}" needs a question ${wanted}, ${level}, worth ${marks} mark(s).${brief}${replaced}
 
-${slotQuestionText(slot)}
-${wanted ? `${wanted.trim()}\n` : ""}
-Replace it with a question built on one of these original textbook diagrams. The images follow in candidate order.
+Write it on one of these original textbook diagrams. The images follow in candidate order.
 
 ${listing}
 
-Choose a candidate only if a question on its diagram tests the same skill as the question above: the same quantity found in the same way (the area of a triangle is not the volume of a prism, and a perimeter is not an area). Its content must be taught by Year ${job.year}: a diagram printed for the year above is fine only if a Year ${job.year} student has learned what the question needs. It must also be complete: every label, measurement and marking the question needs is visible, and nothing from a neighbouring question is in the crop. Return choice 0 if no candidate meets all of this; a near miss is worse than keeping the original question. With choice 0, leave the other fields empty.
+Choose the candidate whose diagram best carries that question. The question must stay on that skill and the resource's topic: extra steps may add a context, a cost, a unit conversion or working backwards, but must not bring in a different topic (no algebra, circles or trigonometry unless the skill or the topic calls for them). It must refer only to the diagram, never to a table, row or other question on the textbook page. Its content must be taught by Year ${job.year}: a diagram printed for the year above is fine only if a Year ${job.year} student has learned what the question needs. The diagram must be complete: every label, measurement and marking the question needs is visible, and nothing from a neighbouring question is in the crop. Return choice 0 only if no candidate can carry such a question; with choice 0, leave the other fields empty.
 
-${task}${shape}${format} The stem must not describe the diagram, because the student sees it. Pitch it at ${marks} mark(s). Solve it from the diagram with clear working.`;
+${task}${format} The stem must not describe the diagram, because the student sees it. Pitch it at ${marks} mark(s). Solve it from the diagram with clear working.`;
 }
 
+// It shows only the question and one proposed answer. Measured 2026-11-05: a
+// version that also showed earlier answers and a checker's note was refused
+// ("reasoning_extraction") 8 times in 8.
 function checkPrompt({ stem, options, answer }) {
   return `Solve this question from its diagram independently, then say whether the proposed answer is correct: the same value and units, within the rounding the question asks for. If the diagram does not give enough information to answer it, it is not correct.
 
@@ -308,13 +349,13 @@ Question: ${stem}${options?.length ? `\nOptions: ${options.join(" | ")}` : ""}
 Proposed answer: ${answer}`;
 }
 
-// A plain, independent solve. Measured 2026-11-05: a version that showed the
-// model the earlier answers and the checker's note was refused
-// ("reasoning_extraction") 8 times in 8; this wording went through 8 in 8.
-function resolvePrompt({ stem, options }) {
-  return `Solve this question from its diagram, checking each calculation and the rounding the question asks for. Give the final answer with units, and clear working.${options?.length ? " It is multiple choice: the answer is the correct option's text." : ""}
+// Text only: no diagram, and nothing to solve or judge.
+function finalAnswerPrompt({ stem, options, solution }) {
+  return `Here is a maths question and a worked solution to it. Set answered to true only if the solution reaches a definite value for every part of the question; set it to false if the solution says the question cannot be answered, has no valid value, is inconsistent or lacks information. Then write only the solution's final answer: the value with units, every part of the question answered${options?.length ? ", or for multiple choice the correct option's text" : ""}. Do not change it, even if you would have answered differently.
 
-Question: ${stem}${options?.length ? `\nOptions: ${options.join(" | ")}` : ""}`;
+Question: ${stem}${options?.length ? `\nOptions: ${options.join(" | ")}` : ""}
+
+Solution: ${solution}`;
 }
 
 async function withDeadline(promise, deadline) {
@@ -328,18 +369,6 @@ async function withDeadline(promise, deadline) {
   } finally {
     clearTimeout(timer);
   }
-}
-
-async function mapLimited(items, limit, fn) {
-  const results = new Array(items.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await fn(items[index], index);
-    }
-  }));
-  return results;
 }
 
 // The fields of a search hit a later worker needs to rebuild the same prompt.
@@ -442,12 +471,14 @@ async function applyQuestionBank({
   const topic = parsed.topic || (Array.isArray(parsed.topics) ? parsed.topics.join(", ") : "") || parsed.title || "maths";
   const deadline = now() + budgetMs;
 
-  // Searches run one after another so no two slots are offered the same
-  // question, and are saved so a later worker carries on where this one ended.
+  // Every slot is searched before any is filled, and nothing is held back: a
+  // crop is shared out only when a slot chooses it (below). Before RES-80 each
+  // search excluded every crop already offered to an earlier slot, chosen or
+  // not, which left the last (hardest) slots with the weakest crops. Searches
+  // are saved so a later worker carries on where this one ended.
   const store = searchStore({ bucket, job, slots, topic });
   const saved = await store.load();
   const searched = saved.searched || {};
-  const used = new Set(Object.values(searched).flatMap((entry) => (entry.candidates || []).map((c) => c.id)));
   let searchedNew = false;
   const plans = [];
   for (const [index, slot] of slots.entries()) {
@@ -455,13 +486,14 @@ async function applyQuestionBank({
     let entry = searched[slotKey];
     if (!entry) {
       if (now() >= deadline) { result.skipped.push({ ...slotWhere(slot), reason: "out_of_time" }); continue; }
-      // The question and the diagram it needs lead; the resource's topic list
+      // The skill and the diagram it needs lead; the resource's topic list
       // ("area, surface area and volume") otherwise outweighs a 2D question
-      // and returns 3D candidates.
+      // and returns 3D candidates. A question written without a skill searches
+      // on its own wording, as before RES-80.
       const diagramType = slot.owner.diagramType || slot.owner.diagram?.type || "";
-      const brief = `${slotQuestionText(slot)}${diagramType ? `\nDiagram: ${diagramType}` : ""}\nTopic: ${topic}`;
+      const brief = `${slotSkill(slot) || slotQuestionText(slot)}${diagramType ? `\nDiagram: ${diagramType}` : ""}\nTopic: ${topic}`;
       // RES-76: the years either side too, ranked below by year and difficulty.
-      const filters = { years: [job.year - 1, job.year, job.year + 1], excludeIds: [...used] };
+      const filters = { years: [job.year - 1, job.year, job.year + 1] };
       const difficulty = slotDifficulty(slot, index, slots.length);
       // A Firestore call once hung for 328 s on production (2026-11-05); every
       // search is bounded by the step's budget and its own cap.
@@ -470,25 +502,24 @@ async function applyQuestionBank({
         if (found?.timedOut) throw new Error("search timed out");
         const withOneDiagram = found.filter((q) => (q.figures || []).length === 1 && q.figures[0].storagePath);
         const candidates = rankByLevel(withOneDiagram, job.year, difficulty)
-          .slice(0, CANDIDATES)
+          .slice(0, POOL_KEEP)
           .map((q) => savedCandidate(q, job.year));
         entry = { candidates, difficulty };
         searched[slotKey] = entry;
         searchedNew = true;
-        candidates.forEach((q) => used.add(q.id));
       } catch (err) {
         result.skipped.push({ ...slotWhere(slot), reason: `search_failed: ${String(err?.message || err).slice(0, 120)}` });
         continue;
       }
     }
-    if (entry.candidates.length) plans.push({ slot, candidates: entry.candidates, difficulty: entry.difficulty ?? slotDifficulty(slot, index, slots.length) });
+    if (entry.candidates.length) plans.push({ slot, pool: entry.candidates, difficulty: entry.difficulty ?? slotDifficulty(slot, index, slots.length) });
     else result.skipped.push({ ...slotWhere(slot), reason: "no_candidates" });
   }
   if (searchedNew) await store.save({ searched });
 
   // Each call is saved as it finishes. Bank calls run four at a time and are
   // best effort: a failed one is recorded and the slot is drawn instead.
-  const call = (userMessage, schema, effort, stageLabel) =>
+  const request = (userMessage, schema, effort, stageLabel) =>
     callAi({
       model: BANK_MODEL,
       anthropicApiKey,
@@ -504,8 +535,55 @@ async function applyQuestionBank({
       stageLabel,
       progressPhase: "diagrams",
     }).then(({ parsed: out }) => out);
+  // Measured 2026-11-06: Sonnet refused 0–3 bank calls per resource
+  // ("reasoning_extraction"), at random; the same prompt usually goes through
+  // the second time. One retry, then the slot is drawn.
+  const call = async (...args) => {
+    try {
+      return await request(...args);
+    } catch (err) {
+      if (err?.refusal !== true) throw err;
+      logger.info?.("[resource] question bank call refused, retrying once", { jobId: job.jobId, stage: args[3] });
+      return request(...args);
+    }
+  };
 
-  const outcomes = await mapLimited(plans, CONCURRENCY, async (plan) => {
+  // Hardest slots first: they have the fewest crops that can carry them.
+  // Slots are filled in waves of four, each shown its best crops that no slot
+  // in an earlier wave kept; a crop a slot looked at but did not keep stays
+  // free. Slots in one wave may choose the same crop: the harder (earlier)
+  // keeps it and the others try again in the next wave without it, up to one
+  // try per slot in a wave, since each wave settles at least one of them. The
+  // waves are worked out the same way on every worker, so a worker that
+  // carries a job on replays the saved calls instead of making new ones.
+  const queue = plans
+    .map((plan, index) => ({ plan, index, tries: 0 }))
+    .sort((a, b) => (HARDEST_FIRST[a.plan.difficulty] ?? 1) - (HARDEST_FIRST[b.plan.difficulty] ?? 1) || a.index - b.index);
+  const chosen = new Set();
+  const outcomes = new Array(plans.length);
+  while (queue.length) {
+    const wave = queue.splice(0, CONCURRENCY);
+    for (const entry of wave) {
+      entry.tries += 1;
+      entry.plan.candidates = entry.plan.pool.filter((c) => !chosen.has(questionFamily(c))).slice(0, CANDIDATES);
+    }
+    const results = await Promise.all(wave.map(({ plan }) => fillSlot(plan)));
+    const again = [];
+    wave.forEach((entry, i) => {
+      const out = results[i];
+      if (out?.candidate && chosen.has(questionFamily(out.candidate))) {
+        if (entry.tries < CONCURRENCY) { again.push(entry); return; }
+        outcomes[entry.index] = { skip: "crop_taken" };
+        return;
+      }
+      outcomes[entry.index] = out;
+      if (out?.candidate) chosen.add(questionFamily(out.candidate));
+    });
+    queue.unshift(...again);
+  }
+
+  async function fillSlot(plan) {
+    if (!plan.candidates.length) return { skip: "no_candidates" };
     const run = async () => {
       const crops = [];
       for (const candidate of plan.candidates) {
@@ -531,15 +609,20 @@ async function applyQuestionBank({
       const check = await call([imageBlock(png), { type: "text", text: checkPrompt({ stem, options, answer }) }], CHECK_SCHEMA, CHECK_EFFORT, `Checking the textbook question for ${label}`);
       const approach = chosenOut.approach === "adapted" ? "adapted" : "original";
       if (check?.agrees) return { candidate: plan.candidates[pick - 1], png, stem, options, answer, approach, workingOut: tidy(chosenOut.workingOut) };
-      // The two solves disagree, most often over arithmetic in the first. A
-      // good diagram is worth a third, independent solve; its answer is used
-      // only if a fresh check agrees with it (two of three in agreement).
-      const resolved = await call([imageBlock(png), { type: "text", text: resolvePrompt({ stem, options }) }], RESOLVE_SCHEMA, RESOLVE_EFFORT, `Re-solving the textbook question for ${label}`);
-      const fixedAnswer = tidy(resolved?.answer);
-      if (!fixedAnswer) return { skip: "check_disagreed", reason: check?.note };
-      const recheck = await call([imageBlock(png), { type: "text", text: checkPrompt({ stem, options, answer: fixedAnswer }) }], CHECK_SCHEMA, CHECK_EFFORT, `Re-checking the textbook question for ${label}`);
+      // The writer and the check disagree. Reviewed 2026-11-06 (RES-82): in
+      // 19 of 20 such questions the check was right and the writer's
+      // arithmetic wrong, and a fresh third solve repeated the writer's kind
+      // of slip. So the check's own answer is offered to a second,
+      // independent check, and used only if that agrees: two independent
+      // solves in agreement, as before. The check's solution is the working.
+      const solution = tidy(check?.answer);
+      if (!solution) return { skip: "check_disagreed", reason: check?.note };
+      const final = await call([{ type: "text", text: finalAnswerPrompt({ stem, options, solution }) }], FINAL_ANSWER_SCHEMA, FINAL_ANSWER_EFFORT, `Reading the check's answer for ${label}`);
+      const checkAnswer = tidy(final?.answer);
+      if (final?.answered !== true || !checkAnswer) return { skip: "check_disagreed", reason: check?.note };
+      const recheck = await call([imageBlock(png), { type: "text", text: checkPrompt({ stem, options, answer: checkAnswer }) }], CHECK_SCHEMA, CHECK_EFFORT, `Re-checking the textbook question for ${label}`);
       if (!recheck?.agrees) return { skip: "check_disagreed", reason: recheck?.note || check?.note };
-      return { candidate: plan.candidates[pick - 1], png, stem, options, answer: fixedAnswer, approach, workingOut: tidy(resolved.workingOut) };
+      return { candidate: plan.candidates[pick - 1], png, stem, options, answer: checkAnswer, approach, workingOut: solution };
     };
     try {
       if (now() >= deadline) return { skip: "out_of_time" };
@@ -549,7 +632,7 @@ async function applyQuestionBank({
       if (err?.name === "AbortError" || (err?.resourceControl && err.code !== "RESOURCE_STAGE_TIMEOUT")) throw err;
       return { skip: `failed: ${String(err?.code || err?.message || err).slice(0, 120)}` };
     }
-  });
+  }
 
   plans.forEach((plan, index) => {
     const out = outcomes[index];

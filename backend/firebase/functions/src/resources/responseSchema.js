@@ -86,10 +86,11 @@ const DIFFICULTY_FIELD = enumOf(["easy", "medium", "hard"]);
 
 // Mirrors questionSchemaText() in promptBuilder.js. `diagram` is pinned to null
 // in both subjects: English questions never have one, and maths fills it in
-// after generation rather than during it.
+// after generation rather than during it. `skill` (RES-80) is the broad skill a
+// diagram question tests; the question bank finds a textbook diagram for it.
 function diagramProperties(subject) {
   return subject === "maths"
-    ? { diagram: NO_DIAGRAM, diagramType: DIAGRAM_TYPE_FIELD, diagramRequired: bool, difficulty: DIFFICULTY_FIELD }
+    ? { diagram: NO_DIAGRAM, diagramType: DIAGRAM_TYPE_FIELD, diagramRequired: bool, difficulty: DIFFICULTY_FIELD, skill: str }
     : { diagram: NO_DIAGRAM, diagramRequired: bool };
 }
 

@@ -97,7 +97,7 @@ describe("drawn diagrams", () => {
       { questionNumber: 1, section: "End quiz", reason: "check_disagreed" },
     ] } }} />);
     expect(screen.getByText("3 diagrams were drawn because:")).toBeInTheDocument();
-    expect(screen.getByText("Question 2: no textbook diagram tested the same skill")).toBeInTheDocument();
+    expect(screen.getByText("Question 2: no textbook diagram fitted the skill")).toBeInTheDocument();
     expect(screen.getByText("Question 4 part b: the textbook step could not finish")).toBeInTheDocument();
     expect(screen.getByText("End quiz, Question 1: the textbook question's answer could not be confirmed")).toBeInTheDocument();
   });

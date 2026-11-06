@@ -138,6 +138,10 @@ describe("accents", () => {
     ["\\vec{v} = 3\\vec{a}", "v⃗"],
     ["Find the length of arc \\overset{\\frown}{AB}.", "A͡B"],
     ["\\cancel{x}", "x̶"],
+    // RES-82: a complement of an expression, and a command written straight
+    // before an accent, from probability questions the question bank wrote.
+    ["P(\\overline{A \\cup B})", "A̅∪̅B̅"],
+    ["P(A \\cap\\bar{B})", "∩ B̄"],
   ]) {
     it(`keeps the accent in ${input}`, async () => {
       const { shown, issues } = await body(input);

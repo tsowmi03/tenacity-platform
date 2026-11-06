@@ -177,6 +177,18 @@ it("retries a best-effort stage once after a runaway response hit its token limi
   assert.equal(calls, 2);
 });
 
+// RES-80. The question bank retries a refused call once, in the same worker.
+it("gives a refused best-effort stage one more attempt in the same worker", async () => {
+  let calls = 0;
+  const h = harness(async () => { calls += 1; if (calls === 1) throw Object.assign(new Error("AI declined to generate this resource (reasoning_extraction)."), { refusal: true, modelFailure: true }); return { parsed: { ok: true } }; });
+  const caller = h.make();
+  const request = { userMessage: "choose a crop", model: "m", bestEffort: true, concurrent: true };
+  await assert.rejects(caller(request), /declined/);
+  assert.equal(Object.values(h.current.optionalStageFailures)[0].transient, true);
+  assert.deepEqual((await caller(request)).parsed, { ok: true });
+  assert.equal(calls, 2);
+});
+
 // RES-71. Trying the bank for every diagram question would add one worker
 // hand-off per call if calls ran one per invocation; independent best-effort
 // calls run side by side instead, each still saved on its own.
