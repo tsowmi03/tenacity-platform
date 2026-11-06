@@ -24,6 +24,8 @@
 const { createHash } = require("crypto");
 const { searchQuestions, createEmbedder } = require("../questionBank/search");
 const { pngSize, SOURCE_IMAGE } = require("./sourceImages");
+const { sameAnswer } = require("../questionBank/answerKeys");
+const { systemFlag } = require("../questionBank/review");
 
 // Older clients still send a mode. RES-71 made every maths job bank-first, so
 // the value is accepted and ignored.
@@ -80,6 +82,17 @@ const RESOLVE_SCHEMA = {
 // Medium, like the other bank calls: at high effort Sonnet refused the
 // re-solve ("reasoning_extraction") every time it was tried (2026-11-05).
 const RESOLVE_EFFORT = "medium";
+
+const SAME_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["same"],
+  properties: { same: { type: "boolean" } },
+};
+
+// RES-63: shown in the tutor copy when the book and two independent solves
+// all disagree, and the book's answer is printed anyway.
+const UNCONFIRMED_NOTE = "Not confirmed: two independent solves disagreed with the book's answer, which is shown. Check before use.";
 
 const CHECK_SCHEMA = {
   type: "object",
@@ -344,7 +357,9 @@ async function mapLimited(items, limit, fn) {
 
 // The fields of a search hit a later worker needs to rebuild the same prompt.
 function savedCandidate(q, year) {
-  return { id: q.id, sourcePath: q.sourcePath || "", pageNumber: q.pageNumber ?? null, label: q.label || "", stem: q.stem || "", text: q.text || "", description: q.description || "", year: candidateYear(q, year), difficulty: q.difficulty || null, figures: (q.figures || []).map((f) => ({ storagePath: f.storagePath })) };
+  const saved = { id: q.id, sourcePath: q.sourcePath || "", pageNumber: q.pageNumber ?? null, label: q.label || "", stem: q.stem || "", text: q.text || "", description: q.description || "", year: candidateYear(q, year), difficulty: q.difficulty || null, figures: (q.figures || []).map((f) => ({ storagePath: f.storagePath })) };
+  if (q.bookAnswer?.answer) saved.bookAnswer = { answer: String(q.bookAnswer.answer) };
+  return saved;
 }
 
 /**
@@ -528,6 +543,11 @@ async function applyQuestionBank({
       const answer = tidy(chosenOut.answer);
       const options = Array.isArray(chosenOut.options) ? chosenOut.options.map(tidy).filter(Boolean) : [];
       const png = crops[pick - 1];
+      const candidate = plan.candidates[pick - 1];
+      // RES-63: the book's printed answer settles a question restated as
+      // printed; an adapted question has no book answer and is checked below.
+      const book = chosenOut.approach !== "adapted" ? tidy(candidate.bookAnswer?.answer) : null;
+      if (book) return settleWithBook({ candidate, png, stem, options, book, first: { answer, workingOut: tidy(chosenOut.workingOut) }, label });
       const check = await call([imageBlock(png), { type: "text", text: checkPrompt({ stem, options, answer }) }], CHECK_SCHEMA, CHECK_EFFORT, `Checking the textbook question for ${label}`);
       const approach = chosenOut.approach === "adapted" ? "adapted" : "original";
       if (check?.agrees) return { candidate: plan.candidates[pick - 1], png, stem, options, answer, approach, workingOut: tidy(chosenOut.workingOut) };
@@ -541,6 +561,32 @@ async function applyQuestionBank({
       if (!recheck?.agrees) return { skip: "check_disagreed", reason: recheck?.note || check?.note };
       return { candidate: plan.candidates[pick - 1], png, stem, options, answer: fixedAnswer, approach, workingOut: tidy(resolved.workingOut) };
     };
+    // RES-63. The book's printed answer against independent solves:
+    //   1. the first solve agrees with the book: the book's answer, that working;
+    //   2. otherwise a second, independent solve:
+    //      - agrees with the book: the book's answer, the second working;
+    //      - agrees with the first: the solves win and the book is flagged;
+    //   3. all three disagree: the book's answer, its working marked
+    //      unconfirmed, and the question flagged.
+    const agree = async (a, b, stem) => {
+      const quick = sameAnswer(a, b);
+      if (quick !== null) return quick;
+      const out = await call([{ type: "text", text: `Question: ${stem}\n\nAnswer A: ${a}\nAnswer B: ${b}\n\nDo A and B give the same answer (allowing for equivalent forms and the rounding the question asks for)?` }], SAME_SCHEMA, CHECK_EFFORT, "Comparing with the book's answer");
+      return Boolean(out?.same);
+    };
+    const settleWithBook = async ({ candidate, png, stem, options, book, first, label }) => {
+      const base = { candidate, png, stem, options, approach: "original" };
+      if (await agree(first.answer, book, stem)) return { ...base, answer: book, workingOut: first.workingOut, answerSource: "book" };
+      const second = await call([imageBlock(png), { type: "text", text: resolvePrompt({ stem, options }) }], RESOLVE_SCHEMA, RESOLVE_EFFORT, `Re-solving the textbook question for ${label}`);
+      const secondAnswer = tidy(second?.answer);
+      const secondWorking = tidy(second?.workingOut);
+      if (secondAnswer && await agree(secondAnswer, book, stem)) return { ...base, answer: book, workingOut: secondWorking, answerSource: "book" };
+      if (secondAnswer && await agree(secondAnswer, first.answer, stem)) {
+        return { ...base, answer: first.answer, workingOut: first.workingOut, answerSource: "solves", flag: `Two independent solves gave ${first.answer}; the book's answer is ${book}. Likely a misprint or a wrong answer link.` };
+      }
+      return { ...base, answer: book, workingOut: [UNCONFIRMED_NOTE, secondWorking || first.workingOut].filter(Boolean).join("\n"), answerSource: "book_unconfirmed",
+        flag: `The book's answer (${book}) and two independent solves (${first.answer}; ${secondAnswer || "none"}) all disagree.` };
+    };
     try {
       if (now() >= deadline) return { skip: "out_of_time" };
       const out = await withDeadline(run(), deadline);
@@ -551,6 +597,7 @@ async function applyQuestionBank({
     }
   });
 
+  const flags = [];
   plans.forEach((plan, index) => {
     const out = outcomes[index];
     if (!out || out.skip) {
@@ -560,14 +607,21 @@ async function applyQuestionBank({
       result.skipped.push(skipped);
       return;
     }
-    result.answerRows.push(...applySwap(plan.slot, out));
+    const rows = applySwap(plan.slot, out);
+    // Without a working column, the answer itself says it is unconfirmed.
+    if (out.answerSource === "book_unconfirmed") for (const row of rows) if (typeof row.workingOut !== "string") row.answer = `${row.answer} (book's answer, not confirmed)`;
+    result.answerRows.push(...rows);
     // "new" keeps the value the portal already shows as a new question on a
     // textbook diagram.
     const usedEntry = { ...slotWhere(plan.slot), questionId: out.candidate.id, kind: out.approach === "adapted" ? "new" : "original" };
     if (plan.difficulty) usedEntry.difficulty = plan.difficulty;
     if (out.candidate.year) usedEntry.questionYear = out.candidate.year;
+    if (out.answerSource) usedEntry.answerSource = out.answerSource;
     result.used.push(usedEntry);
+    if (out.flag) flags.push({ questionId: out.candidate.id, note: out.flag });
   });
+  // A flag is best effort: losing one never fails the resource.
+  await Promise.all(flags.map((f) => systemFlag({ db, questionId: f.questionId, jobId: job.jobId, note: f.note })));
 
   logger.info?.("[resource] question bank applied", { jobId: job.jobId, mode, slots: result.slots, used: result.used.length, skipped: result.skipped.map((s) => s.reason) });
   return result;
