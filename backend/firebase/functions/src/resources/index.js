@@ -2692,6 +2692,13 @@ async function runGenerationPipelineLogged(job, deps) {
     logger.warn("[resource] question bank skipped", { jobId: job.jobId, error: errorMessage(err).slice(0, 300) });
   }
   if (questionBank.used?.length) raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
+  // RES-63: a textbook answer the book and two solves disagreed on is printed
+  // as the book's, and named to the tutor here as well as in the tutor copy.
+  for (const used of questionBank.used || []) {
+    if (used.answerSource !== "book_unconfirmed") continue;
+    const place = `${used.section ? `${used.section}, ` : ""}Question ${used.questionNumber}${used.partLabel ? ` part ${used.partLabel}` : ""}`;
+    contentWarnings.push({ code: "BOOK_ANSWER_UNCONFIRMED", message: `${place}: the book's answer is shown, but two independent solves disagreed with it. Check it before use.` });
+  }
   // Keyed by what the row answers rather than by object, so the set survives
   // the draft fallback below swapping in a copy of the document.
   const answerRowKey = (row) => JSON.stringify([row?.questionNumber, row?.partLabel || null, row?.subTopicTitle || null, row?.section || null]);

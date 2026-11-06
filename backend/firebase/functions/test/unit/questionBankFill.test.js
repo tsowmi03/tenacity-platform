@@ -385,3 +385,56 @@ describe("question bank fill: year and difficulty", () => {
   });
 });
 
+// RES-63. A textbook question with the book's own answer is settled against it:
+// one solve, then a second if needed; the solves win only when they agree with
+// each other, and every disagreement is flagged for an admin.
+describe("question bank fill: the book's answer", () => {
+  function bookSetup({ first, second }) {
+    const flags = [];
+    const calls = [];
+    const db = {
+      collection: (name) => {
+        if (name === "questionBankFlags") return { doc: () => ({ id: "flag" }) };
+        const query = {
+          where: () => query,
+          doc: (id) => ({ id }),
+          findNearest: () => ({ get: async () => ({ docs: [1, 2].map((n) => {
+            const q = { ...bankQuestion(`b${n}`), bookAnswer: { answer: "13 cm" } };
+            return { id: q.id, data: () => ({ ...q, years: [9], distance: 0.2 }) };
+          }) }) }),
+        };
+        return query;
+      },
+      batch: () => ({ set: (_ref, data) => flags.push(data), update: () => {}, commit: async () => {} }),
+    };
+    const callAi = async (request) => {
+      calls.push(request);
+      const fields = request.responseSchema.required.join();
+      if (fields.includes("choice")) return { parsed: { choice: 1, reason: "fits", stem: "Find x.", options: [], answer: first, workingOut: "first working" } };
+      if (fields === "answer,workingOut") return { parsed: { answer: second, workingOut: "second working" } };
+      if (fields === "same") return { parsed: { same: false } };
+      throw new Error("no plain check when the book has the answer");
+    };
+    return { env: { db, bucket: memoryBucket(), callAi }, flags, calls };
+  }
+
+  for (const { name, first, second, answer, working, source, flagged } of [
+    { name: "first solve agrees with the book", first: "13 cm", second: null, answer: "13 cm", working: "first working", source: "book", flagged: false },
+    { name: "second solve agrees with the book", first: "12 cm", second: "13", answer: "13 cm", working: "second working", source: "book", flagged: false },
+    { name: "the two solves agree against the book", first: "12 cm", second: "12", answer: "12 cm", working: "first working", source: "solves", flagged: true },
+    { name: "all three disagree", first: "12 cm", second: "11 cm", answer: "13 cm", working: /^Not confirmed:.*\nsecond working$/s, source: "book_unconfirmed", flagged: true },
+  ]) {
+    it(name, async () => {
+      const { env, flags } = bookSetup({ first, second });
+      const parsed = worksheet(1);
+      const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+      assert.equal(result.used.length, 1);
+      assert.equal(result.used[0].answerSource, source);
+      assert.equal(result.used[0].kind, "original", "a candidate with a book answer is restated, never a new question");
+      assert.equal(parsed.answers[0].answer, answer);
+      if (working instanceof RegExp) assert.match(parsed.answers[0].workingOut, working); else assert.equal(parsed.answers[0].workingOut, working);
+      assert.equal(flags.length, flagged ? 1 : 0);
+      if (flagged) assert.equal(flags[0].reason, "answer");
+    });
+  }
+});
