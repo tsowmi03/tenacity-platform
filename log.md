@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-07 | [Live queue: steady progress bar, single ETA, no false "Queued" (RES-84)](#2026-11-07--live-queue-steady-progress-bar-single-eta-no-false-queued-res-84) |
 | 2026-11-06 | [Booklet polish: answer space by question type, headings kept with tables, criteria without answers (RES-20, RES-33, RES-48)](#2026-11-06--booklet-polish-answer-space-by-question-type-headings-kept-with-tables-criteria-without-answers-res-20-res-33-res-48) |
 | 2026-11-06 | [Textbook questions are no longer dropped over the writer's arithmetic (RES-82)](#2026-11-06--textbook-questions-are-no-longer-dropped-over-the-writers-arithmetic-res-82) |
 | 2026-11-06 | [Textbook diagrams decide the question, not the other way round (RES-80)](#2026-11-06--textbook-diagrams-decide-the-question-not-the-other-way-round-res-80) |
@@ -226,6 +227,69 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-07 — Live queue: steady progress bar, single ETA, no false "Queued" (RES-84)
+
+**What changed**
+- The percentage bar never goes backwards within a run. The worker never
+  writes a lower figure than its last report, and the portal never shows
+  less than it already has. Before, the bar crept up to 8 points ahead of
+  the last report and snapped back when the next one landed, which happened
+  at nearly every hand-off between workers. A manual Retry still starts the
+  bar again.
+- The bar no longer freezes in a long step. Writing counts questions with
+  their solutions and now moves between batches. Drawing diagrams counts
+  diagram questions the question bank has settled ("5 of 12", shown under
+  the step). Steps with nothing to count approach their end without
+  stopping, instead of sitting at a 90% cap while the ETA grew.
+- The ETA is one figure ("About 5 min left"), never a range. Past its
+  estimate it reads "Taking a little longer than expected" rather than
+  sitting on "Almost done".
+- The ETA counts waiting. A tutor's resources take turns and runs hand off
+  between workers, so the estimate is remaining work times the recent ratio
+  of real time to work time. Before, a long wait counted as slow work, which
+  sent the ETA up and down. Steps that count their work project their own
+  remaining time from their own rate. Each report is blended with the last:
+  drops in the ETA land quickly, rises are eased in.
+- A resource between workers shows **Generating** with its steps and bar,
+  not a grey **Queued** badge. Stopping it asks for confirmation like any
+  generating resource, and the toast says saved progress is kept.
+- One spinner: on the current step. The row shows the status icon.
+- The date under each resource is the submitted time until it finishes,
+  then the finish time. Before, it switched to the latest worker's start
+  time at every hand-off.
+- Every progress report is logged (`progress.reported`: step, percentage,
+  ETA, questions and diagram questions done) so ETA accuracy can be measured
+  exactly against when each resource finished.
+
+**Why:** Tutors saw the bar slide back, freeze, and the ETA swing, and a
+resource mid-way through drawing diagrams labelled "Queued" (RES-84, which
+absorbed RES-86).
+
+**Results** (replay of the 9 production runs completed since RES-73, old vs
+new model on the same reconstructed reports and production timing history)
+
+| Measure | Old | New |
+| --- | --- | --- |
+| Times the displayed bar went back | 113 | **0** |
+| ETA swings (a jump of over 25% and a minute beyond the countdown) | 28 | 22 |
+| Median ETA error, first / middle / last third of a run | 55% / 59% / 30% | 55% / 56% / 39% |
+
+A local run of a Year 9 maths worksheet with the question bank (real
+models) never lowered the bar across 115 reports, and the bar followed
+diagram questions settled from 0 to 12. ETA accuracy itself barely changed:
+history holds only 3 completed runs, and the logs before this change don't
+record diagram progress, so the replay approximates it. The new
+`progress.reported` events fix the second problem for future measurement.
+
+**Status:** Live. Merged; resource portal deployed on merge, Functions
+deployed to production.
+
+**Next steps**
+- Calibrate the ETA from `progress.reported` once about 20 resources have
+  completed with it (RES-93), about half a day.
 
 ---
 

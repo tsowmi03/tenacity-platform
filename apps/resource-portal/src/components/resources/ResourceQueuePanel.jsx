@@ -65,6 +65,22 @@ const STATUS_BADGES = {
 
 const HISTORY_PAGE_SIZE = 10;
 
+// RES-84. A run hands off between workers: between turns it is "pending" with
+// stageContinuation set, sometimes for minutes while the tutor's other resource
+// takes its turn. It is still mid-generation, not waiting to start.
+export function isGenerating(job) {
+  return ["processing", "fallback_pending"].includes(job?.status) ||
+    (job?.status === "pending" && Boolean(job.stageContinuation));
+}
+
+// RES-84. Submitted time until the resource finishes, then the finish time.
+// The worker-start time is cleared and reset at every hand-off, so it is
+// never shown.
+export function jobTimeLabel(job) {
+  const finished = ["complete", "failed", "cancelled"].includes(job?.status);
+  return formatDate((finished && job.completedAtIso) || job?.createdAtIso);
+}
+
 const HISTORY_STATUS_FILTERS = [
   { key: "all", label: "All" },
   { key: "complete", label: "Ready" },
@@ -276,6 +292,8 @@ export default function ResourceQueuePanel({
       const result = await cancelResourceJob(jobId);
       if (result?.status === "cancelling") {
         toast.info("Stopping generation", "We're stopping this job — it will show as cancelled shortly.");
+      } else if (isGenerating(job)) {
+        toast.success("Generation stopped", "Saved progress is kept. Retry picks up where it stopped.");
       } else {
         toast.success("Job cancelled", "The queued job was removed before it started generating.");
       }
@@ -293,7 +311,7 @@ export default function ResourceQueuePanel({
   // Queued jobs are cancelled outright; in-progress jobs confirm first because
   // the partly-generated work is discarded (and may have already incurred cost).
   function requestCancel(job) {
-    if (["processing", "fallback_pending"].includes(job.status)) setCancelTarget(job);
+    if (isGenerating(job)) setCancelTarget(job);
     else cancelJob(job);
   }
 
@@ -614,11 +632,14 @@ function ResourceJobRow({
     ? { tone: "warn", label: "Draft available", icon: "alert" }
     : job.status === "complete" && job.reviewStatus === "warnings"
     ? { tone: "warn", label: "Review recommended", icon: "alert" }
+    : isGenerating(job) && job.status === "pending"
+    ? STATUS_BADGES.processing
     : STATUS_BADGES[job.status] || STATUS_BADGES.pending;
+  const generating = isGenerating(job);
   const statusLabel = job.status === "fallback_pending"
     ? "Retrying generation\u2026"
     : status.label;
-  const createdLabel = formatDate(job.completedAtIso || job.startedAtIso || job.createdAtIso);
+  const createdLabel = jobTimeLabel(job);
   const warning = warningSummary(job);
   const isActive = ["pending", "processing", "fallback_pending"].includes(job.status);
   const isFinished = ["complete", "failed", "cancelled"].includes(job.status);
@@ -645,9 +666,9 @@ function ResourceJobRow({
     (isActive && Boolean(onCancel));
 
   return (
-    <li className={`rg-job rg-job-${job.status || "pending"}`}>
+    <li className={`rg-job rg-job-${generating && job.status === "pending" ? "processing" : job.status || "pending"}`}>
       <div className="rg-job-status" aria-hidden="true">
-        {["processing", "fallback_pending"].includes(job.status) ? <span className="spinner" /> : <Icon name={status.icon} size={16} />}
+        <Icon name={status.icon} size={16} />
       </div>
       <div className="rg-job-body">
         <div className="rg-job-head">
@@ -685,7 +706,7 @@ function ResourceJobRow({
             {job.status === "complete" && job.fallbackUsed ? (
               <Badge tone="info">Retried with backup</Badge>
             ) : null}
-            <Badge tone={status.tone} dot={["processing", "fallback_pending"].includes(job.status)}>
+            <Badge tone={status.tone} dot={generating}>
               {stopRequested && isActive ? "Stopping\u2026" : statusLabel}
             </Badge>
           </div>
@@ -797,7 +818,7 @@ function ResourceJobRow({
                   size="sm"
                   variant="secondary"
                 >
-                  {["processing", "fallback_pending"].includes(job.status) ? "Stop" : "Cancel"}
+                  {generating ? "Stop" : "Cancel"}
                 </Button>
               ) : null}
               {showRetry ? (

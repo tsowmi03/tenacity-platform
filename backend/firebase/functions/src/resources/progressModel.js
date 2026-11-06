@@ -8,14 +8,21 @@
 //     to a running linear fit (time = a + b × questions) for its kind, plus how
 //     that time split across the five steps. That gives an expected total
 //     before the first stage has run.
-//  2. This run's pace. As steps finish, the time actually taken is compared
-//     with what history expected for the same share of the work, and the
-//     remainder is stretched or shrunk by that ratio. The pace counts more the
-//     further through the run it is.
-// Times are "active" time: the worker's own running time, not time spent
-// waiting in the tutor's queue. Wall-clock pace (which includes the short gaps
-// between worker invocations, and any interleaving with the tutor's other
-// jobs) is what the pace ratio measures, so those gaps still show in the ETA.
+//  2. This run's pace. As steps finish, the worker time actually taken is
+//     compared with what history expected for the same share of the work, and
+//     the remaining work is stretched or shrunk by that ratio. The pace counts
+//     more the further through the run it is.
+// RES-84. Waiting is a separate factor. A tutor's resources take turns, and a
+// run hands off between workers, so real time runs ahead of worker time. The
+// ETA is real time until the resource is ready: remaining worker time times
+// the recent ratio of real to worker time (last few minutes, so a second
+// resource joining the tutor's turns shows up quickly). Mixing the two into
+// one pace made a long wait look like slow work and sent the ETA up and down.
+// Steps that count their work (questions written, diagram questions settled)
+// move with it and project their own remaining time from their own rate.
+// Each report is blended with the last one (good news quickly, rises slowly),
+// the bar never drops within a run, and a step with nothing to count
+// approaches its end without stopping.
 
 const PHASES = [
   { key: "plan", label: "Planning the paper" },
@@ -98,6 +105,26 @@ function expectedQuestions({ tracker = {}, stats, requested }) {
   return DEFAULT_QUESTIONS;
 }
 
+const STEP_CEILING = 0.95; // inside a step: how close to its end time alone can take the bar
+const WAIT_TRUST_MS = 120_000; // worker time after which this run's wait ratio is fully trusted
+const MAX_WAIT_RATIO = 4;
+const WAIT_WINDOW_MS = 180_000; // recent waiting counts most: older time fades over ~3 minutes
+const WAIT_WINDOW_MIN_ACTIVE_MS = 20_000;
+
+// Decayed sums of real and worker time between reports, so the wait ratio
+// follows what is happening now (a second resource joining the tutor's turns
+// doubles it within minutes) rather than averaging the whole run.
+function trackWait(previous, { nowMs, activeMs }) {
+  if (!previous || !Number.isFinite(previous.atMs)) return { atMs: nowMs, activeMs, recentWallMs: 0, recentActiveMs: 0 };
+  const dWall = Math.max(0, nowMs - previous.atMs);
+  const dActive = Math.min(dWall, Math.max(0, activeMs - (previous.activeMs || 0)));
+  const decay = Math.exp(-dWall / WAIT_WINDOW_MS);
+  return { atMs: nowMs, activeMs, recentWallMs: (previous.recentWallMs || 0) * decay + dWall,
+    recentActiveMs: (previous.recentActiveMs || 0) * decay + dActive };
+}
+const SMOOTHING_MS = 30_000; // a report this far after the last one moves the ETA ~63% of the way
+const MIN_SMOOTHING = 0.2;
+
 /**
  * Pure. Returns what the portal draws:
  * { phase, fraction, remainingMs, lowMs, highMs, questionsDone, questionCount }
@@ -105,8 +132,12 @@ function expectedQuestions({ tracker = {}, stats, requested }) {
  * activeMs  worker time spent on this run so far
  * wallMs    wall time since the run's first stage started
  * phaseStarts  { phase: activeMs at which that step began }
+ * previous  { fraction, remainingMs, elapsedMs } from this run's last report,
+ *           elapsedMs being the time since it was written
+ * recentWait  trackWait() sums for the recent real/worker time ratio
+ * countChangedAtMs  activeMs when the current step's count last moved
  */
-function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 0, wallMs = activeMs, phaseStarts = {}, requestedQuestions = null }) {
+function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 0, wallMs = activeMs, phaseStarts = {}, requestedQuestions = null, previous = null, recentWait = null, countChangedAtMs = null }) {
   const stats = chooseStats(statsByKey, job);
   const fit = fitFromStats(stats) || DEFAULT_FIT;
   const questions = expectedQuestions({ tracker, stats, requested: requestedQuestions });
@@ -119,21 +150,72 @@ function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 
   // as diagrams on an English paper, counts as done once it is passed).
   let fraction = PHASE_KEYS.slice(0, current).reduce((sum, k) => sum + shares[k], 0);
   let within;
-  if (phase === "write" && tracker.questionCount > 0) {
-    within = Math.min(0.97, (tracker.questionsDone || 0) / tracker.questionCount);
+  // RES-84. Writing counts questions written; diagrams count diagram
+  // questions the bank has settled, so that step moves with the work rather
+  // than with history's guess at its length (3 runs of history put it at 17%;
+  // real runs took 25-40% and the bar sat near the end for minutes).
+  const count = phase === "write" ? tracker.questionCount : phase === "diagrams" ? tracker.diagramCount : 0;
+  const counted = count > 0;
+  if (counted) {
+    const done = Math.min(count, (phase === "write" ? tracker.questionsDone : tracker.diagramsDone) || 0);
+    // The count moves a batch at a time (5–10 questions with their solutions,
+    // four diagram questions). In between, time moves the bar toward the next
+    // batch at this step's own rate per item, so it neither stalls nor jumps.
+    const startedAt = phaseStarts[phase] ?? activeMs;
+    const changedAt = Math.min(activeMs, Math.max(startedAt, countChangedAtMs ?? startedAt));
+    const perItemMs = done > 0 ? Math.max(1000, (changedAt - startedAt) / done) : Math.max(1000, expectedTotalMs * shares[phase] / count);
+    const batch = Math.min(count - done, phase === "write" ? (job.answerMode === "worked" ? 5 : 10) : 4);
+    const partial = batch > 0 ? batch * STEP_CEILING * (1 - Math.exp(-Math.max(0, activeMs - changedAt) / (perItemMs * batch))) : 0;
+    within = Math.min(0.97, (done + partial) / count);
   } else {
+    // Time alone moves the bar toward the step's end, never onto it: at the
+    // expected duration it is 60% through, and an overrunning step keeps
+    // creeping instead of freezing at a cap.
     const startedAt = phaseStarts[phase] ?? activeMs;
     const expectedPhaseMs = Math.max(1000, expectedTotalMs * shares[phase]);
-    within = Math.min(0.9, Math.max(0, activeMs - startedAt) / expectedPhaseMs);
+    within = STEP_CEILING * (1 - Math.exp(-Math.max(0, activeMs - startedAt) / expectedPhaseMs));
   }
   fraction = Math.min(0.99, fraction + shares[phase] * within);
+  // Within a run the bar never goes back, whatever reloaded statistics or a
+  // replaying worker would otherwise compute.
+  if (Number.isFinite(previous?.fraction)) fraction = Math.min(0.99, Math.max(fraction, previous.fraction));
 
-  // Pace: how long this run has really taken for the share it has done.
+  // Pace: how much worker time this run has needed for the share it has done.
   const expectedSoFar = fraction * expectedTotalMs;
-  const rawPace = expectedSoFar > 5000 ? wallMs / expectedSoFar : 1;
+  const rawPace = expectedSoFar > 5000 ? activeMs / expectedSoFar : 1;
   const weight = Math.min(1, fraction / 0.4);
   const pace = Math.min(3, Math.max(0.5, 1 + weight * (rawPace - 1)));
-  const remainingMs = Math.max(0, Math.round((1 - fraction) * expectedTotalMs * pace));
+  // Waiting: real time per unit of worker time so far (turns taken by the
+  // tutor's other resources, hand-offs between workers).
+  const recent = recentWait?.recentActiveMs >= WAIT_WINDOW_MIN_ACTIVE_MS;
+  const rawWait = recent ? recentWait.recentWallMs / recentWait.recentActiveMs : activeMs > 0 ? wallMs / activeMs : 1;
+  const waitWeight = recent ? 1 : Math.min(1, activeMs / WAIT_TRUST_MS);
+  const wait = Math.min(MAX_WAIT_RATIO, Math.max(1, 1 + waitWeight * (rawWait - 1)));
+  // Remaining worker time: the rest of this step, then the steps after it.
+  // A step that counts its work (questions written, diagram questions
+  // settled) is projected from its own rate once it is under way; history's
+  // share for it can be far off (diagrams took 25-40% of real runs, against a
+  // learnt 17%), and the run-wide pace lags a slow tail.
+  const after = PHASE_KEYS.slice(current + 1).reduce((sum, k) => sum + shares[k], 0);
+  let stepRemainingMs = (1 - within) * expectedTotalMs * shares[phase] * pace;
+  const inStepMs = activeMs - (phaseStarts[phase] ?? activeMs);
+  if (counted && within >= 0.05 && inStepMs >= 20_000) {
+    const ownRate = inStepMs * (1 - within) / within;
+    const trust = Math.min(1, within / 0.3);
+    stepRemainingMs = stepRemainingMs * (1 - trust) + ownRate * trust;
+  }
+  let remainingMs = Math.max(0, Math.round((stepRemainingMs + after * expectedTotalMs * pace) * wait));
+  // Blend with the last report, counted down to now, so a single report can
+  // revise the ETA but not swing it.
+  if (Number.isFinite(previous?.remainingMs)) {
+    const elapsed = Math.max(0, previous.elapsedMs || 0);
+    const before = Math.max(0, previous.remainingMs - elapsed);
+    // Good news lands quickly; a rise is eased in.
+    const alpha = remainingMs < before
+      ? Math.min(1, Math.max(0.5, 1 - Math.exp(-elapsed / (SMOOTHING_MS / 3))))
+      : Math.min(1, Math.max(MIN_SMOOTHING, 1 - Math.exp(-elapsed / SMOOTHING_MS)));
+    remainingMs = Math.round(before + alpha * (remainingMs - before));
+  }
 
   // The range narrows as history grows and as the run nears its end.
   const logError = stats?.logErrN >= MIN_SAMPLES ? Math.sqrt(stats.logErrSq / stats.logErrN) : DEFAULT_LOG_ERROR;
@@ -147,6 +229,8 @@ function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 
     expectedTotalMs: Math.round(expectedTotalMs),
     questionsDone: tracker.questionsDone || 0,
     questionCount: tracker.questionCount || 0,
+    diagramsDone: tracker.diagramsDone || 0,
+    diagramCount: tracker.diagramCount || 0,
   };
 }
 
@@ -196,12 +280,16 @@ function countResourceQuestions(node) {
 }
 
 // Pipeline code reports what only it knows: how many questions the resource
-// has and how many are written. A no-op outside durable generation.
-function noteProgress(job, { questionCount, questionsWritten } = {}) {
+// has and how many are written, and how many diagram questions the bank has
+// settled (absolute, so a replaying worker lands on the same figure). A no-op
+// outside durable generation.
+function noteProgress(job, { questionCount, questionsWritten, diagramCount, diagramsDone } = {}) {
   const tracker = job?.progressTracker;
   if (!tracker) return;
   if (questionCount > 0) tracker.questionCount = questionCount;
   if (questionsWritten > 0) tracker.questionsDone = (tracker.questionsDone || 0) + questionsWritten;
+  if (diagramCount > 0) tracker.diagramCount = diagramCount;
+  if (Number.isFinite(diagramsDone)) tracker.diagramsDone = Math.max(tracker.diagramsDone || 0, diagramsDone);
 }
 
 async function loadTimingStats(db, job) {
@@ -227,6 +315,6 @@ async function recordTimingSample(db, job, sample) {
 
 module.exports = {
   PHASES, PHASE_KEYS, STATS_COLLECTION, DEFAULT_FIT,
-  phaseForStage, phaseIndex, kindKey, fitFromStats, estimateProgress,
+  phaseForStage, phaseIndex, kindKey, fitFromStats, estimateProgress, trackWait,
   phaseDurations, addSample, noteProgress, countResourceQuestions, loadTimingStats, recordTimingSample,
 };
