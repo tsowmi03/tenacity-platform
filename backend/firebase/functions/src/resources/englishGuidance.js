@@ -75,9 +75,12 @@ Every year level learns the same structure (thesis, TETAL, ETAs). For younger st
 Persuasive writing (speeches, opinion pieces) is not part of what students write. Do not set it unless the tutor asks for it.`;
 
 // Marking criteria are written from the same tables the questions' marks come
-// from. Shared by "Marking guide" and "Model answers" so the two modes cannot
+// from, and describe how marks are earned rather than restating the answer
+// (RES-48): the answer itself belongs in the model answer, when one is asked for. Shared by "Marking guide" and "Model answers" so the two modes cannot
 // mark the same question differently.
-const ENGLISH_CRITERIA_RULE = `Write each question's marking criteria from HOW TENACITY TEACHES ENGLISH. A short-answer question gets one criterion for the thesis (when its marks call for one) and one per ETA, each starting with its marks (for example "1 mark: a thesis that answers the question in its own words"). An extended response gets Tenacity's extended-response criteria, scaled to its marks in whole marks. Never award half or fractional marks. The criteria for a question must add up to its marks.`;
+const ENGLISH_CRITERIA_RULE = `Write each question's marking criteria from HOW TENACITY TEACHES ENGLISH. A short-answer question gets one criterion for the thesis (when its marks call for one) and one per ETA, each starting with its marks (for example "1 mark: a thesis that answers the question in its own words"). An extended response gets Tenacity's extended-response criteria, scaled to its marks in whole marks. Never award half or fractional marks. The criteria for a question must add up to its marks.
+
+Criteria say what earns each mark, never what the answer is. Do not name the correct option, quote the text, name the technique, or state the point a response should make. A multiple-choice question gets exactly one criterion: "1 mark: selects the correct answer" (with its marks if it is worth more). A short answer is "1 mark: identifies a relevant technique", not "1 mark: identifies the metaphor in line 4".`;
 
 module.exports = {
   ENGLISH_CRITERIA_RULE,

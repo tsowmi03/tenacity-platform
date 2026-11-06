@@ -86,6 +86,7 @@ function answerLabel(answer) {
 function makeAnswerTable(answers = [], { includeWorking = true } = {}) {
   const rows = [
     makeAnswerRow("Q#", "Answer", {
+      header: true,
       bold: true,
       color: BRAND.WHITE,
       fill: BRAND.NAVY,

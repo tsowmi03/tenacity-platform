@@ -189,7 +189,7 @@ async function renderSubTopic(subTopic, { isEnglish, showMarks = false } = {}) {
   } else if (asArray(subTopic.workedExamples).length) {
     children.push(makeSubHeading("Worked Examples"));
     for (const example of asArray(subTopic.workedExamples)) {
-      children.push(paragraph(example.title || "Worked example", { bold: true, color: BRAND.NAVY }));
+      children.push(paragraph(example.title || "Worked example", { bold: true, color: BRAND.NAVY, keepNext: true }));
       children.push(makeWorkedExampleTable(asArray(example.steps).map((step) => ({
         working: step.working,
         explanation: step.explanation || step.annotation,

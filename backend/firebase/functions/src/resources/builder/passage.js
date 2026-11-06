@@ -65,6 +65,7 @@ function makePassageContent({ label, title, author, source, body, verbatim } = {
       bold: true,
       color: BRAND.NAVY,
       size: BRAND.FONT_SIZE_H3,
+      keepNext: attribution || hasBody,
       spacing: { after: attribution || hasBody ? 60 : 0 },
     }));
   }

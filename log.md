@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-06 | [Booklet polish: answer space by question type, headings kept with tables, criteria without answers (RES-20, RES-33, RES-48)](#2026-11-06--booklet-polish-answer-space-by-question-type-headings-kept-with-tables-criteria-without-answers-res-20-res-33-res-48) |
 | 2026-11-06 | [Textbook questions are no longer dropped over the writer's arithmetic (RES-82)](#2026-11-06--textbook-questions-are-no-longer-dropped-over-the-writers-arithmetic-res-82) |
 | 2026-11-06 | [Textbook diagrams decide the question, not the other way round (RES-80)](#2026-11-06--textbook-diagrams-decide-the-question-not-the-other-way-round-res-80) |
 | 2026-11-06 | [Questions with diagrams: diagram beside the question, answer lines alongside (RES-81)](#2026-11-06--questions-with-diagrams-diagram-beside-the-question-answer-lines-alongside-res-81) |
@@ -225,6 +226,31 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-06 — Booklet polish: answer space by question type, headings kept with tables, criteria without answers (RES-20, RES-33, RES-48)
+
+**What changed**
+- Maths questions now say whether the student works on lines or answers on
+  the page itself. Calculations, algebra and explanations keep dotted working
+  lines; plotting or sketching a graph, constructions and completing a table
+  get blank space of the same height. English keeps ruled lines, and multiple
+  choice gets no space in either subject (RES-20).
+- Table header rows (definitions, worked examples, answers) now stay with the
+  table's first row and repeat on a new page, and worked-example and passage
+  titles keep with what follows. A heading such as "Key Terms & Techniques" no
+  longer sits at the foot of a page with its table on the next (RES-33).
+- English marking criteria now say what earns each mark rather than giving
+  the answer: a multiple-choice question gets "1 mark: selects the correct
+  answer". The answer itself stays in the model answer when the tutor asks
+  for model answers (RES-48).
+
+**Why:** Tutor feedback on printed booklets: graphing and table questions had
+lines drawn through the space students draw in, headings were stranded at the
+bottom of pages, and criteria printed the answer.
+
+**Status:** Live. Deployed to production Cloud Functions in one deploy.
 
 ---
 

@@ -1114,7 +1114,10 @@ function makeRuledLines(count, border, opts = {}) {
   const safeCount = Math.max(0, Math.min(120, Number.parseInt(count, 10) || 0));
   if (!safeCount) return [];
 
-  const baseColor = String(border.color || "AEB6BF").toUpperCase();
+  // No border draws blank space of the same height (RES-20), so page flow and
+  // the RES-81 side-by-side layout treat it exactly like ruled lines.
+  const ruled = Boolean(border);
+  const baseColor = String(border?.color || "AEB6BF").toUpperCase();
   const lastNibble = Number.parseInt(baseColor.slice(-1), 16);
   const alternateColor = Number.isFinite(lastNibble)
     ? `${baseColor.slice(0, -1)}${((lastNibble + 15) % 16).toString(16).toUpperCase()}`
@@ -1126,11 +1129,11 @@ function makeRuledLines(count, border, opts = {}) {
   for (let i = 0; i < safeCount; i += 1) {
     lines.push(new Paragraph({
       keepNext: i < keepFirst,
-      border: {
+      border: ruled ? {
         // Alternating by one imperceptible colour step prevents Word and
         // LibreOffice from merging consecutive borders into one outer box.
         bottom: { ...border, color: i % 2 ? alternateColor : baseColor, space: 0 },
-      },
+      } : undefined,
       spacing: {
         before: 0,
         after: 0,
@@ -1153,6 +1156,12 @@ function makeWorkingLines(count, opts = {}) {
   }, opts);
 }
 
+// Maths questions answered on the page itself (graphing, constructions,
+// sketches, completing a table) need open space, not lines to write on (RES-20).
+function makeBlankSpace(count, opts = {}) {
+  return makeRuledLines(count, null, opts);
+}
+
 // English responses need familiar ruled writing space rather than the dotted
 // working area used for maths calculations. Keep this separate so changing an
 // English layout cannot silently alter maths worksheets and papers.
@@ -1169,6 +1178,7 @@ function makeResponseLines(count, opts = {}) {
 // giving three lines per mark. Multiple-choice questions need no ruled space.
 function responseLineCount(question) {
   if (Array.isArray(question?.options) && question.options.length > 0) return 0;
+  if (question?.type === "multiple-choice") return 0;
   const marks = Number(question?.marks);
   if (!Number.isFinite(marks) || marks <= 0) return 0;
   return Math.round(marks * 2 * 1.5);
@@ -1265,27 +1275,33 @@ function makeShadedBox(content, colour = BRAND.LIGHT_BLUE_BG, opts = {}) {
   });
 }
 
+// A navy header row that repeats on a new page and keeps with the first data
+// row, so a table's heading never sits alone at the foot of a page (RES-33).
+// keepNext on the header's paragraphs is what holds it to the next row in both
+// Word and LibreOffice; tableHeader repeats it when a long table breaks.
+function makeHeaderRow(columns) {
+  return new TableRow({
+    cantSplit: true,
+    tableHeader: true,
+    children: columns.map(([text, width]) => cell(
+      [paragraph(text, { bold: true, color: BRAND.WHITE, keepNext: true, spacing: { after: 0 } })],
+      width,
+      { fill: BRAND.NAVY }
+    )),
+  });
+}
+
 function makeDefinitionTable(definitions = []) {
   const termWidth = 2200;
   const definitionWidth = PAGE.CONTENT_WIDTH - termWidth;
   const rows = [
-    new TableRow({
-      children: [
-        cell([paragraph("Term", { bold: true, color: BRAND.WHITE, spacing: { after: 0 } })], termWidth, {
-          fill: BRAND.NAVY,
-        }),
-        cell(
-          [paragraph("Definition", { bold: true, color: BRAND.WHITE, spacing: { after: 0 } })],
-          definitionWidth,
-          { fill: BRAND.NAVY }
-        ),
-      ],
-    }),
+    makeHeaderRow([["Term", termWidth], ["Definition", definitionWidth]]),
   ];
 
   for (const definition of definitions) {
     rows.push(
       new TableRow({
+        cantSplit: true,
         children: [
           cell([paragraph(definition.term, { bold: true, spacing: { after: 0 } })], termWidth),
           cell([paragraph(definition.definition, { spacing: { after: 0 } })], definitionWidth),
@@ -1306,18 +1322,7 @@ function makeWorkedExampleTable(steps = []) {
   const workingWidth = Math.floor(PAGE.CONTENT_WIDTH * 0.58);
   const explanationWidth = PAGE.CONTENT_WIDTH - workingWidth;
   const rows = [
-    new TableRow({
-      children: [
-        cell([paragraph("Working", { bold: true, color: BRAND.WHITE, spacing: { after: 0 } })], workingWidth, {
-          fill: BRAND.NAVY,
-        }),
-        cell(
-          [paragraph("Explanation", { bold: true, color: BRAND.WHITE, spacing: { after: 0 } })],
-          explanationWidth,
-          { fill: BRAND.NAVY }
-        ),
-      ],
-    }),
+    makeHeaderRow([["Working", workingWidth], ["Explanation", explanationWidth]]),
   ];
 
   for (const step of steps) {
@@ -1359,9 +1364,10 @@ function makeAnswerRow(number, answer, opts = {}) {
   const answerWidth = PAGE.CONTENT_WIDTH - numberWidth;
   return new TableRow({
     cantSplit: true,
+    tableHeader: opts.header === true,
     children: [
       cell(
-        [paragraph(number, { bold: opts.bold, color: opts.color, spacing: { after: 0 } })],
+        [paragraph(number, { bold: opts.bold, color: opts.color, keepNext: opts.header === true, spacing: { after: 0 } })],
         numberWidth,
         { fill: opts.fill }
       ),
@@ -1372,6 +1378,7 @@ function makeAnswerRow(number, answer, opts = {}) {
           paragraph(line, {
             bold: opts.bold || (lines.length > 1 && line === "Working:"),
             color: opts.color,
+            keepNext: opts.header === true,
             spacing: { before: index && line === "Working:" ? 80 : 0, after: 0 },
           })
         ),
@@ -1399,6 +1406,7 @@ module.exports = {
   makePageBreak,
   makePartParagraph,
   makeQuestionParagraph,
+  makeBlankSpace,
   makeResponseLines,
   makeSectionHeading,
   makeShadedBox,
