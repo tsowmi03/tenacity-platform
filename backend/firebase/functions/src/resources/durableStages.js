@@ -112,7 +112,10 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
   };
   const durableCall = async (request) => {
     const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, bestEffort, concurrent, validateStageResult, progressPhase, ...publicRequest } = request;
-    advance(phaseForStage({ progressPhase, stageId, stageLabel }));
+    // RES-84. Work before the first named step (English passage and stimulus
+    // sourcing, reference reading) is preparation: it counts as planning, so
+    // the bar moves and its time is not mistaken for slow progress.
+    advance(phaseForStage({ progressPhase, stageId, stageLabel }) || (tracker.phase ? null : "plan"));
     for (const key of Object.keys(publicRequest)) {
       if (key.startsWith("posthog") || key === "safetyIdentifier") delete publicRequest[key];
     }

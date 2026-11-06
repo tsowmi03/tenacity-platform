@@ -92,8 +92,11 @@ function chooseStats(statsByKey = {}, job = {}) {
   return all?.n >= MIN_SAMPLES ? all : null;
 }
 
-function normalisedShares(stats) {
+// RES-84. English has no diagram step: borrowed all-resource shares (14% for
+// diagrams) left minutes on the clock after an English paper was written.
+function normalisedShares(stats, job = {}) {
   const raw = { ...DEFAULT_SHARES, ...(stats?.shares || {}) };
+  if (job.subject && job.subject !== "maths") raw.diagrams = 0;
   const total = PHASE_KEYS.reduce((sum, k) => sum + Math.max(0, raw[k] || 0), 0) || 1;
   return Object.fromEntries(PHASE_KEYS.map((k) => [k, Math.max(0, raw[k] || 0) / total]));
 }
@@ -142,7 +145,7 @@ function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 
   const fit = fitFromStats(stats) || DEFAULT_FIT;
   const questions = expectedQuestions({ tracker, stats, requested: requestedQuestions });
   const expectedTotalMs = Math.max(30_000, (fit.a + fit.b * questions) * 1000);
-  const shares = normalisedShares(stats);
+  const shares = normalisedShares(stats, job);
   const phase = PHASE_KEYS.includes(tracker.phase) ? tracker.phase : "plan";
   const current = phaseIndex(phase);
 
@@ -180,10 +183,15 @@ function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 
   // replaying worker would otherwise compute.
   if (Number.isFinite(previous?.fraction)) fraction = Math.min(0.99, Math.max(fraction, previous.fraction));
 
-  // Pace: how much worker time this run has needed for the share it has done.
-  const expectedSoFar = fraction * expectedTotalMs;
-  const rawPace = expectedSoFar > 5000 ? activeMs / expectedSoFar : 1;
-  const weight = Math.min(1, fraction / 0.4);
+  // Pace: how much worker time this run has needed for the share it has done,
+  // measured after planning. Planning varies on its own (an English paper may
+  // spend minutes finding a passage) and says little about how fast the
+  // questions will come; counting it made a slow start look like a slow run.
+  const afterPlanStart = PHASE_KEYS.slice(1).map((k) => phaseStarts[k]).filter(Number.isFinite).sort((x, y) => x - y)[0];
+  const doneAfterPlan = Math.max(0, fraction - shares.plan);
+  const expectedSoFar = doneAfterPlan * expectedTotalMs;
+  const rawPace = current > 0 && Number.isFinite(afterPlanStart) && expectedSoFar > 5000 ? Math.max(0, activeMs - afterPlanStart) / expectedSoFar : 1;
+  const weight = Math.min(1, doneAfterPlan / 0.4);
   const pace = Math.min(3, Math.max(0.5, 1 + weight * (rawPace - 1)));
   // Waiting: real time per unit of worker time so far (turns taken by the
   // tutor's other resources, hand-offs between workers).
