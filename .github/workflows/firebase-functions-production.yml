@@ -189,9 +189,8 @@ jobs:
           diff "$raw_dir/policy-names.txt" "$raw_dir/selected-names.txt"
           printf 'batch\tdeploy_exit\tinventory_exit\tverification_exit\tselector\n' \
             > "$reports_dir/batch-status.tsv"
-          firebase functions:list \
-            --project "$FIREBASE_PROJECT_ID" \
-            --json > "$raw_dir/functions-before.json"
+          source scripts/ci/firebase-retry.sh
+          firebase_functions_list "$raw_dir/functions-before.json"
           node scripts/ci/check-functions-inventory.mjs \
             --redact-live "$raw_dir/functions-before.json" \
             --report "$reports_dir/evidence-before.json"
@@ -240,15 +239,17 @@ jobs:
           reports_dir="${RUNNER_TEMP}/function-deploy-reports"
           bill_selectors="$reports_dir/minimum-bill-selectors.txt"
           : > "$bill_selectors"
+          # Retries only Google's transient "Failed to list functions" (TP-45).
+          source scripts/ci/firebase-retry.sh
           while IFS= read -r selector; do
             set +e
-            firebase deploy \
+            firebase_deploy "$reports_dir/dry-run.log" \
               --config firebase.json \
               --project "$FIREBASE_PROJECT_ID" \
               --only "$selector" \
               --dry-run \
-              --non-interactive 2>&1 | tee "$reports_dir/dry-run.log"
-            dry_run_status=${PIPESTATUS[0]}
+              --non-interactive
+            dry_run_status=$?
             set -e
             [[ "$dry_run_status" -eq 0 ]] && continue
             if ! grep -q "Pass the --force option to deploy functions that increase the minimum bill" "$reports_dir/dry-run.log"; then
@@ -259,7 +260,7 @@ jobs:
               exit 1
             fi
             force_args=(--force)
-            firebase deploy \
+            firebase_deploy "$reports_dir/forced-dry-run.log" \
               --config firebase.json \
               --project "$FIREBASE_PROJECT_ID" \
               --only "$selector" \
@@ -274,16 +275,27 @@ jobs:
           reports_dir="${RUNNER_TEMP}/function-deploy-reports"
           raw_dir="${RUNNER_TEMP}/function-inventory-raw"
           status_file="$reports_dir/batch-status.tsv"
+          # Google's list API intermittently answers "Failed to list functions
+          # for <project>" mid-run. Deploys retry only that error; any other
+          # deploy failure still stops the run on its first attempt. The list
+          # call is read-only and retries any failure (TP-45).
+          source scripts/ci/firebase-retry.sh
+          # A short gap between batches eases the list-API pressure that
+          # back-to-back deploys put on the project.
+          batch_pause_seconds=15
           batch_number=0
           while IFS= read -r selector; do
             batch_number=$((batch_number + 1))
+            if [[ "$batch_number" -gt 1 ]]; then
+              sleep "$batch_pause_seconds"
+            fi
             echo "Deploying batch $batch_number: $selector"
             deploy_args=()
             if grep -qxF "$selector" "$reports_dir/minimum-bill-selectors.txt"; then
               deploy_args=(--force)
             fi
             set +e
-            firebase deploy \
+            firebase_deploy "$reports_dir/deploy-batch-${batch_number}.log" \
               --config firebase.json \
               --project "$FIREBASE_PROJECT_ID" \
               --only "$selector" \
@@ -293,9 +305,7 @@ jobs:
             set -e
             current_inventory="$raw_dir/functions-after-batch-${batch_number}.json"
             set +e
-            firebase functions:list \
-              --project "$FIREBASE_PROJECT_ID" \
-              --json > "$current_inventory"
+            firebase_functions_list "$current_inventory"
             inventory_status=$?
             set -e
             verification_status=125
@@ -327,7 +337,7 @@ jobs:
               "$verification_status" \
               "$selector" >> "$status_file"
             if [[ "$deploy_status" -ne 0 || "$inventory_status" -ne 0 || "$verification_status" -ne 0 ]]; then
-              echo "Batch $batch_number failed; no automatic retry will occur."
+              echo "Batch $batch_number failed after transient-error retries; rerun the job to finish."
               exit 1
             fi
           done < "$reports_dir/selectors.txt"

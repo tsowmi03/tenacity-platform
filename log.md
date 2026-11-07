@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-08 | [Production Functions deploys ride out Google's "Failed to list functions" (TP-45)](#2026-11-08--production-functions-deploys-ride-out-googles-failed-to-list-functions-tp-45) |
 | 2026-11-07 | [Two model slips no longer fail a finished paper (RES-51)](#2026-11-07--two-model-slips-no-longer-fail-a-finished-paper-res-51) |
 | 2026-11-07 | [A stopped plan says why, e.g. a subject mismatch (RES-51)](#2026-11-07--a-stopped-plan-says-why-eg-a-subject-mismatch-res-51) |
 | 2026-11-07 | [English papers: answers see every text, options lettered once, clean section headings (RES-91, RES-90, RES-50)](#2026-11-07--english-papers-answers-see-every-text-options-lettered-once-clean-section-headings-res-91-res-90-res-50) |
@@ -231,6 +232,32 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-08 — Production Functions deploys ride out Google's "Failed to list functions" (TP-45)
+
+**What changed**
+- The production Functions workflow now retries Google's intermittent
+  "Failed to list functions for tenacity-tutoring-b8eb2" instead of stopping.
+  Every `firebase deploy` (dry run, forced dry run and each real batch) is
+  retried up to three times, waiting 30s then 60s, but only when its output
+  contains that exact error. Any other deploy failure still stops the run on
+  the first attempt.
+- Every `firebase functions:list` (before the deploy and after each batch) is
+  retried the same way on any failure, since it only reads.
+- Batches are 15 seconds apart.
+- The retry logic lives in `scripts/ci/firebase-retry.sh`, with tests that
+  run it against a fake `firebase`. Inventory checks after each batch and the
+  minimum-bill `--force` guard are unchanged.
+- There is no staging Functions workflow (staging is deployed from the CLI),
+  so only the production workflow changed.
+
+**Why:** The error stopped prod Functions deploys partway on 6 Nov (batch 4)
+and twice on 7 Nov (batches 10 and 8), leaving production on mixed versions
+until someone reran the job.
+
+**Status:** Live. The next production Functions deploy uses the retries.
 
 ---
 

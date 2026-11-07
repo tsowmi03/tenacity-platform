@@ -116,8 +116,11 @@ render fixtures before credentials exist; captures the live inventory;
 materialises deterministic batches of at most ten explicit
 `functions:default:<id>` selectors; dry-runs each batch; applies without
 `--force` (except a batch approved through `allow_minimum_bill_increase`, see
-above) and without automatic retry; captures live state after every attempt
-including a failed one; and finally requires the exact 91-resource inventory,
+above); retries a deploy only when it fails with Google's transient "Failed
+to list functions for <project>" (three attempts, 30s then 60s apart, via
+`scripts/ci/firebase-retry.sh`; any other failure stops the run), retries
+`functions:list` the same way, and waits 15s between batches; captures live
+state after every batch including a failed one; and finally requires the exact 91-resource inventory,
 rejects metadata drift, and compares the complete raw records of all four
 external Functions against their pre-deploy state.
 
