@@ -186,7 +186,10 @@ function validateQuestions(result, specs, type, prior = []) {
 // from the supplied material: Text 2 is missing") was delivered as the answer.
 // The text was in the paper; the answer stage had not been shown it. Reject
 // such a row so the stage retries with the reason, instead of shipping it.
-const MISSING_CONTEXT = /cannot (?:be )?determined? from the (?:supplied|provided|given) (?:material|texts?|stimulus)|\b(?:text|passage|extract|stimulus|source|image)\s*\d*\s+(?:is|was|has been)\s+(?:missing|not (?:provided|supplied|included|given))(?=\s*(?:[.;:,)"]|$|from\b|in the (?:supplied|provided)))|\bnot (?:provided|supplied|included) in the (?:supplied |provided )?(?:material|stimulus)/i;
+// Only a claim that a text ITSELF is absent counts. "The narrator's age cannot
+// be determined from the text" is a correct answer about a detail the passage
+// leaves out, and must pass.
+const MISSING_CONTEXT = /\b(?:text|passage|extract|stimulus|source|image)\s*\d*\s+(?:is|was|has been)\s+(?:missing|not (?:provided|supplied|included|given))(?=\s*(?:[.;:,)"]|$|from\b|in the (?:supplied|provided)))/i;
 function answerClaimsMissingContext(row) {
   return MISSING_CONTEXT.test(JSON.stringify(row ?? ""));
 }

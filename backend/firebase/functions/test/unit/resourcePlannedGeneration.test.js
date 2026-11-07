@@ -388,3 +388,12 @@ it("shows every answer batch and later question batch the paper's full stimulus 
   assert.equal(result.parsed.markingGuide.length, 12);
   assert.ok(result.parsed.markingGuide.every((row) => !/missing/i.test(row.response)));
 });
+
+it("accepts answers about details a text leaves unstated (RES-91)", () => {
+  const { answerClaimsMissingContext } = require("../../src/resources/plannedGeneration");
+  assert.equal(answerClaimsMissingContext({ response: "Cannot determine from the supplied material: Text 2 is missing." }), true);
+  assert.equal(answerClaimsMissingContext({ response: "Text 3 is not provided." }), true);
+  assert.equal(answerClaimsMissingContext({ response: "The narrator's exact age cannot be determined from the provided text." }), false);
+  assert.equal(answerClaimsMissingContext({ response: "Leon's surname is not provided in the material, so accept any reasonable inference." }), false);
+  assert.equal(answerClaimsMissingContext({ response: "Image 1 is missing a caption, which creates mystery." }), false);
+});
