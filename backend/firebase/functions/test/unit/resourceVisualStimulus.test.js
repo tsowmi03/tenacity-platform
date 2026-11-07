@@ -396,11 +396,18 @@ describe("stimulus validation with images", () => {
   const valid = {
     kind: "image",
     title: "A poster",
+    source: "Wikimedia Commons",
     image: { buffer: Buffer.from("bytes"), type: "png" },
   };
 
   it("accepts an image entry, which has no body", () => {
     assert.doesNotThrow(() => optionalStimulus([valid], "worksheet.stimulus"));
+  });
+
+  // RES-100: every stimulus prints a source line.
+  it("rejects an image entry with no credit at all", () => {
+    const { source, ...uncredited } = valid;
+    assert.throws(() => optionalStimulus([uncredited], "worksheet.stimulus"), /source line/);
   });
 
   it("still requires a body on a text entry", () => {
@@ -473,7 +480,10 @@ describe("stimulus shortfall warnings", () => {
     });
     assert.equal(result.used, true);
     assert.doesNotMatch(result.warning, /model-written/);
-    assert.match(result.warning, /only its sourced image/);
+    // RES-96: the texts are still needed, so the generator writes them into
+    // the booklet as originals instead of inside a question stem.
+    assert.match(result.warning, /original \(labelled Tenacity Original\)/);
+    assert.equal(result.originalTextsAllowed, true);
   });
 
   it("warns about nothing when everything planned was sourced", async () => {

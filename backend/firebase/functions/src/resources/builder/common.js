@@ -553,6 +553,7 @@ function renderStimulusItems(stimulus) {
           title: entry.title,
           author: entry.author,
           source: entry.source,
+          licence: entry.licence,
           body: entry.body,
           verbatim: entry.verbatim === true,
         });

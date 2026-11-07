@@ -3,7 +3,9 @@
 // Real-provider replay with an in-memory queue and a local filesystem journal.
 // Production access is limited to optional read-only Secret Manager lookups
 // and, with --question-bank, read-only question bank searches and diagram
-// downloads. Inputs/references must already be local; every write stays local.
+// downloads. With --pd-sourcing, English stimulus texts and images are fetched
+// from Project Gutenberg, Wikisource and Wikimedia Commons, as in production.
+// Inputs/references must already be local; every write stays local.
 process.env.POSTHOG_PROJECT_TOKEN = "";
 const fs = require("node:fs");
 const path = require("node:path");
@@ -15,9 +17,10 @@ const { createMemoryDb, createSmokeJob, loadLocalSecrets, loadFirebaseSecrets } 
 const { modelForChoice } = require("../src/resources/modelRegistry");
 
 function parseArgs(argv) {
-  const options = { maxCalls: 60, firebaseSecrets: false, questionBank: false };
+  const options = { maxCalls: 60, firebaseSecrets: false, questionBank: false, pdSourcing: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--firebase-secrets") options.firebaseSecrets = true;
+    else if (argv[i] === "--pd-sourcing") options.pdSourcing = true;
     else if (argv[i] === "--question-bank") options.questionBank = true;
     else if (["--input", "--reference", "--output", "--max-calls"].includes(argv[i])) {
       const key = { "--input": "input", "--reference": "reference", "--output": "output", "--max-calls": "maxCalls" }[argv[i]];
@@ -90,7 +93,7 @@ async function runReplay(options) {
     fs.appendFileSync(eventsPath, JSON.stringify(event) + "\n", { mode: 0o600 });
     if (["provider.started", "provider.completed", "provider.failed", "recovery.decided", "content.verified", "job.completed", "job.failed"].includes(event.event)) console.log(JSON.stringify(event));
   };
-  const deps = { db, storage, durableStages: true, questionBankDb: options.questionBank ? admin.firestore() : null, enableFailover: true, enablePdTextSourcing: false,
+  const deps = { db, storage, durableStages: true, questionBankDb: options.questionBank ? admin.firestore() : null, enableFailover: true, enablePdTextSourcing: options.pdSourcing,
     anthropicApiKey: keys.ANTHROPIC_API_KEY, openaiApiKey: keys.OPENAI_API_KEY, resourceLogSink: sink,
     callAi: async (request) => {
       if (calls >= options.maxCalls || Date.now() - started > 45 * 60_000) throw Object.assign(new Error("Local replay budget reached"), { code: "RESOURCE_LOCAL_BUDGET", resourceControl: true });
@@ -112,6 +115,7 @@ async function runReplay(options) {
     fs.writeFileSync(path.join(output, "resource.docx"), bytes, { mode: 0o600 });
   }
   const summary = { status: final.status, errorCode: final.errorCode || null, error: final.error || null,
+    warnings: final.warnings || [], sourceSelections: (final.sourceSelections || []).map((s) => s.title),
     questionBankUsage: final.questionBankUsage || null,
     jobId, providerCalls: calls, elapsedMs: Date.now() - started, progress: final.progress,
     contentVerification: events.filter((e) => e.event === "content.verified"),

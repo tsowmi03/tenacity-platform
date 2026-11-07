@@ -1,5 +1,7 @@
 "use strict";
 
+const { imageSourceLine } = require("../stimulusIntegrity");
+
 const { cleanText } = require("./shared");
 const { attachDiagramContext } = require("./diagrams");
 const {
@@ -108,6 +110,9 @@ function optionalStimulus(value, path) {
         fail(`${path}[${index}].image.buffer must be a Buffer`);
       }
       assertText(entry.image.type, `${path}[${index}].image.type`);
+      // RES-100. Every stimulus prints a source line; a text always has one
+      // (its author/source, or "Tenacity Original"), so only an image can lack it.
+      if (!imageSourceLine(entry)) fail(`${path}[${index}] has no source line`);
       return;
     }
     assertText(entry.body, `${path}[${index}].body`);

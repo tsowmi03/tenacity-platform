@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-08 | [English papers: texts in the booklet with source lines, task-only questions, real extracts (RES-96, RES-98, RES-100, RES-88, RES-11)](#2026-11-08--english-papers-texts-in-the-booklet-with-source-lines-task-only-questions-real-extracts-res-96-res-98-res-100-res-88-res-11) |
 | 2026-11-08 | [Production Functions deploys ride out Google's "Failed to list functions" (TP-45)](#2026-11-08--production-functions-deploys-ride-out-googles-failed-to-list-functions-tp-45) |
 | 2026-11-07 | [Two model slips no longer fail a finished paper (RES-51)](#2026-11-07--two-model-slips-no-longer-fail-a-finished-paper-res-51) |
 | 2026-11-07 | [A stopped plan says why, e.g. a subject mismatch (RES-51)](#2026-11-07--a-stopped-plan-says-why-eg-a-subject-mismatch-res-51) |
@@ -232,6 +233,87 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-08 — English papers: texts in the booklet with source lines, task-only questions, real extracts (RES-96, RES-98, RES-100, RES-88, RES-11)
+
+**What changed**
+- Reading texts always go in the stimulus booklet (RES-96). When no
+  public-domain text could be verified, the generator used to be given no
+  stimulus booklet at all, so it wrote the prose extract and the speech
+  inside Question 1 and Question 7. Later stages never saw them, and the
+  marking guide said the extract "has not been supplied". It now writes those
+  texts into the booklet as originals. Every later question and answer batch
+  gets the whole booklet, and is now also given each image's archive title
+  and description (from Wikimedia Commons), so a model plan can be written
+  for an image task.
+- The first question batch writes the booklet for the whole paper. It used
+  to see only its own questions, so in a test run the speech that Section B
+  analysed was never written and its answers said so. It is now shown every
+  planned question, a later batch may add a text the booklet lacks, and a
+  question naming a text the booklet doesn't have is sent back.
+- An answer claiming a text or image "has not been supplied", or that "the
+  speech's exact opening is needed to…", is caught and the stage is retried. A question that says "answer
+  Questions 1 to 5" is sent back to be rewritten to name its text. Each
+  planned question now has its own focus, and later batches are told not to
+  reuse earlier questions' evidence.
+- Every stimulus has a source line (RES-100). A verified text shows its
+  author, where it came from ("Project Gutenberg: The Adventures of Tom
+  Sawyer, Complete") and "Public domain". A text the generator wrote shows
+  "Tenacity Original" (previously "Original passage"). Any author or source
+  the model typed on its own text is removed, so a text can't claim an author
+  it wasn't fetched from. An image without a credit fails the build.
+- Questions give only the task (RES-98). The English guidance now says so:
+  no "Begin with a thesis", no number of ETAs, no TETAL plan, no remarks on
+  what isn't being asked. Thesis, ETAs and TETAL stay in the marking criteria
+  and model answers. As a backstop, sentences that coach structure are cut
+  from questions in papers, worksheets, diagnostic tests and mixed reviews,
+  unless the tutor's request is about practising that structure.
+- Extracts are body text, from the right chapter (RES-88). Tom Sawyer's
+  contents list has one short entry ("CHAPTER XIX. Tom Tells the Truth"),
+  which the excerpter took as the first chapter, so "Text 1" was six pages of
+  contents. A chapter now counts only when prose follows it, and the extract
+  starts at the chapter the planner named ("Chapter 2" gives the
+  whitewashing scene). It no longer stops on a paragraph ending in a colon.
+  An extract that reads as a contents page, an illustrations list or an
+  etext note is rejected and another work is tried. Gutenberg's _italic_
+  underscores and old etext notes are removed, and a piece found as its own
+  ebook is titled as the piece ("The Gettysburg Address", not the collection
+  the planner named). A text no question uses is dropped, and the rest are
+  renumbered in every question and answer.
+- More texts are found (RES-11). Measured first: in the 45 days to
+  7 Nov, 6 of 15 English jobs that needed reading texts got none verified.
+  Two causes. Gutendex, the Gutenberg search we use, often answered 503 after
+  15 seconds; a failed search now goes to Project Gutenberg's own catalogue
+  search, which answered the same queries in about 1.5 seconds. And the
+  planner picked stories that only exist inside anthologies; it is now told
+  how texts are fetched (prefer a novel and name the chapter, name the
+  collection for a speech, choose poems of 12+ lines). Replaying the three
+  failed briefs plus two others, 8 of 9 planned texts were verified, against
+  0 of 5 for the failed briefs before. The model swap the ticket asked for
+  had already been done by RES-39 (Claude Sonnet 5 with structured outputs,
+  thinking off, live-configurable).
+
+**Why:** Two test English papers on 6–7 Nov (Year 8 and Year 7) printed a
+contents list as Text 1, passages inside question stems with no source line,
+"not supplied" model answers and structure coaching in every question.
+
+**Verification:** New regression tests cover the Tom Sawyer contents
+layout, a named chapter, unused-text removal and renumbering, source lines,
+coaching removal, the Gutenberg catalogue fallback, a later batch adding a
+missing text, and the full pipeline writing unverifiable texts as Tenacity
+Originals. All 2,214 Functions unit tests pass. Both papers were then
+generated end to end with the real models and sources
+(`replayResourceLocally.js --pd-sourcing`, which this change adds), with the
+same prompts as the 6–7 Nov papers. The Year 8 paper had verified Tom
+Sawyer (Chapter 2) and Gettysburg Address texts, the Year 7 paper a Tom
+Sawyer extract, a labelled original speech and a Commons poster. Every
+question named its text, none coached structure, and every model answer
+worked from the text, image description included. The rendered DOCX was
+checked page by page.
+
+**Status:** Live. Merged and Functions deployed to production on 8 Nov 2026.
 
 ---
 

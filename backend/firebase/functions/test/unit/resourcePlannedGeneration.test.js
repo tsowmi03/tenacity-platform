@@ -413,3 +413,204 @@ it("passes the selected subject to the planner and asks it to flag mismatches", 
   assert.match(seen.userMessage, /SELECTED SETTINGS: subject maths, Year 9, practice-paper/);
   assert.match(seen.systemPrompt, /different subject than the selected subject/);
 });
+
+// RES-96. The Year 7 paper of 7 Nov 2026: Q6 sat in a later batch than the
+// text it used, and Q10's image was only a caption to the answer stage, so
+// both model answers said the material "has not been supplied".
+it("gives a later batch's answers the stimulus and the image description, and retries a question-range lead-in (RES-96)", async () => {
+  const h = harness({ resourceType: "practice-paper", year: "7", subject: "english", answerMode: "worked", customPrompt: "Year 7 paper, 60 minutes, prose extract, speech and an image." });
+  const englishPlan = { ...plan(10), topics: [{ name: "Reading", evidence: "English" }, { name: "Writing", evidence: "English" }] };
+  englishPlan.questions = englishPlan.questions.map((q) => ({ ...q, topic: q.number <= 9 ? "Reading" : "Writing", section: q.number <= 6 ? "Section A: Reading" : q.number <= 9 ? "Section B: Persuasion" : "Section C: Writing", focus: `focus ${q.number}` }));
+  const stimulus = [
+    { title: "The bridge", author: null, source: null, body: "Amira stopped beside the spare chair while Toby tested the cardboard bridge." },
+    { title: "A quiet room", author: null, source: null, body: "Our school should trial a supervised quiet room at lunchtime." },
+  ];
+  const solutionMessages = [];
+  const questionMessages = [];
+  let rangedSent = false;
+  const provider = async (req) => {
+    if (req.systemPrompt.startsWith("Plan an educational")) return { parsed: englishPlan, provider: "openai" };
+    if (req.systemPrompt.startsWith("Independently audit")) {
+      const parsed = JSON.parse(req.userMessage.split("GENERATED RESOURCE TO CHECK: ")[1]);
+      return { parsed: { scopePass: true, difficultyPass: true, issues: [], questions: parsed.sections.flatMap((s) => s.questions).map((q) => ({ number: q.number, coveredSourceIds: [], estimatedMinutes: 5 })) } };
+    }
+    const specs = req.userMessage.match(/SAVED PLAN .*?: (\[.*\])\nGenerate/);
+    if (specs) {
+      questionMessages.push(req.userMessage);
+      const ranged = !rangedSent && /"number":1,/.test(specs[1]);
+      if (ranged) rangedSent = true;
+      const questions = JSON.parse(specs[1]).map((q) => ({ number: q.number, marks: q.marks, type: "short-answer", options: null, parts: null,
+        stem: ranged && q.number === 1 ? "Read Text 1 and answer Questions 1 to 5. What is Toby testing?" : q.number === 10 ? "Write a persuasive piece about the issue Image 1 raises." : `In Text ${q.number <= 6 ? 1 : 2}, explain point ${q.number}.` }));
+      const first = !req.userMessage.includes("FINAL STIMULUS — the stimulus booklet");
+      return { parsed: { title: "Practice", subject: "english", year: 7, totalMarks: 2 * questions.length, timeAllowed: "60 minutes", stimulus: first ? stimulus : null, sections: [{ title: "batch", questions }], markingGuide: [] }, provider: "openai" };
+    }
+    solutionMessages.push(req.userMessage);
+    const questions = req.userMessage.split("\n").map((line) => { try { return JSON.parse(line); } catch { return null; } })
+      .find((rows) => Array.isArray(rows) && rows[0]?.stem);
+    return { parsed: { markingGuide: questions.map((q) => ({ questionNumber: q.number, partLabel: null, criteria: "1 mark: a relevant technique", marks: q.marks,
+      response: req.userMessage.includes("A 1942 poster urging people to save water") ? "The poster's water-saving appeal supports a thesis about conservation." : "Image 1 has not been supplied." })) }, provider: "openai" };
+  };
+  let result;
+  for (let i = 0; i < 40 && !result; i++) {
+    h.current.invocationId = String(i);
+    result = await generatePlannedResource({ job: h.job(), hasStimulus: true,
+      stimulusImages: [{ purpose: "creative-prompt", task: "Write from it.", title: "Save water poster", description: "A 1942 poster urging people to save water" }],
+      request: { model: "gpt-test", userMessage: "Write a Year 7 English paper.", systemPrompt: "" }, callAi: h.caller(provider) })
+      .catch((err) => { if (err.code === "RESOURCE_STAGE_YIELD") return null; throw err; });
+  }
+  assert.ok(result, "the paper was delivered");
+  assert.ok(questionMessages.some((m) => /question_range_lead_in: Q1/.test(m)), "the range lead-in was sent back with its reason");
+  const stems = result.parsed.sections.flatMap((s) => s.questions).map((q) => q.stem);
+  assert.ok(stems.every((stem) => !/Questions \d+ to \d+/.test(stem)));
+  // Every answer batch, including the one for Q6-Q10, saw both texts and the image.
+  assert.ok(solutionMessages.length >= 2);
+  for (const message of solutionMessages) {
+    assert.match(message, /Amira stopped beside the spare chair/);
+    assert.match(message, /supervised quiet room/);
+    assert.match(message, /A 1942 poster urging people to save water/);
+  }
+  assert.ok(result.parsed.markingGuide.every((row) => !/not been supplied/.test(row.response)));
+  assert.deepEqual(result.parsed.stimulus.map((s) => s.title), ["The bridge", "A quiet room"]);
+  // Later batches are told not to repeat earlier questions' evidence.
+  assert.ok(questionMessages.some((m) => /Do not repeat their wording, their skill or the evidence/.test(m)));
+});
+
+it("catches the RES-96 wordings of a missing text and still passes answers about unstated details", () => {
+  const { answerClaimsMissingContext } = require("../../src/resources/plannedGeneration");
+  const claims = (response) => answerClaimsMissingContext({ response });
+  assert.equal(claims("The prose extract about Amira and Toby has not been supplied. An accurate model answer cannot be written without it."), true);
+  assert.equal(claims("Image 1 has not been supplied. A stimulus-based TETAL model plan cannot be completed."), true);
+  assert.equal(claims("The speech was not provided."), true);
+  assert.equal(claims("The source of the conflict is not given in the passage."), false);
+  assert.equal(claims("The speech is not provided with statistics, so it relies on emotion."), false);
+  assert.equal(claims("The text is not given a title, so the reader infers it."), false);
+});
+
+it("asks the planner for a distinct focus per question (RES-96)", async () => {
+  const { PLAN_SCHEMA } = require("../../src/resources/plannedGeneration");
+  assert.ok(PLAN_SCHEMA.properties.questions.items.required.includes("focus"));
+  let seen;
+  const callAi = async (req) => { seen = req; return { parsed: { title: "", timeAllowed: "", clarification: "Unclear request, name the topics.", topics: [], questions: [] } }; };
+  await assert.rejects(generatePlannedResource({ job: { jobId: "j", subject: "english", year: 7, resourceType: "practice-paper", customPrompt: "paper" }, request: { userMessage: "paper" }, callAi }));
+  assert.match(seen.systemPrompt, /No two questions may share a focus/);
+});
+
+// RES-96 / RES-100 / RES-98 / RES-88 end to end through the real pipeline: no
+// planned text could be verified, so the generator writes the texts itself.
+// They go in the stimulus booklet (not a question stem), print as "Tenacity
+// Original" whatever author the model typed, coaching is cut from the
+// questions, and a text no question uses is dropped.
+it("writes unverifiable texts into the booklet as Tenacity Originals and tidies the paper (RES-96/98/100/88)", async () => {
+  const { runGenerationPipeline } = require("../../src/resources");
+  const mammoth = require("mammoth");
+  const h = harness({ resourceType: "practice-paper", subject: "english", year: 7, answerMode: "worked", createdBy: "tutor", customPrompt: "Year 7 practice paper, 60 minutes, on one unseen prose extract." });
+  const englishPlan = { ...plan(4), timeAllowed: "60 minutes", topics: [{ name: "Reading", evidence: "unseen prose extract" }, { name: "Inference", evidence: "unseen prose extract" }] };
+  englishPlan.questions = englishPlan.questions.map((q) => ({ ...q, topic: q.number <= 2 ? "Reading" : "Inference", section: "Section A: Reading", focus: `focus ${q.number}`, estimatedMinutes: 12 }));
+  const systemPrompts = [];
+  const provider = async (req) => {
+    if (req.systemPrompt.startsWith("Plan an educational")) return { parsed: englishPlan, provider: "openai" };
+    if (req.systemPrompt.startsWith("Independently audit")) {
+      const parsed = JSON.parse(req.userMessage.split("GENERATED RESOURCE TO CHECK: ")[1]);
+      return { parsed: { scopePass: true, difficultyPass: true, issues: [], questions: parsed.sections.flatMap((s) => s.questions).map((q) => ({ number: q.number, coveredSourceIds: [], estimatedMinutes: 12 })) } };
+    }
+    const specs = req.userMessage.match(/SAVED PLAN .*?: (\[.*\])\nGenerate/);
+    if (specs) {
+      systemPrompts.push(req.systemPrompt);
+      const questions = JSON.parse(specs[1]).map((q) => ({ number: q.number, marks: q.marks, type: "short-answer", options: null, parts: null, diagram: null, diagramRequired: false,
+        stem: `How does Text 1 show Amira's feelings in moment ${q.number}? Begin with a thesis that answers the question. Support it with one ETA: Evidence, Technique, Analysis.` }));
+      return { parsed: { title: "Year 7 English", subject: "english", year: 7, topics: ["Reading"], focus: null, totalMarks: 8, timeAllowed: "60 minutes",
+        stimulus: [
+          { label: "Text 1", textType: "prose", title: "The bridge", author: "Robert Frost", source: "Collected Poems", body: "Amira stopped beside the spare chair.\n\nToby lowered a coin onto the cardboard bridge." },
+          { label: "Text 2", textType: "prose", title: "Unused notes", author: null, source: null, body: "Nothing asks about this text." },
+        ],
+        sections: [{ title: "Section A: Reading", questions }], markingGuide: [] }, provider: "openai" };
+    }
+    const questions = req.userMessage.split("\n").map((line) => { try { return JSON.parse(line); } catch { return null; } })
+      .find((rows) => Array.isArray(rows) && rows[0]?.stem);
+    return { parsed: { markingGuide: questions.map((q) => ({ questionNumber: q.number, partLabel: null, suggestedResponse: "Amira hesitates; the image of the spare chair shows she feels like an outsider.", markingCriteria: ["1 mark: a thesis", "1 mark: an ETA"], marks: q.marks })) }, provider: "openai" };
+  };
+  const selection = { title: "A Missing Story", author: "Nobody", type: "short-story" };
+  let result;
+  for (let i = 0; i < 40 && !result; i++) {
+    h.current.invocationId = String(i);
+    try {
+      result = await runGenerationPipeline(h.job(), { db: h.db, storage: h.storage, callAi: h.caller(provider), enablePdTextSourcing: true,
+        anthropicApiKey: "test", openaiApiKey: "test",
+        planStimulus: async () => ({ needed: true, texts: [selection], visuals: [], planner: null }),
+        sourceText: async () => ({ ok: false, selection }),
+        selectAlternative: async () => ({ ...selection, title: "Another Missing Story" }) });
+    } catch (err) { assert.equal(err.code, "RESOURCE_STAGE_YIELD", err.stack); }
+  }
+  assert.ok(result?.outputPath, "the paper was saved");
+  assert.ok(systemPrompts.length && systemPrompts.every((p) => p.includes('"stimulus": null | [')), "the generator was offered the stimulus booklet");
+  const saved = JSON.parse(result.generatedJson);
+  assert.equal(saved.stimulus.length, 1, "the unused text was removed");
+  assert.equal(saved.stimulus[0].title, "The bridge");
+  assert.equal(saved.stimulus[0].author, null, "a model-typed author is not kept");
+  assert.equal(saved.stimulus[0].source, null);
+  for (const q of saved.sections.flatMap((s) => s.questions)) {
+    assert.match(q.stem, /^How does Text 1 show Amira's feelings in moment \d\?$/);
+  }
+  assert.ok(saved.markingGuide.every((row) => /thesis|ETA/.test(row.markingCriteria.join(" "))), "structure stays in the marking criteria");
+  const text = (await mammoth.extractRawText({ buffer: h.values.get(result.outputPath) })).value;
+  assert.match(text, /Text 1: The bridge/);
+  assert.match(text, /Tenacity Original/);
+  assert.doesNotMatch(text, /Robert Frost|Unused notes/);
+  assert.ok(result.warnings.some((w) => /labelled Tenacity Original/.test(w.message)));
+});
+
+// RES-96, found in the 8 Nov live replay: the first batch wrote only the text
+// its own questions used, so the speech Q6-Q8 analysed was never written.
+it("writes the booklet for the whole paper and lets a later batch add a text it needs (RES-96)", async () => {
+  const h = harness({ resourceType: "practice-paper", year: "8", subject: "english", answerMode: "worked", customPrompt: "Year 8 paper, prose extract then a speech." });
+  const englishPlan = { ...plan(8), topics: [{ name: "Reading", evidence: "English" }, { name: "Persuasion", evidence: "English" }] };
+  englishPlan.questions = englishPlan.questions.map((q) => ({ ...q, topic: q.number <= 5 ? "Reading" : "Persuasion", section: q.number <= 5 ? "Section A: Reading" : "Section B: Persuasion", focus: q.number <= 5 ? `extract detail ${q.number}` : `speech technique ${q.number}` }));
+  const questionMessages = [];
+  const solutionMessages = [];
+  let danglingSent = false;
+  const provider = async (req) => {
+    if (req.systemPrompt.startsWith("Plan an educational")) return { parsed: englishPlan, provider: "openai" };
+    if (req.systemPrompt.startsWith("Independently audit")) {
+      const parsed = JSON.parse(req.userMessage.split("GENERATED RESOURCE TO CHECK: ")[1]);
+      return { parsed: { scopePass: true, difficultyPass: true, issues: [], questions: parsed.sections.flatMap((s) => s.questions).map((q) => ({ number: q.number, coveredSourceIds: [], estimatedMinutes: 6 })) } };
+    }
+    const specs = req.userMessage.match(/SAVED PLAN .*?: (\[.*\])\nGenerate/);
+    if (specs) {
+      questionMessages.push(req.userMessage);
+      const rows = JSON.parse(specs[1]);
+      const later = rows[0].number > 1;
+      const questions = rows.map((q) => ({ number: q.number, marks: q.marks, type: "short-answer", options: null, parts: null,
+        stem: q.number <= 5 ? `In Text 1, explain detail ${q.number}.` : `In Text 2, explain technique ${q.number}.` }));
+      // The first answer for the later batch names Text 2 without writing it;
+      // the retry adds it.
+      let stimulus = null;
+      if (!later) stimulus = [{ title: "The fence", author: null, source: null, body: "Tom surveyed the fence." }];
+      else if (danglingSent) stimulus = [{ title: "A quiet room", author: null, source: null, body: "Fellow students, we need a quiet room." }];
+      else danglingSent = true;
+      return { parsed: { title: "Practice", subject: "english", year: 8, totalMarks: 16, timeAllowed: "60 minutes", stimulus, sections: [{ title: "batch", questions }], markingGuide: [] }, provider: "openai" };
+    }
+    solutionMessages.push(req.userMessage);
+    const questions = req.userMessage.split("\n").map((line) => { try { return JSON.parse(line); } catch { return null; } })
+      .find((rows) => Array.isArray(rows) && rows[0]?.stem);
+    return { parsed: { markingGuide: questions.map((q) => ({ questionNumber: q.number, partLabel: null, criteria: "1 mark: a technique", marks: q.marks, response: "An answer from the text." })) }, provider: "openai" };
+  };
+  let result;
+  for (let i = 0; i < 40 && !result; i++) {
+    h.current.invocationId = String(i);
+    result = await generatePlannedResource({ job: h.job(), hasStimulus: true, request: { model: "gpt-test", userMessage: "Write a Year 8 English paper.", systemPrompt: "" }, callAi: h.caller(provider) })
+      .catch((err) => { if (err.code === "RESOURCE_STAGE_YIELD") return null; throw err; });
+  }
+  assert.ok(result, "the paper was delivered");
+  assert.match(questionMessages[0], /WHOLE PAPER \(for the stimulus booklet only\)[\s\S]*speech technique 6/);
+  assert.ok(questionMessages.some((m) => /question_text_missing: Q6/.test(m)), "the dangling Text 2 was sent back with its reason");
+  assert.deepEqual(result.parsed.stimulus.map((s) => s.title), ["The fence", "A quiet room"]);
+  const later = solutionMessages.filter((m) => /explain technique/.test(m));
+  assert.ok(later.length && later.every((m) => /we need a quiet room/.test(m)), "answers for the speech questions saw the speech");
+});
+
+it("rejects an answer that says the text is needed instead of answering (RES-96)", () => {
+  const { answerClaimsMissingContext } = require("../../src/resources/plannedGeneration");
+  assert.equal(answerClaimsMissingContext({ response: "The speech's exact opening is needed to identify the addressee and explain the effect accurately." }), true);
+  assert.equal(answerClaimsMissingContext({ response: "Evidence from the text is needed to support the inference." }), false);
+  assert.equal(answerClaimsMissingContext({ response: "Close reading of the poem is needed for full marks." }), false);
+});

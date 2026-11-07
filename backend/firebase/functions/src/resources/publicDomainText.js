@@ -368,6 +368,12 @@ Hard rules for every chosen work:
 - MUST plausibly exist in English on Wikisource (poems) or Project Gutenberg (prose / non-fiction). Prefer well-known, short, self-contained works.
 - Match the year level, skill focus and theme; nothing too archaic for the year level.
 
+HOW THE TEXT IS FETCHED — choose works this can actually find:
+- Prose is fetched as a whole Project Gutenberg ebook found by its title and author. A famous novel or a short story published as its OWN Gutenberg ebook works. A story that exists only inside an anthology or a "Selected Stories" volume usually cannot be found: avoid it unless you are sure of the exact Gutenberg collection title, and then give that title in "collectionHint".
+- For a prose extract, prefer a well-known novel and name the chapter that holds the scene you want in "pieceTitle" (e.g. "Chapter 2"); the extract is cut from the start of that chapter. Use the novel's exact title as "title".
+- A speech, essay or letter is usually inside a collection on Gutenberg ("Speeches and Letters of Abraham Lincoln"): give that collection's exact title in "collectionHint" and the piece's exact heading in "pieceTitle".
+- A poem is fetched from its own Wikisource page by title and author. Choose one long enough to support the questions asked: a poem for a paper or comprehension task should be at least 12 lines.
+
 Return ONLY a JSON object, no prose:
 {
   "needed": true | false,
@@ -540,21 +546,76 @@ async function fetchWithTimeout(url, { accept } = {}) {
 const COLLECTION_TITLE_RE =
   /works|tales|poems|complete|collected|stories|anthology|verse/i;
 
+const GUTENBERG_OPDS_SEARCH = "https://www.gutenberg.org/ebooks/search.opds/";
+
+function decodeXmlEntities(text) {
+  return String(text || "")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"")
+    .replace(/&apos;|&#39;/g, "'").replace(/&amp;/g, "&");
+}
+
+/**
+ * RES-11. Project Gutenberg's own catalogue search (OPDS), shaped like a
+ * Gutendex response so the same scoring applies. Gutendex returned HTTP 503
+ * after ~15s for many lookups in November 2026, and each failed search was a
+ * stimulus text lost; gutenberg.org answered the same queries in ~1.5s.
+ * An entry's <content> is its author when there is one (else a download
+ * count, which is ignored). OPDS reports no copyright flag, so `copyright` is
+ * null; the curator already restricts choices to pre-1929 works.
+ */
+async function searchGutenbergOpds(query) {
+  const res = await fetchWithTimeout(`${GUTENBERG_OPDS_SEARCH}?query=${encodeURIComponent(query)}`, {
+    accept: "application/atom+xml",
+  });
+  const xml = await res.text();
+  const entries = xml.match(/<entry>[\s\S]*?<\/entry>/g) || [];
+  const results = [];
+  entries.forEach((entry, index) => {
+    const id = Number((entry.match(/<id>https?:\/\/www\.gutenberg\.org\/ebooks\/(\d+)\.opds<\/id>/) || [])[1]);
+    if (!id) return;
+    const title = decodeXmlEntities((entry.match(/<title>([\s\S]*?)<\/title>/) || [])[1]).trim();
+    const content = decodeXmlEntities((entry.match(/<content[^>]*>([\s\S]*?)<\/content>/) || [])[1]).trim();
+    const author = content && !/^\d[\d,]*\s+downloads?$/i.test(content) ? content : null;
+    results.push({
+      id,
+      title,
+      authors: author ? [{ name: author }] : [],
+      copyright: null,
+      formats: { "text/plain; charset=utf-8": `https://www.gutenberg.org/cache/epub/${id}/pg${id}.txt` },
+      // Keep the catalogue's own ranking as the tie-break.
+      download_count: entries.length - index,
+    });
+  });
+  return { results };
+}
+
 async function searchGutendex(query, considered) {
   const url = `${GUTENDEX_BASE}?search=${encodeURIComponent(query)}`;
   // Gutendex sits behind Cloudflare and intermittently stalls past the fetch
-  // timeout; one spaced retry clears the transient case without letting a real
-  // outage stall the whole generation.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const res = await fetchWithTimeout(url, { accept: "application/json" });
-      const data = await res.json();
-      considered.push({ query, resultCount: (data.results || []).length });
-      return data;
-    } catch (err) {
-      considered.push({ query, error: err.message, attempt: attempt + 1 });
-      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
+  // timeout, or answers 503. After one failure the query goes to Gutenberg's
+  // own catalogue search; Gutendex gets one more try only if that fails too.
+  const viaGutendex = async (attempt) => {
+    const res = await fetchWithTimeout(url, { accept: "application/json" });
+    const data = await res.json();
+    considered.push({ query, resultCount: (data.results || []).length, ...(attempt > 1 ? { attempt } : {}) });
+    return data;
+  };
+  try {
+    return await viaGutendex(1);
+  } catch (err) {
+    considered.push({ query, error: err.message, attempt: 1 });
+  }
+  try {
+    const data = await searchGutenbergOpds(query);
+    considered.push({ query, via: "gutenberg-opds", resultCount: data.results.length });
+    return data;
+  } catch (err) {
+    considered.push({ query, via: "gutenberg-opds", error: err.message });
+  }
+  try {
+    return await viaGutendex(2);
+  } catch (err) {
+    considered.push({ query, error: err.message, attempt: 2 });
   }
   return null;
 }
@@ -668,8 +729,18 @@ function stripGutenbergBoilerplate(raw) {
 
   // Drop a leading transcriber/producer note paragraph if present.
   text = text.replace(/^\s*(Produced by|This eBook|E-text prepared)[^\n]*\n/i, "");
+  // Older etexts open with whole paragraphs about the etext itself ("This is
+  // a retranscription of one of the first Project Gutenberg Etexts, ...").
+  // They are not the work, so leading paragraphs that talk about Project
+  // Gutenberg, etexts or transcription are dropped as well (RES-88/RES-11).
+  const paragraphs = text.trim().split(/\n[ \t]*\n+/);
+  let lead = 0;
+  while (lead < paragraphs.length - 1 && lead < 8 && GUTENBERG_NOTE_RE.test(paragraphs[lead])) lead += 1;
+  if (lead) text = paragraphs.slice(lead).join("\n\n");
   return text.trim();
 }
+
+const GUTENBERG_NOTE_RE = /project\s+gutenberg|\be-?texts?\b|\bretranscription\b|\btranscriber'?s?\s+note\b/i;
 
 function countWords(text) {
   const trimmed = String(text || "").trim();
@@ -683,8 +754,15 @@ function countWords(text) {
  * lines as paragraph breaks. The result is render-ready prose — paragraphs
  * separated by a blank line, no spurious intra-paragraph line breaks.
  */
+// Project Gutenberg marks italics in plain text as _word_. Printed as is, the
+// underscores read as stray symbols in a student's booklet, so the markers are
+// dropped and the words kept.
+function stripItalicMarkers(text) {
+  return String(text || "").replace(/(^|[^\w])_([^_\n]{1,120}?)_(?=[^\w]|$)/g, "$1$2");
+}
+
 function unwrapProse(text) {
-  return String(text || "")
+  return stripItalicMarkers(text)
     .replace(/\r\n?/g, "\n")
     .split(/\n[ \t]*\n+/) // split into paragraphs on blank lines
     .map((para) => para.replace(/\s*\n\s*/g, " ").replace(/[ \t]{2,}/g, " ").trim())
@@ -700,7 +778,7 @@ function unwrapProse(text) {
  * sits flush, and collapse runs of blank lines to single stanza breaks.
  */
 function dedentLines(text) {
-  const lines = String(text || "")
+  const lines = stripItalicMarkers(text)
     .replace(/\r\n?/g, "\n")
     .split("\n")
     .map((line) => line.replace(/[ \t]+$/, ""));
@@ -724,10 +802,12 @@ function dedentLines(text) {
  */
 function stripGutenbergFrontMatter(body, title) {
   const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const wantTitle = norm(title);
-  if (!wantTitle) return body;
+  // Any of several names may open the body: the work's title, the piece's,
+  // or the ebook's own ("Lincoln's Gettysburg Address, given November 19…").
+  const wanted = (Array.isArray(title) ? title : [title]).map(norm).filter(Boolean);
+  if (!wanted.length) return body;
   const blocks = String(body || "").split(/\n[ \t]*\n+/);
-  if (!blocks.length || !norm(blocks[0]).startsWith(wantTitle)) return body;
+  if (!blocks.length || !wanted.some((want) => norm(blocks[0]).startsWith(want))) return body;
 
   let i = 0;
   while (i < blocks.length && i < 6 && blocks[i].replace(/\s+/g, " ").trim().length < 120) {
@@ -758,6 +838,99 @@ function isChapterHeading(paragraph) {
   );
 }
 
+const ROMAN_VALUES = Object.freeze({ i: 1, v: 5, x: 10, l: 50, c: 100, d: 500 });
+function numeralValue(raw) {
+  const text = String(raw || "").toLowerCase();
+  if (/^\d+$/.test(text)) return Number(text);
+  if (!/^[ivxlcd]+$/.test(text)) return null;
+  let total = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const value = ROMAN_VALUES[text[i]];
+    const next = ROMAN_VALUES[text[i + 1]] || 0;
+    total += value < next ? -value : value;
+  }
+  return total;
+}
+
+// RES-88. The chapter number a heading-like paragraph names, or null. Unlike
+// isChapterHeading this also matches a long contents entry ("CHAPTER XVI. A
+// Day's Amusements—Tom Reveals a Secret—..."), which is exactly what has to be
+// recognised and skipped.
+function headingNumber(paragraph) {
+  const text = String(paragraph || "").trim();
+  if (countWords(text) > 40) return null;
+  const match = text.match(/^(?:chapter|part|book)\s+([ivxlcd]+|\d+)\b/i) ||
+    text.match(/^([ivxlcd]+)\.(?:\s|$)/i);
+  return match ? numeralValue(match[1]) : null;
+}
+
+function isHeadingLike(paragraph) {
+  return headingNumber(paragraph) !== null;
+}
+
+// A paragraph of running prose: a sentence or more, not a heading or a list
+// entry. A contents or illustrations list has no sentence punctuation, and a
+// contents entry is heading-like.
+function isProseParagraph(paragraph) {
+  const text = String(paragraph || "").trim();
+  return countWords(text) >= 8 && /[.!?]/.test(text) && !isHeadingLike(text) &&
+    !FRONT_MATTER_PARA_RE.test(text);
+}
+
+// Words of prose that follow heading `index` before the next heading. A real
+// chapter heading is followed by its chapter; a contents entry is followed by
+// the next entry, so it scores 0.
+function proseWordsAfter(paragraphs, index) {
+  let words = 0;
+  for (let i = index + 1; i < paragraphs.length && i <= index + 15; i += 1) {
+    if (isHeadingLike(paragraphs[i])) break;
+    if (isProseParagraph(paragraphs[i])) words += countWords(paragraphs[i]);
+  }
+  return words;
+}
+
+// The chapter a selection's pieceTitle names ("Chapter II (The Glorious
+// Whitewasher)"), so the excerpt can come from the scene the planner chose.
+function chapterFromPieceTitle(pieceTitle) {
+  const match = String(pieceTitle || "").match(/\bchapter\s+([ivxlcd]+|\d+)\b/i);
+  return match ? numeralValue(match[1]) : null;
+}
+
+// Where the excerpt starts: just after the body heading of the named chapter,
+// else of chapter 1, else of the first heading actually followed by prose.
+// Contents entries never qualify, because no prose follows them (RES-88: Tom
+// Sawyer's one short contents entry, "CHAPTER XIX. Tom Tells the Truth", was
+// taken as the first chapter and the extract was the rest of the contents).
+function chapterBodyStart(paragraphs, pieceTitle) {
+  const candidates = [];
+  paragraphs.forEach((paragraph, index) => {
+    if (index < paragraphs.length - 1 && isHeadingLike(paragraph) && proseWordsAfter(paragraphs, index) >= 60) {
+      candidates.push({ index, number: headingNumber(paragraph) });
+    }
+  });
+  if (!candidates.length) return null;
+  const wanted = chapterFromPieceTitle(pieceTitle);
+  const pick = (wanted && candidates.find((c) => c.number === wanted)) ||
+    candidates.find((c) => c.number === 1) || candidates[0];
+  return pick.index + 1;
+}
+
+/**
+ * RES-88. Whether an extract reads as body text rather than a contents page,
+ * an illustrations list or other front matter. Most of its words must sit in
+ * prose paragraphs, and it must contain no contents/illustrations/index list.
+ */
+function readsAsBodyText(passage) {
+  const paragraphs = String(passage || "").split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+  const total = countWords(passage);
+  if (!total) return false;
+  if (paragraphs.some((p) => /^(?:contents|table of contents|list of illustrations|illustrations|index)\b[.:]?$/i.test(p))) return false;
+  if (paragraphs.filter(isHeadingLike).length >= 3) return false;
+  if (paragraphs.some((p) => GUTENBERG_NOTE_RE.test(p))) return false;
+  const prose = paragraphs.filter(isProseParagraph).reduce((n, p) => n + countWords(p), 0);
+  return prose / total >= 0.6;
+}
+
 /**
  * Deterministic opening excerpt: start at the body of the first chapter when
  * the work has chapter headings (skipping other people's prefaces and
@@ -768,7 +941,7 @@ function isChapterHeading(paragraph) {
  * verbatim slice of the fetched text, so the "provably the source bytes"
  * property survives excerpting.
  */
-function excerptOpening(passage, targetWords, title, { fromChapterStart = true, skipFrontMatter = true } = {}) {
+function excerptOpening(passage, targetWords, title, { fromChapterStart = true, skipFrontMatter = true, pieceTitle = null } = {}) {
   const paragraphs = String(passage || "")
     .split(/\n\n+/)
     .map((p) => p.trim())
@@ -782,8 +955,8 @@ function excerptOpening(passage, targetWords, title, { fromChapterStart = true, 
 
   let start = 0;
   if (fromChapterStart) {
-    const chapterIdx = paragraphs.findIndex(isChapterHeading);
-    if (chapterIdx >= 0 && chapterIdx < paragraphs.length - 1) start = chapterIdx + 1;
+    const chapterStart = chapterBodyStart(paragraphs, pieceTitle);
+    if (chapterStart !== null) start = chapterStart;
   }
 
   while (skipFrontMatter && start < paragraphs.length - 1) {
@@ -793,6 +966,8 @@ function excerptOpening(passage, targetWords, title, { fromChapterStart = true, 
     const isFrontMatter =
       FRONT_MATTER_PARA_RE.test(para) ||
       (wantTitle && norm(para).startsWith(wantTitle) && words <= 12) ||
+      // A contents entry, however long ("CHAPTER XVI. A Day's Amusements—...").
+      isHeadingLike(para) ||
       // An unwrapped contents list ("Chapter I. Chapter II. ...", "I. WILLIAM
       // II. THE UNKNOWN ...") is one long paragraph dominated by labels.
       (para.match(/\bchapter\b/gi) || []).length >= 3 ||
@@ -800,6 +975,9 @@ function excerptOpening(passage, targetWords, title, { fromChapterStart = true, 
       // Registration notices, contents lists and section headings are set in
       // caps; narrative prose never is.
       (letters.length > 0 && letters === letters.toUpperCase()) ||
+      // An unwrapped list of illustration captions runs on with no sentence
+      // punctuation; prose always has some.
+      !/[.!?]/.test(para) ||
       // Bare headings, bylines and edition lines are short; real prose is not.
       words < 15;
     if (!isFrontMatter) break;
@@ -808,10 +986,18 @@ function excerptOpening(passage, targetWords, title, { fromChapterStart = true, 
 
   const kept = [];
   let words = 0;
-  for (let i = start; i < paragraphs.length; i += 1) {
-    kept.push(paragraphs[i]);
-    words += countWords(paragraphs[i]);
-    if (words >= target) break;
+  let next = start;
+  for (; next < paragraphs.length; next += 1) {
+    kept.push(paragraphs[next]);
+    words += countWords(paragraphs[next]);
+    if (words >= target) { next += 1; break; }
+  }
+  // An extract should not stop mid-thought ("…giving the orders and executing
+  // them:" with the dialogue it introduces cut off). Up to three more
+  // paragraphs are taken until one ends a sentence.
+  const endsSentence = (p) => /[.!?]["'”’)\]_*]*$/.test(String(p).trim());
+  for (let extra = 0; extra < 3 && next < paragraphs.length && kept.length && !endsSentence(kept[kept.length - 1]); extra += 1, next += 1) {
+    kept.push(paragraphs[next]);
   }
   let text = kept.join("\n\n").trim();
 
@@ -1048,8 +1234,17 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
   // starts with it). Prose is then unwrapped from Gutenberg's hard wrapping
   // into flowing paragraphs; verse instead keeps its line breaks and only loses
   // the common leading indent, so the poem renders with its lineation intact.
+  // RES-88. When the piece's own query found its own ebook (the planner
+  // named "Speeches and Letters of Abraham Lincoln" as the title and "The
+  // Gettysburg Address" as the piece, and the address is ebook #4), the text
+  // is the piece, so it is titled as the piece rather than the collection.
+  const pieceQuery = selection.pieceTitle ? dedupedQueries[0]?.query : null;
+  const resolvedAsPiece = Boolean(pieceQuery && resolution.matchedQuery === pieceQuery &&
+    selection.pieceTitle !== selection.title && chapterFromPieceTitle(selection.pieceTitle) === null);
+  const workTitle = resolvedAsPiece ? selection.pieceTitle : selection.title;
   if (wholeWork) {
-    passage = stripGutenbergFrontMatter(passage, selection.title);
+    const resolvedTitle = String(resolution.titleResolved || "");
+    passage = stripGutenbergFrontMatter(passage, [workTitle, selection.title, resolvedTitle, resolvedTitle.split(/[:;]/)[0]]);
   }
   passage = isPoemSelection ? dedentLines(passage) : unwrapProse(passage);
 
@@ -1065,6 +1260,7 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
     passage = excerptOpening(passage, targetWords, selection.title, {
       fromChapterStart: wholeWork && !isPoemSelection,
       skipFrontMatter: !isPoemSelection,
+      pieceTitle: selection.pieceTitle,
     });
     wordCount = countWords(passage);
     excerpted = wordCount > 0;
@@ -1077,13 +1273,25 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
     }
   }
 
-  const accepted = wordCount > 0 && (extraction.confidence === "high" || extraction.confidence === "medium");
+  // RES-88. Prose must read as body text. A contents page, an illustrations
+  // list or a run of chapter headings is rejected here, so the caller tries an
+  // alternative work instead of printing it as "Text 1".
+  const readsAsProse = isPoemSelection || readsAsBodyText(passage);
+  const checks = buildChecks({ selection, resolution, bodyText: body, wordCount, brief });
+  if (!isPoemSelection) {
+    checks.push({
+      name: "Reads as body text (not contents, index or front matter)",
+      pass: readsAsProse,
+      detail: readsAsProse ? "prose" : "mostly headings or list entries",
+    });
+  }
+  const accepted = readsAsProse && wordCount > 0 && (extraction.confidence === "high" || extraction.confidence === "medium");
   return {
     ok: accepted,
     source: "Project Gutenberg",
     selection,
     resolution,
-    title: selection.title,
+    title: workTitle,
     author: selection.author,
     sourceName: resolution.titleResolved,
     sourceUrl: resolution.gutenbergUrl,
@@ -1095,7 +1303,7 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
     extraction,
     licenseNote:
       "Public domain in the US via Project Gutenberg. Verify rights for your jurisdiction before distribution.",
-    checks: buildChecks({ selection, resolution, bodyText: body, wordCount, brief }),
+    checks,
   };
 }
 
@@ -1119,6 +1327,7 @@ module.exports = {
   dedentLines,
   stripGutenbergFrontMatter,
   excerptOpening,
+  readsAsBodyText,
   buildChecks,
   sourceGutenbergWork,
 };
