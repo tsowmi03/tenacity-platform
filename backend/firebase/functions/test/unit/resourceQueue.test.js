@@ -456,6 +456,37 @@ describe("resource provider failover", () => {
     assert.equal(db.jobs[0].activeModel, "claude-opus-5-5");
   });
 
+  it("fails a planned job's invalid build at once, without a backup that would replay it or an oversized write (RES-94)", async () => {
+    const db = fakeQueueDb([{
+      id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1, resourceType: "practice-paper", subject: "english",
+      generationVersion: 1, modelChoice: "openai", requestedModel: "gpt-6.1-sol", activeModel: "gpt-6.1-sol", attemptedModels: [],
+    }]);
+    const result = await runQueueForTutor("tutor-1", {
+      db, storage: fakeStorage(), clock,
+      generationPipeline: async () => {
+        const err = Object.assign(new Error("Invalid resource JSON: practicePaper.stimulus[2].image.buffer must be a Buffer"), { name: "ResourceValidationError" });
+        err.rawAiText = "x".repeat(2_000_000);
+        throw err;
+      },
+    });
+    assert.equal(result[0].status, "failed");
+    assert.equal(db.jobs[0].status, "failed");
+    assert.equal(db.jobs[0].generatedJson, null, "a raw output over Firestore's field limit is not written");
+    assert.ok(!db.jobs[0].failover);
+  });
+
+  it("still hands a legacy job's invalid output to the backup model", async () => {
+    const db = fakeQueueDb([{
+      id: "job-1", createdBy: "tutor-1", status: "pending", createdAt: 1, resourceType: "worksheet",
+      modelChoice: "openai", requestedModel: "gpt-6.1-sol", activeModel: "gpt-6.1-sol", attemptedModels: [],
+    }]);
+    const result = await runQueueForTutor("tutor-1", {
+      db, storage: fakeStorage(), clock,
+      generationPipeline: async () => { throw Object.assign(new Error("Invalid resource JSON: questions[0].stem"), { name: "ResourceValidationError" }); },
+    });
+    assert.equal(result[0].status, "fallback_pending");
+  });
+
   it("can disable automatic failover without changing the selected model", async () => {
     const db = fakeQueueDb([{
       id: "job-1",
