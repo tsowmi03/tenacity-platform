@@ -198,6 +198,8 @@ function resourceFailureReasonCode(err) {
   const status = statusOf(err);
   const name = String(err?.name || "");
   if (isStorageLimitError(err)) return "STORAGE_LIMIT";
+  // A deliberate stop (scope clarification, size limit) is not a model fault.
+  if (err?.resourceControl && err?.code) return String(err.code);
   if (err?.refusal === true || err?.stopReason === "refusal") return "REFUSAL";
   if (err?.stopReason === "max_tokens" || raw.includes("truncated")) return "TOKEN_TRUNCATION";
   if (isDiagramRenderError(err) && err?.diagramRequired !== false) return "REQUIRED_DIAGRAM";

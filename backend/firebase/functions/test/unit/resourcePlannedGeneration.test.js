@@ -2,7 +2,7 @@
 const { it } = require("node:test");
 const assert = require("node:assert/strict");
 const { createDurableCaller, requestedQuestionCount } = require("../../src/resources/durableStages");
-const { generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings } = require("../../src/resources/plannedGeneration");
+const { clarificationMessage, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings } = require("../../src/resources/plannedGeneration");
 const { resourceEvent, resourceStage } = require("../../src/resources/resourceLog");
 
 function harness(extra = {}) {
@@ -396,4 +396,20 @@ it("accepts answers about details a text leaves unstated (RES-91)", () => {
   assert.equal(answerClaimsMissingContext({ response: "The narrator's exact age cannot be determined from the provided text." }), false);
   assert.equal(answerClaimsMissingContext({ response: "Leon's surname is not provided in the material, so accept any reasonable inference." }), false);
   assert.equal(answerClaimsMissingContext({ response: "Image 1 is missing a caption, which creates mystery." }), false);
+});
+it("shows the planner's clarification reason to the tutor", () => {
+  const reason = "The prompt describes an English paper, but the subject is set to Maths. Change the subject to English";
+  assert.throws(() => validatePlan({ parsed: { ...plan(), clarification: reason } }, {}, ""),
+    { code: "RESOURCE_SCOPE_CLARIFICATION", message: `${reason}. Update the request, then submit again.` });
+  assert.equal(clarificationMessage("  unclear\n "), "Clarify the requested topics or attach the relevant contents pages, then submit again.");
+  assert.match(clarificationMessage("x".repeat(500)), /^x{300}… Update the request/);
+});
+
+it("passes the selected subject to the planner and asks it to flag mismatches", async () => {
+  let seen;
+  const callAi = async (req) => { seen = req; return { parsed: { title: "", timeAllowed: "", clarification: "Subject mismatch: the prompt is for English but Maths is selected.", topics: [], questions: [] } }; };
+  await assert.rejects(generatePlannedResource({ job: { jobId: "j", subject: "maths", year: 9, resourceType: "practice-paper", customPrompt: "English paper" }, request: { userMessage: "English paper" }, callAi }),
+    { code: "RESOURCE_SCOPE_CLARIFICATION", message: /Maths is selected\. Update the request/ });
+  assert.match(seen.userMessage, /SELECTED SETTINGS: subject maths, Year 9, practice-paper/);
+  assert.match(seen.systemPrompt, /different subject than the selected subject/);
 });

@@ -40,10 +40,21 @@ function perTopicCount(prompt = "") {
   return match ? Number(match[1]) : null;
 }
 
+const CLARIFICATION_FALLBACK = "Clarify the requested topics or attach the relevant contents pages, then submit again.";
+
+// The planner's own reason for stopping, shown to the tutor so they know what to
+// change (for example, a prompt that belongs to a different subject).
+function clarificationMessage(text) {
+  const reason = String(text || "").replace(/\s+/g, " ").trim();
+  if (reason.length < 12) return CLARIFICATION_FALLBACK;
+  const clamped = reason.length > 300 ? `${reason.slice(0, 300).trim()}…` : reason;
+  return `${clamped}${/[.!?…]$/.test(clamped) ? "" : "."} Update the request, then submit again.`;
+}
+
 function validatePlan(result, job, _userMessage, scope = { eligible: [], excluded: [], minutes: null }) {
   const plan = result?.parsed;
   if (plan?.clarification === "SIZE_LIMIT") throw controlError("RESOURCE_SIZE_LIMIT", `The resolved request exceeds ${MAX_QUESTIONS} questions. Split it into smaller resources.`);
-  if (plan?.clarification) throw controlError("RESOURCE_SCOPE_CLARIFICATION", `Clarify the requested topics or attach the relevant contents pages, then submit again.`);
+  if (plan?.clarification) throw controlError("RESOURCE_SCOPE_CLARIFICATION", clarificationMessage(plan.clarification));
   // Each check has its own reason (RES-70). The reason is logged and also sent
   // back to the model as correction guidance, so a catch-all code left every
   // retry guessing at what to fix.
@@ -222,14 +233,14 @@ async function generatePlannedResource({ job, request, callAi, hasStimulus = fal
   if (each > MAX_QUESTIONS) throw controlError("RESOURCE_SIZE_LIMIT", "Request fewer questions per topic.");
   const scope = sourceScope(job, referenceText);
   if (each && scope.eligible.length * each > MAX_QUESTIONS) throw controlError("RESOURCE_SIZE_LIMIT", `The resolved request needs ${scope.eligible.length * each} questions, above the ${MAX_QUESTIONS}-question limit. Split it by topic or chapter.`);
-  const planMessage = `${request.userMessage}\n\nREFERENCE-DERIVED SCOPE (use representative chapter coverage for papers unless every subsection is explicitly requested; honour exclusions): ${JSON.stringify(scope)}`;
+  const planMessage = `${request.userMessage}\n\nSELECTED SETTINGS: subject ${job.subject || "unspecified"}, Year ${job.year ?? "unspecified"}, ${job.resourceType}.\n\nREFERENCE-DERIVED SCOPE (use representative chapter coverage for papers unless every subsection is explicitly requested; honour exclusions): ${JSON.stringify(scope)}`;
   const validateStageResult = (result) => validatePlan(result, job, planMessage, scope);
   const { parsed: modelPlan } = await callAi({ ...request,
     stageId: "plan.v2", stageLabel: "Planning topics, question counts and sections",
     maxTokens: 16000, responseSchema: PLAN_SCHEMA, validateStageResult,
     userMessage: planMessage,
     systemPrompt: `Plan an educational resource; do not write questions or solutions. Return the supplied JSON schema.
-Resolve the tutor's exact scope and exclusions using the supplied references. Topics must each quote exact evidence from the user's message or references. A textbook title alone does not establish its chapter contents. If the topic list or exclusions cannot be established, return a non-empty clarification and empty topics/questions; never invent a contents list.
+Resolve the tutor's exact scope and exclusions using the supplied references. Topics must each quote exact evidence from the user's message or references. A textbook title alone does not establish its chapter contents. If the topic list or exclusions cannot be established, return a non-empty clarification and empty topics/questions; never invent a contents list. If the request clearly belongs to a different subject than the selected subject (for example, an English reading or writing paper with maths selected), return a clarification and empty topics/questions. Write any clarification other than "SIZE_LIMIT" as one or two plain sentences addressed to the tutor that name exactly what is unclear or mismatched and what to change, e.g. "The prompt describes an English paper, but the subject is set to Maths. Change the subject to English or rewrite the prompt for maths."
 For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwise obey any requested total. For timed papers, allocate sections, progressively harder questions and marks that reasonably fit the sitting time. Use a reasonable number of main questions with labelled parts to combine related skills. topics may group by chapter; sourceIds track detailed coverage independently of the primary topic label. Aim for the sitting time with representative chapter coverage. If the coverage is ambitious, produce a usable plan and let the review flag the trade-off; do not return a clarification solely for workload or coverage concerns. Do not silently reduce scope to fit a limit: if the resolved total exceeds ${MAX_QUESTIONS}, set clarification to "SIZE_LIMIT" and leave questions empty. Use consecutive global numbers from 1; assign each a topic, section, difficulty and marks. section is the student-facing heading a question is printed under, shared by every question in that section, e.g. "Section A: Reading" or "Section B: Writing"; never describe the parts, type or labels of its questions there. Give every question sourceIds from the eligible reference inventory (multiple IDs allowed when the actual multipart question tests those skills), and a realistic positive estimatedMinutes. For chapter coverageMode, sample across every eligible chapter; do not force every subsection into a timed paper. For section coverageMode, aim to cover every requested ID. Balance chapter marks fairly. Do not merely attach IDs to questions that do not test them. Sum the question minutes to 75–100% of the requested sitting time; preserve the exact requested timeAllowed. Without coded references use an empty sourceIds array. Supply title and timeAllowed (empty for untimed worksheets). For a paper whose request names no sitting time, choose a realistic one for the year level and question count. clarification must be empty when the scope is resolved.`,
   });
   validateStageResult({ parsed: modelPlan });
@@ -331,4 +342,4 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     warnings: [...planWarnings, ...validatePlannedCoverage(plan, scope), ...review.warnings] };
 }
 
-module.exports = { questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };
+module.exports = { clarificationMessage, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };
