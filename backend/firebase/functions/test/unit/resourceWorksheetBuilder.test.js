@@ -816,3 +816,15 @@ describe("table headings stay with their content (RES-33)", () => {
     }
   });
 });
+
+it("letters each multiple-choice option once, whether or not the model lettered it (RES-90)", () => {
+  const { optionText } = require("../../src/resources/builder/common");
+  assert.equal(optionText("A. Fear of failure", 0), "Fear of failure");
+  assert.equal(optionText("(B) Hope", 1), "Hope");
+  assert.equal(optionText("c) Relief", 2), "Relief");
+  assert.equal(optionText("D: Anger", 3), "Anger");
+  assert.equal(optionText("Fear of failure", 0), "Fear of failure");
+  assert.equal(optionText("A dog barks", 0), "A dog barks");
+  assert.equal(optionText("A-level texts", 0), "A-level texts");
+  assert.equal(optionText("B. wrong letter for slot A", 0), "B. wrong letter for slot A");
+});

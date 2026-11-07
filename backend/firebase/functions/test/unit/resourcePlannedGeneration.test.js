@@ -312,3 +312,79 @@ it("delivers a paper whose topic quotes cannot be matched, with a review warning
   assert.ok(result, "the paper was delivered");
   assert.deepEqual(result.warnings.filter((w) => w.code === "RESOURCE_PLAN_EVIDENCE_WARNING").map((w) => w.message), ['Topic "Algebra" couldn\'t be matched to the request or uploaded files. Check it is in scope.']);
 });
+
+it("prints one clean heading per section when the plan describes each question (RES-90)", async () => {
+  const { sectionTitle } = require("../../src/resources/plannedGeneration");
+  assert.equal(sectionTitle("A, Three multiple-choice parts, labelled (a), (c)"), "Section A");
+  assert.equal(sectionTitle("A, Short answer questions on Text 2"), "Section A");
+  assert.equal(sectionTitle("Section B: Writing"), "Section B: Writing");
+  assert.equal(sectionTitle("Reading"), "Reading");
+
+  const h = harness({ resourceType: "practice-paper", year: "8", subject: "maths", answerMode: "worked", customPrompt: "Write a paper for a 90-minute sitting." });
+  const described = { ...plan(4) };
+  described.questions = described.questions.map((q, i) => ({ ...q, section: ["A, Three multiple-choice parts, labelled (a), (c)", "A, Short answer questions", "B, Extended response", "B, Extended response, 10 marks"][i] }));
+  let result;
+  for (let i = 0; i < 30 && !result; i++) {
+    h.current.invocationId = String(i);
+    const callAi = h.caller(fakeProvider(described, []));
+    result = await generatePlannedResource({ job: h.job(), request: { model: "gpt-test", userMessage: "Write a paper for a 90-minute sitting. Algebra; Geometry.", systemPrompt: "" }, callAi })
+      .catch((err) => { if (err.code === "RESOURCE_STAGE_YIELD") return null; throw err; });
+  }
+  assert.ok(result, "the paper was delivered");
+  assert.deepEqual(result.parsed.sections.map((s) => [s.title, s.questions.map((q) => q.number)]), [["Section A", [1, 2]], ["Section B", [3, 4]]]);
+});
+
+it("shows every answer batch and later question batch the paper's full stimulus (RES-91)", async () => {
+  const h = harness({ resourceType: "practice-paper", year: "8", subject: "english", answerMode: "worked", customPrompt: "Write a Year 8 English paper for a 60-minute sitting." });
+  const englishPlan = { ...plan(12), topics: [{ name: "Reading", evidence: "English" }, { name: "Writing", evidence: "English" }] };
+  englishPlan.questions = englishPlan.questions.map((q) => ({ ...q, topic: q.number <= 6 ? "Reading" : "Writing", section: q.number <= 6 ? "Section A: Reading" : "Section B: Writing" }));
+  const stimulus = [
+    { title: "The Adventures of Tom Sawyer", author: "Mark Twain", source: "Project Gutenberg", body: "Tom appeared on the sidewalk with a bucket of whitewash." },
+    { title: "Before the red light", author: null, source: null, body: "Leon kept going after the mistake, and Asha slid the page back to him." },
+    { title: "Exam rooms", author: null, source: null, body: "Students in the quiet room are supervised for the whole trial." },
+  ];
+  const solutionMessages = [];
+  const questionMessages = [];
+  let blindAnswerSent = false;
+  const provider = async (req) => {
+    if (req.systemPrompt.startsWith("Plan an educational")) return { parsed: englishPlan, provider: "openai" };
+    if (req.systemPrompt.startsWith("Independently audit")) {
+      const parsed = JSON.parse(req.userMessage.split("GENERATED RESOURCE TO CHECK: ")[1]);
+      return { parsed: { scopePass: true, difficultyPass: true, issues: [], questions: parsed.sections.flatMap((s) => s.questions).map((q) => ({ number: q.number, coveredSourceIds: [], estimatedMinutes: 4 })) } };
+    }
+    const specs = req.userMessage.match(/SAVED PLAN .*?: (\[.*\])\nGenerate/);
+    if (specs) {
+      questionMessages.push(req.userMessage);
+      const questions = JSON.parse(specs[1]).map((q) => ({ number: q.number, marks: q.marks, stem: `Explain how Text ${(q.number % 3) + 1} shows character, question ${q.number}`, type: "short-answer", options: null, parts: null }));
+      const first = !req.userMessage.includes("FINAL STIMULUS");
+      return { parsed: { title: "Practice", subject: "english", year: 8, totalMarks: 2 * questions.length, timeAllowed: "60 minutes", stimulus: first ? stimulus : null, sections: [{ title: "batch", questions }], markingGuide: [] }, provider: "openai" };
+    }
+    solutionMessages.push(req.userMessage);
+    const questions = req.userMessage.split("\n").map((line) => { try { return JSON.parse(line); } catch { return null; } })
+      .find((rows) => Array.isArray(rows) && rows[0]?.stem);
+    const blind = !blindAnswerSent && questions.some((q) => q.number === 3);
+    if (blind) blindAnswerSent = true;
+    return { parsed: { markingGuide: questions.map((q) => ({ questionNumber: q.number, partLabel: null, criteria: "Explains with evidence", marks: q.marks,
+      response: blind && q.number === 3 ? "Cannot determine from the supplied material: Text 2 is missing." : "Leon keeps going after his mistake (Text 2)." })) }, provider: "openai" };
+  };
+  let result;
+  for (let i = 0; i < 40 && !result; i++) {
+    h.current.invocationId = String(i);
+    result = await generatePlannedResource({ job: h.job(), hasStimulus: true, request: { model: "gpt-test", userMessage: "Write a Year 8 English paper for a 60-minute sitting.\n\nText 1:\nTom Sawyer", systemPrompt: "" }, callAi: h.caller(provider) })
+      .catch((err) => { if (err.code === "RESOURCE_STAGE_YIELD") return null; throw err; });
+  }
+  assert.ok(result, "the paper was delivered");
+  assert.ok(solutionMessages.length >= 3);
+  for (const message of solutionMessages) {
+    assert.match(message, /FINAL STIMULUS/);
+    assert.match(message, /Leon kept going/);
+    assert.match(message, /quiet room/);
+  }
+  const later = questionMessages.filter((m) => !/"number":1,/.test(m.match(/SAVED PLAN .*?: (\[.*\])/)[1]));
+  assert.ok(later.length >= 2);
+  for (const message of later) assert.match(message, /FINAL STIMULUS[\s\S]*Set "stimulus" to null/);
+  assert.ok(solutionMessages.some((m) => /answer_claims_text_missing: Q3/.test(m)), "the retry told the model what was wrong");
+  assert.deepEqual(result.parsed.stimulus.map((s) => s.title), stimulus.map((s) => s.title));
+  assert.equal(result.parsed.markingGuide.length, 12);
+  assert.ok(result.parsed.markingGuide.every((row) => !/missing/i.test(row.response)));
+});

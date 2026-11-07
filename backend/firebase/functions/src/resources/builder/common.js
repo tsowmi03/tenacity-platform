@@ -379,11 +379,23 @@ function answerLabel(answer) {
   return partLabel ? `Q${number}(${partLabel})` : `Q${number}`;
 }
 
+// RES-90. The model sometimes letters its own options ("A. Fear"), and the
+// builder letters them again, which printed "A. A. Fear". Strip a leading
+// label only when it is the letter this position gets, so an option that
+// starts with a word ("A dog barks") or a different letter is left alone.
+function optionText(option, index) {
+  const text = String(option ?? "");
+  const expected = String.fromCharCode(65 + index);
+  const match = text.match(/^\s*\(?([A-Za-z])(?:[.):]|\s+[-–])(?:\s+|$)/);
+  if (!match || match[1].toUpperCase() !== expected) return text;
+  return text.slice(match[0].length);
+}
+
 function multipleChoiceOptions(question) {
   const options = asArray(question?.options);
   return options.map((option, index) => {
     const label = String.fromCharCode(65 + index);
-    return paragraph(`${label}. ${option}`, {
+    return paragraph(`${label}. ${optionText(option, index)}`, {
       indent: { left: 360 },
       keepNext: true,
       spacing: { after: 60 },
@@ -414,7 +426,7 @@ function stemItems(stem, marks, render, { before, after, indent }) {
 function optionItems(question) {
   return asArray(question?.options).map((option, index) => textItem({
     render: () => [multipleChoiceOptions(question)[index]],
-    estimate: (width) => estimateTextHeight(option, width, { after: 60, indent: 360, extraChars: 3 }),
+    estimate: (width) => estimateTextHeight(optionText(option, index), width, { after: 60, indent: 360, extraChars: 3 }),
   }));
 }
 
@@ -771,4 +783,5 @@ module.exports = {
   makeSectionHeading,
   makeShadedBox,
   makeSubHeading,
+  optionText,
 };

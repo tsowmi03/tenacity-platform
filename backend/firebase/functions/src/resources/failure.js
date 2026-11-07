@@ -18,6 +18,15 @@ function clampDetail(text) {
     : trimmed;
 }
 
+// RES-50. Firestore refuses a document field over 1 MiB with
+// `INVALID_ARGUMENT: The value of property "generatedJson" is longer than
+// 1048487 bytes`. That is a database limit, not the model: it was being logged
+// as MODEL_FAILURE and offered to the backup model, which saves the same size.
+const STORAGE_LIMIT_PATTERN = /is longer than \d+ bytes|exceeds the maximum allowed size|maximum entity size|request payload size exceeds/i;
+function isStorageLimitError(err) {
+  return STORAGE_LIMIT_PATTERN.test(rawMessage(err));
+}
+
 function statusOf(err) {
   const status = err?.status ?? err?.statusCode ?? err?.response?.status;
   return Number.isFinite(Number(status)) ? Number(status) : null;
@@ -40,6 +49,15 @@ function describeResourceFailure(err) {
   const detail = clampDetail(raw);
 
   if (err?.resourceControl) return { message: raw, detail: null };
+
+  if (isStorageLimitError(err)) {
+    return {
+      message:
+        "This resource was too large to save. Press Retry — if it keeps happening, " +
+        "split the request into smaller resources.",
+      detail,
+    };
+  }
 
   // A diagram the question depends on could not be rendered.
   if (isDiagramRenderError(err) && err?.diagramRequired !== false) {
@@ -179,6 +197,7 @@ function resourceFailureReasonCode(err) {
   const raw = rawMessage(err).toLowerCase();
   const status = statusOf(err);
   const name = String(err?.name || "");
+  if (isStorageLimitError(err)) return "STORAGE_LIMIT";
   if (err?.refusal === true || err?.stopReason === "refusal") return "REFUSAL";
   if (err?.stopReason === "max_tokens" || raw.includes("truncated")) return "TOKEN_TRUNCATION";
   if (isDiagramRenderError(err) && err?.diagramRequired !== false) return "REQUIRED_DIAGRAM";
@@ -208,6 +227,7 @@ function classifyResourceFailure(err) {
   const definitelyNotModelFailure =
     err?.name === "AbortError" ||
     Boolean(err?.resourceInfrastructure) ||
+    reasonCode === "STORAGE_LIMIT" ||
     raw.includes("no such object") ||
     isFileExtractionContext(raw) ||
     /firestore|storage|docx|preview|pdf/.test(code);
@@ -235,5 +255,6 @@ function classifyResourceFailure(err) {
 module.exports = {
   classifyResourceFailure,
   describeResourceFailure,
+  isStorageLimitError,
   resourceFailureReasonCode,
 };
