@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-07 | [English resources with a photo build again, and a failed build no longer hangs at 99% (RES-94)](#2026-11-07--english-resources-with-a-photo-build-again-and-a-failed-build-no-longer-hangs-at-99-res-94) |
 | 2026-11-07 | [Live queue: steady progress bar, single ETA, no false "Queued" (RES-84)](#2026-11-07--live-queue-steady-progress-bar-single-eta-no-false-queued-res-84) |
 | 2026-11-06 | [Booklet polish: answer space by question type, headings kept with tables, criteria without answers (RES-20, RES-33, RES-48)](#2026-11-06--booklet-polish-answer-space-by-question-type-headings-kept-with-tables-criteria-without-answers-res-20-res-33-res-48) |
 | 2026-11-06 | [Textbook questions are no longer dropped over the writer's arithmetic (RES-82)](#2026-11-06--textbook-questions-are-no-longer-dropped-over-the-writers-arithmetic-res-82) |
@@ -227,6 +228,42 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-07 — English resources with a photo build again, and a failed build no longer hangs at 99% (RES-94)
+
+**What changed**
+- English resources with a sourced photo build again. Before the build, the
+  resource is copied so a failed attempt can be retried cleanly. That copy
+  went through JSON, which turned the photo's bytes (`image.buffer`) into a
+  5 MB array of numbers, and the build rejected it ("image.buffer must be a
+  Buffer"). The copy now keeps every Buffer as it is. Bank diagrams were
+  already protected.
+- The resource stored on the job never includes image bytes, so it stays far
+  under Firestore's 1 MiB field limit (24 KB for the paper that failed,
+  against 5 MB).
+- A failure is always recorded. If a raw response is over the limit, it is
+  left off rather than making Firestore refuse the whole write. Before, the
+  job was never marked failed: it sat "processing" at 99% until its lease
+  ran out, then repeated, up to three times.
+- A planned job whose build rejects its content no longer switches to the
+  backup model. The backup reuses the same saved stages, so it can only
+  rebuild the same content and fail again. The job fails straight away, and
+  Retry discards the saved stages and generates afresh. Older jobs still
+  fail over.
+
+**Why:** A Year 9 English practice paper with a protest photo hung at 99%
+"Building the PDF". The same fault failed an English booklet with a photo on
+21 October.
+
+**Verification:** The stuck paper's own saved stages were replayed locally
+with no AI calls. Before the fix it failed with the error above. After it,
+the paper builds, with the photo embedded in the DOCX. Regression tests
+cover the copy, the stored JSON, the oversized failure write and the
+failover rule.
+
+**Status:** Live. Merged; Functions deployed to production.
 
 ---
 

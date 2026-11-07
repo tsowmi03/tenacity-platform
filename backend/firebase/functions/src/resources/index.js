@@ -1368,6 +1368,15 @@ function outputPathForJob(jobId, outputFileName, attemptId = null) {
   return `resources/output/${jobId}/${attemptPrefix}${outputFileName}`;
 }
 
+// RES-94. Firestore refuses a whole write when one field is over 1 MiB. A
+// failure write carrying an oversized raw response was refused, so the job was
+// never marked failed and sat "processing" at 99% until its lease expired.
+const MAX_STORED_JSON_BYTES = 900_000;
+function storableGeneratedJson(raw) {
+  if (typeof raw !== "string") return raw ?? null;
+  return Buffer.byteLength(raw, "utf8") <= MAX_STORED_JSON_BYTES ? raw : null;
+}
+
 function cloneGeneratedResource(resource) {
   // Bank diagrams (RES-60) carry PNG bytes, which a plain JSON copy would turn
   // into an array of numbers.
@@ -1597,7 +1606,7 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     // The exact JSON the DOCX was built from: after answer verification,
     // omitted diagrams and maths repairs. Revisions and repairs re-read it,
     // so it must match what the tutor downloaded.
-    generatedJson: JSON.stringify(builtResource, withoutSourceImageBytes),
+    generatedJson: storableGeneratedJson(JSON.stringify(builtResource, withoutSourceImageBytes)),
     extractedTopics: extractJobTopics(parsed),
     warnings: [...reviewWarnings, ...warnings],
     ...(usesPlannedGeneration(job) || reviewWarnings.length || reviewStatus !== "passed" ? { reviewStatus: reviewStatus === "draft" ? "draft" : reviewWarnings.length ? "warnings" : "passed", contentReview } : {}),
@@ -3821,7 +3830,7 @@ async function runQueueForTutor(createdBy, deps) {
             // A parse/schema failure can hand off to repair after consuming this
             // invocation's call. Preserve that repair input across the yield.
             ...(job.generatedJson ? {
-              generatedJson: job.generatedJson,
+              generatedJson: storableGeneratedJson(job.generatedJson),
               lastError: job.error || job.lastError || null,
               lastErrorCode: job.errorCode || job.lastErrorCode || null,
               repairMode: job.repairMode || null,
@@ -3861,7 +3870,12 @@ async function runQueueForTutor(createdBy, deps) {
         continue;
       }
 
-      if (deps.enableFailover !== false && !err?.resourceControl) {
+      // RES-94. A planned (v1) job's saved stages are reused whatever the
+      // model, so after a validation failure in the build the backup rebuilds
+      // the same content and fails the same way. Fail now; Retry discards the
+      // saved stages after a content failure and generates afresh.
+      const replaysSameContent = job.generationVersion === 1 && classifyResourceFailure(err).reasonCode === "SCHEMA_INVALID";
+      if (deps.enableFailover !== false && !err?.resourceControl && !replaysSameContent) {
         const queued = await queueResourceFallback({
           db,
           storage,
@@ -3907,7 +3921,8 @@ async function runQueueForTutor(createdBy, deps) {
         ],
       };
       if (err?.rawAiText && !err?.resourceControl) {
-        patch.generatedJson = err.rawAiText;
+        patch.generatedJson = storableGeneratedJson(err.rawAiText);
+        if (!patch.generatedJson) resourceEvent(job, "failure.raw_output_dropped", { reason: "over_firestore_field_limit" }, "warn");
       }
       // Always written, never only set: these describe the generatedJson this
       // patch stores, so a later attempt that failed some other way must clear

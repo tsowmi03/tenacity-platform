@@ -21,10 +21,31 @@ function walkSourceImages(node, visit) {
   for (const value of Object.values(node)) walkSourceImages(value, visit);
 }
 
-/** JSON.stringify replacer that leaves a source image's bytes out. */
+/**
+ * JSON.stringify replacer that leaves image bytes out: a bank diagram's
+ * `image` and, since RES-94, any other Buffer (an English stimulus photo keeps
+ * its bytes in `image.buffer`). JSON.stringify hands the replacer a Buffer's
+ * toJSON() form, { type: "Buffer", data: [...] }; left in, one photo made the
+ * stored resource 5 MB, over Firestore's 1 MiB field limit.
+ */
+function isSerialisedBuffer(value) {
+  return Boolean(value) && (Buffer.isBuffer(value) || (value.type === "Buffer" && Array.isArray(value.data)));
+}
 function withoutSourceImageBytes(key, value) {
   if (key === "image" && value && (Buffer.isBuffer(value) || value.type === "Buffer")) return undefined;
+  if (isSerialisedBuffer(value)) return undefined;
   return value;
+}
+
+/** Deep copy of plain JSON-like data that keeps every Buffer as a Buffer. */
+function cloneKeepingBuffers(node) {
+  if (Buffer.isBuffer(node)) return node;
+  if (Array.isArray(node)) return node.map(cloneKeepingBuffers);
+  if (!node || typeof node !== "object") return node;
+  if (typeof node.toJSON === "function") return JSON.parse(JSON.stringify(node));
+  const copy = {};
+  for (const [key, value] of Object.entries(node)) if (value !== undefined) copy[key] = cloneKeepingBuffers(value);
+  return copy;
 }
 
 function sourceImagesIn(resource) {
@@ -43,11 +64,14 @@ function attachSourceImages(resource, images) {
   return resource;
 }
 
-/** A deep copy that keeps each source image's bytes as a Buffer. */
+/**
+ * A deep copy that keeps image bytes as Buffers: bank diagrams' and, since
+ * RES-94, a sourced stimulus photo's (`image.buffer`), which a JSON copy turned
+ * into an array of numbers so every English resource with a photo failed its
+ * build.
+ */
 function cloneWithSourceImages(resource) {
-  const images = sourceImagesIn(resource);
-  const copy = JSON.parse(JSON.stringify(resource, withoutSourceImageBytes));
-  return attachSourceImages(copy, images);
+  return cloneKeepingBuffers(resource);
 }
 
 /** Downloads the bytes of every source image that does not have them yet. */
@@ -77,6 +101,7 @@ function pngSize(buffer) {
 module.exports = {
   SOURCE_IMAGE,
   attachSourceImages,
+  cloneKeepingBuffers,
   cloneWithSourceImages,
   loadSourceImages,
   pngSize,
