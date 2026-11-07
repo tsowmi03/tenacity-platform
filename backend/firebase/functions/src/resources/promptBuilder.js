@@ -116,7 +116,7 @@ function diagramFields(subject) {
       "answerSpace": "lines" | "blank" ("lines" when the student writes working: calculations, algebra, equations, explanations; "blank" when they draw or write on the page itself: plotting or sketching a graph, a construction or geometric drawing, completing a table or diagram. Multiple choice gets no space either way),`
     : `
       "diagram": null,
-      "diagramRequired": boolean,`;
+      "diagramRequired": false (always false; stimulus images are printed in the stimulus booklet, not attached to questions),`;
 }
 
 function questionSchemaText(subject) {
@@ -126,7 +126,7 @@ function questionSchemaText(subject) {
       "number": number,
       "stem": string,
       "type": ${type},
-      "options": null | string[] (required when "type" is "multiple-choice", otherwise null),
+      "options": null | string[] (at least 2 real answer choices, required when "type" is "multiple-choice", otherwise null; when the question has parts, put the choices on each part and set the question's own "options" to null and "type" to "short-answer"),
       "marks": positive integer,${diagram}
       "parts": null | [{ "label": string (single letter only, no parentheses — use "a" not "(a)"), "stem": string, "type": ${type}, "options": null | string[] (required when "type" is "multiple-choice", otherwise null), "marks": positive integer,${diagram.replace(/\n      /g, "\n        ")} }]
     }`;

@@ -21,6 +21,7 @@ const {
   includesWorking,
 } = require("./answerMode");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
+const { normaliseQuestionShape } = require("./builder/questionShape");
 const { isDiagramRenderError, optionalDiagramOmittedWarning } = require("./builder/diagrams");
 const { classifyResourceFailure, describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
@@ -1423,6 +1424,10 @@ async function buildDocxWithDiagramReliability({
   repairMath = null,
 }) {
   const resource = cloneGeneratedResource(parsed);
+  const shapeFixes = normaliseQuestionShape(resource, { subject: options?.subject });
+  if (shapeFixes.placeholderOptions || shapeFixes.englishDiagramFlags) {
+    logger.info("Normalised question shape before build", shapeFixes);
+  }
   const warnings = [];
   let mathRepairRounds = 0;
   let mathFieldsRepaired = 0;
