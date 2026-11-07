@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-07 | [Two model slips no longer fail a finished paper (RES-51)](#2026-11-07--two-model-slips-no-longer-fail-a-finished-paper-res-51) |
 | 2026-11-07 | [A stopped plan says why, e.g. a subject mismatch (RES-51)](#2026-11-07--a-stopped-plan-says-why-eg-a-subject-mismatch-res-51) |
 | 2026-11-07 | [English papers: answers see every text, options lettered once, clean section headings (RES-91, RES-90, RES-50)](#2026-11-07--english-papers-answers-see-every-text-options-lettered-once-clean-section-headings-res-91-res-90-res-50) |
 | 2026-11-07 | [English resources with a photo build again, and a failed build no longer hangs at 99% (RES-94)](#2026-11-07--english-resources-with-a-photo-build-again-and-a-failed-build-no-longer-hangs-at-99-res-94) |
@@ -230,6 +231,28 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-07 — Two model slips no longer fail a finished paper (RES-51)
+
+**What changed**
+- A grouped question whose choices are on its parts (for example "Question 1,
+  parts (a)–(d)") no longer fails when the model gives the question itself a
+  single placeholder option. That option is dropped before the document is
+  built.
+- On English resources, a question marked as needing a diagram is no longer
+  rejected. English questions never get diagrams; the model set the flag
+  because a writing task used a stimulus image, which is printed in the
+  stimulus booklet. Maths still fails when a required diagram is missing.
+- The generation prompt now spells out both rules, so the model should make
+  these slips less often.
+
+**Why:** A Year 7 English practice paper failed on 7 Nov with "didn't match the
+required format" after all six questions were written. It had both problems,
+and Retry would have regenerated the whole paper from scratch.
+
+**Status:** Live. Functions deployed with RES-51.
 
 ---
 
