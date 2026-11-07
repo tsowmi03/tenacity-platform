@@ -318,6 +318,42 @@ describe("the Functions deploy batches the whole inventory", () => {
   });
 });
 
+describe("the Functions deploy survives the transient list error (TP-45)", () => {
+  const { source } = templates.functions;
+  const commands = source
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+
+  it("runs every firebase deploy and functions:list through the retry helper", () => {
+    assert.doesNotMatch(commands, /\bfirebase deploy\b/);
+    assert.doesNotMatch(commands, /\bfirebase functions:list\b/);
+    assert.equal(
+      (commands.match(/source scripts\/ci\/firebase-retry\.sh/g) ?? []).length,
+      3
+    );
+    // Pre-deploy inventory plus one per batch.
+    assert.equal((commands.match(/firebase_functions_list "/g) ?? []).length, 2);
+    // Dry run, forced dry run, real deploy.
+    assert.equal((commands.match(/firebase_deploy "/g) ?? []).length, 3);
+  });
+
+  it("pauses between batches, not before the first", () => {
+    assert.match(
+      commands,
+      /if \[\[ "\$batch_number" -gt 1 \]\]; then\n\s+sleep "\$batch_pause_seconds"/
+    );
+  });
+
+  it("still stops on a failed batch and verifies the inventory after each", () => {
+    assert.match(
+      commands,
+      /if \[\[ "\$deploy_status" -ne 0 \|\| "\$inventory_status" -ne 0 \|\| "\$verification_status" -ne 0 \]\]; then/
+    );
+    assert.match(commands, /--report "\$reports_dir\/verified-after-batch-\$\{batch_number\}\.json"/);
+  });
+});
+
 describe("the production orchestrator", () => {
   const orchestrator = readFileSync(
     `${templateDirectory}/production-deploy.yml`,
