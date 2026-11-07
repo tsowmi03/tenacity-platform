@@ -163,6 +163,17 @@ function titleFor(extmetadata, pageTitle) {
   return stem;
 }
 
+// RES-96. The archive's own description of the image, so the stages that
+// write questions and model answers know what it shows (they never see the
+// picture). Clamped: some Commons descriptions run to whole catalogue records.
+const DESCRIPTION_MAX_CHARS = 500;
+function descriptionFor(extmetadata) {
+  const text = stripMarkup(extmetadata?.ImageDescription?.value).replace(/\s+/g, " ").trim();
+  if (text.length <= DESCRIPTION_MAX_CHARS) return text;
+  const cut = text.slice(0, DESCRIPTION_MAX_CHARS);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 1)).trim()}…`;
+}
+
 function dateFor(extmetadata) {
   const raw = stripMarkup(extmetadata?.DateTimeOriginal?.value);
   // Commons dates carry Wikidata qualifier junk ("1915date QS:P571,+1915-...").
@@ -208,6 +219,7 @@ function candidateFrom(page) {
     licence,
     creator: creatorFor(info.extmetadata),
     date: dateFor(info.extmetadata),
+    description: descriptionFor(info.extmetadata),
     cluster: clusterKey(page.title),
   };
 }
@@ -292,7 +304,7 @@ async function imageInfoFor(titles) {
         iiprop: "url|extmetadata|size|mime",
         iiurlwidth: String(TARGET_WIDTH),
         iiextmetadatafilter:
-          "LicenseShortName|License|LicenseUrl|Artist|Credit|DateTimeOriginal|Restrictions|ObjectName",
+          "LicenseShortName|License|LicenseUrl|Artist|Credit|DateTimeOriginal|Restrictions|ObjectName|ImageDescription",
       }),
       { accept: "application/json" }
     );
@@ -408,6 +420,7 @@ async function sourceCommonsImage({
       title: chosen.displayTitle,
       creator: chosen.creator,
       date: chosen.date,
+      description: chosen.description || "",
       licence: chosen.licence.name,
       licenceUrl: chosen.licence.url,
       cluster: chosen.cluster,

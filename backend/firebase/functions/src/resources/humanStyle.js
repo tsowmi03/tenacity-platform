@@ -17,7 +17,9 @@
 // naming the resource author invited the model to credit its own writing
 // everywhere, including on maths word problems, which need no attribution at
 // all. This caption is written by the renderer, never by the model.
-const UNATTRIBUTED_PASSAGE_CAPTION = "Original passage";
+// RES-100: "Tenacity Original", so a tutor can tell a generated text from a
+// sourced one at a glance.
+const UNATTRIBUTED_PASSAGE_CAPTION = "Tenacity Original";
 
 const HUMAN_WRITING_RULES = `WRITING STYLE — STRICT. Every word of generated text (titles, question stems, passages, explanations, marking guides, notes) must read as if written by an experienced human teacher. These rules are mandatory.
 

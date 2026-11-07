@@ -13,6 +13,8 @@ const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSH
 const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
 const { canKeepDraftAfterReview, unavailableReviewWarning } = require("./contentVerification");
 const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
+const { PUBLIC_DOMAIN, normaliseStimulusAttribution, removeUnusedStimulusTexts } = require("./stimulusIntegrity");
+const { stripStructureGuidance } = require("./englishGuidance");
 const { countResourceQuestions, noteProgress, phaseDurations, recordTimingSample } = require("./progressModel");
 const { callAiForResource } = require("./aiClient");
 const {
@@ -1804,6 +1806,39 @@ async function maybeSourcePassageLogged({
 }
 
 /**
+ * Settle what the model cannot be trusted with in an English resource, after
+ * the verified sources are in place. Returns whether anything changed.
+ *  - RES-100: a text the pipeline did not verify prints as "Tenacity Original"
+ *    and cannot carry an author or source the model typed.
+ *  - RES-98: questions state the task only; structure coaching the model
+ *    added anyway is removed.
+ *  - RES-88: texts no question uses are removed and the rest renumbered.
+ *    Topic booklets place their sources per sub-topic and are left alone.
+ */
+function applyEnglishIntegrity(job, parsed) {
+  if (!parsed || typeof parsed !== "object") return false;
+  let changed = false;
+  if (Array.isArray(parsed.stimulus)) {
+    const { originals } = normaliseStimulusAttribution(parsed.stimulus);
+    if (originals) changed = true;
+  }
+  const guidance = stripStructureGuidance(parsed, job);
+  if (guidance.removed) {
+    changed = true;
+    resourceEvent(job, "questions.guidance_removed", { sentences: guidance.removed, questions: guidance.questions });
+  }
+  if (job.resourceType !== "topic-booklet" && Array.isArray(parsed.stimulus)) {
+    const unused = removeUnusedStimulusTexts(parsed);
+    if (unused.removed.length) {
+      changed = true;
+      resourceEvent(job, "stimulus.unused_removed", { removed: unused.removed.length, renumbered: Boolean(unused.renumbered) });
+      logger.info("[resource] removed unused stimulus texts", { jobId: job.jobId, removed: unused.removed });
+    }
+  }
+  return changed;
+}
+
+/**
  * Overwrite the generated passage fields with the verified source bytes, so the
  * rendered passage is provably the fetched text rather than the model's retype.
  */
@@ -1919,6 +1954,10 @@ async function maybeSourceStimulusSetLogged({
         texts: [],
         visuals: [],
         planner: null,
+        // RES-96. Without a plan nothing says the resource needs no texts, so
+        // the generator may write its own (labelled "Tenacity Original") in
+        // the stimulus booklet rather than inside a question stem.
+        originalTextsAllowed: true,
         warning: "Stimulus planning failed; used model-written text.",
       };
     }
@@ -2013,12 +2052,18 @@ async function maybeSourceStimulusSetLogged({
       ? null
       : texts.length
         ? "Some planned stimulus texts could not be verified and were replaced with model-written text."
-        : "No planned stimulus text could be verified; the resource carries only its sourced image(s).";
+        : "No planned stimulus text could be verified, so the reading texts are original (labelled Tenacity Original).";
     return {
       used: true,
       texts,
       visuals,
       planner,
+      // RES-96. The resource needs reading texts and none could be verified.
+      // Withholding the stimulus field did not stop the generator writing
+      // them: it put the passage inside Question 1's stem, where later stages
+      // could not see it and no source line was printed. It now writes them
+      // into the booklet as originals instead.
+      originalTextsAllowed: texts.length === 0 && plannedTexts.length > 0,
       ...(warning ? { warning } : {}),
     };
   }
@@ -2027,15 +2072,27 @@ async function maybeSourceStimulusSetLogged({
     texts: [],
     visuals: [],
     planner,
-    warning: "Planned stimulus texts could not be verified; used model-written text.",
+    originalTextsAllowed: plannedTexts.length > 0,
+    warning: "Planned stimulus texts could not be verified, so the reading texts are original (labelled Tenacity Original).",
   };
+}
+
+// Where a verified text came from, as printed: the archive and the edition
+// ("Project Gutenberg: The Adventures of Tom Sawyer, Complete"). Wikisource's
+// name already carries both.
+function sourcedTextSource(item) {
+  const site = String(item?.source || "").trim();
+  const name = String(item?.sourceName || "").trim();
+  if (!name) return site;
+  if (!site || name.toLowerCase().includes(site.toLowerCase())) return name;
+  return `${site}: ${name}`;
 }
 
 // An excerpted work is presented as an extract, matching exam-booklet
 // convention ("Extract from Great Expectations") and staying honest about what
 // the student is reading.
 function stimulusDisplayTitle(sourced) {
-  const title = sourced.selection?.title || sourced.title || "";
+  const title = sourced.title || sourced.selection?.title || "";
   return sourced.excerpted && title ? `Extract from ${title}` : title;
 }
 
@@ -2061,7 +2118,8 @@ function applySourcedStimulus(parsed, texts, visuals = []) {
     textType: isPoem(item.selection) ? "poem" : "prose",
     title: stimulusDisplayTitle(item),
     author: item.author || item.selection?.author || "",
-    source: item.sourceName || item.source || "",
+    source: sourcedTextSource(item),
+    licence: PUBLIC_DOMAIN,
     body: item.passage,
     // Verified source bytes keep their original punctuation when rendered
     // (exempt from the de-AI backstop). Model-written extras below do not.
@@ -2086,6 +2144,8 @@ function applySourcedStimulus(parsed, texts, visuals = []) {
     licence: item.licence,
     licenceUrl: item.licenceUrl,
     source: item.sourceName || item.source || "",
+    // The archive's description, for the answer stages (RES-96). Not printed.
+    description: item.description || "",
     // The planner's task is carried for the generator's benefit, not the
     // page's: it tells the model what the image is for so its questions match.
     // It is deliberately not rendered under the image - the questions ask.
@@ -2609,11 +2669,15 @@ async function runGenerationPipelineLogged(job, deps) {
   // texts this guard was added to prevent. The model is instead told how many
   // images the booklet will carry, so it can set questions against "Image 1"
   // without ever authoring the images themselves.
-  const hasStimulus = stimulusSourcing.used && stimulusSourcing.texts.length > 0;
+  const hasVerifiedTexts = stimulusSourcing.used && stimulusSourcing.texts.length > 0;
+  // A topic booklet places verified sources per sub-topic by number, so with
+  // none verified there is nothing to place and it keeps its old behaviour.
+  const hasStimulus = hasVerifiedTexts ||
+    (Boolean(stimulusSourcing.originalTextsAllowed) && job.resourceType !== "topic-booklet");
   const stimulusImages = stimulusSourcing.used
     ? stimulusSourcing.visuals
         .filter((item) => item?.image)
-        .map((item) => ({ purpose: item.selection?.purpose, task: item.selection?.task }))
+        .map((item) => ({ purpose: item.selection?.purpose, task: item.selection?.task, title: item.title || "", description: item.description || "" }))
     : [];
   const systemPrompt = buildSystemPrompt(job.resourceType, {
     year: job.year,
@@ -2818,6 +2882,9 @@ async function runGenerationPipelineLogged(job, deps) {
     // Revisions and repair attempts re-read generatedJson, not the DOCX. Store
     // the hydrated verified text and resolved per-topic excerpts rather than
     // the model's selector-only draft, or a later edit would lose its sources.
+    raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
+  }
+  if (isEnglishSubject(job.subject) && applyEnglishIntegrity(job, parsed)) {
     raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
   }
 

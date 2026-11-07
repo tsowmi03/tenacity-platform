@@ -363,7 +363,7 @@ function stimulusSchema() {
 }
 
 function stimulusInstruction() {
-  return `Reading stimulus: if this resource presents one or more reading texts for the student to read and respond to, put each text in the top-level "stimulus" array as a separate entry — never inside a question stem, sub-topic, or section body — and refer to them as "Text 1", "Text 2", etc. Format each "body" with real line breaks, not one run-on block: separate prose paragraphs with a blank line (\\n\\n); for poetry put each line on its own line (\\n) with a blank line between stanzas. Follow the SOURCES AND AUTHORSHIP rules: set "author" to null for any text you write yourself, or to the real author (with "source" naming the work and URL) for a public-domain text. If the resource is purely skills-based and presents no reading text, omit "stimulus".
+  return `Reading stimulus: if this resource presents one or more reading texts for the student to read and respond to, put each text in the top-level "stimulus" array as a separate entry — never inside a question stem, sub-topic, or section body — and refer to them as "Text 1", "Text 2", etc. Every question that uses a text names it ("In Text 1, ..."); never write a lead-in that covers a range of questions ("answer Questions 1 to 5"). Format each "body" with real line breaks, not one run-on block: separate prose paragraphs with a blank line (\\n\\n); for poetry put each line on its own line (\\n) with a blank line between stanzas. Only the verified public-domain texts supplied in the request carry an author and source. Any other text must be your own original writing, never a published work reproduced or adapted from memory: set its "author" and "source" to null, and it is labelled as an original text. Include only texts the questions use. If the resource is purely skills-based and presents no reading text, omit "stimulus".
 `;
 }
 
@@ -415,11 +415,15 @@ function stimulusImageInstruction(subject, stimulusImages) {
       ? "a writing prompt — the student writes from it, and is not asked to analyse the image itself"
       : "a visual text to analyse — composition, salience, colour, symbolism, and any words in the image";
     const task = image?.task ? ` Intended task: ${image.task}` : "";
-    return `- "Image ${index + 1}": ${purpose}.${task}`;
+    // RES-96. The archive's title and description, so questions and model
+    // answers can be about this image rather than any image of its kind.
+    const title = image?.title ? ` Archive title: "${image.title}".` : "";
+    const description = image?.description ? ` Archive description: "${image.description}".` : "";
+    return `- "Image ${index + 1}": ${purpose}.${task}${title}${description}`;
   });
-  return `Images in the stimulus booklet: this resource's stimulus booklet will also contain ${lines.length} sourced image(s), inserted after you write. Do NOT write them into "stimulus" and do NOT describe what they show — you have not seen them. Write questions that refer to them by label:
+  return `Images in the stimulus booklet: this resource's stimulus booklet will also contain ${lines.length} sourced image(s), inserted after you write. Do NOT write them into "stimulus" — you have not seen them. Write questions that refer to them by label:
 ${lines.join("\n")}
-Any question about an image must work for any suitable image of that kind: ask what the student can see and interpret, never assume a particular subject, colour or caption.
+Base anything you say about an image on its archive title and description; never invent a subject, colour, caption or detail they do not give. Where they give little, ask what the student can see and interpret.
 `;
 }
 
@@ -843,7 +847,7 @@ function usesEnglishGuidance(resourceType, subject) {
 // Title/Author/Source header lines for a sourced text, shared by the single-
 // passage and multi-text stimulus injection paths.
 function sourcedTextHeader(sourced) {
-  const baseTitle = sourced.selection?.title || sourced.title || "";
+  const baseTitle = sourced.title || sourced.selection?.title || "";
   // Excerpted works are presented as extracts, matching how the pipeline
   // labels them in the rendered booklet (see stimulusDisplayTitle).
   const title = sourced.excerpted && baseTitle ? `Extract from ${baseTitle}` : baseTitle;

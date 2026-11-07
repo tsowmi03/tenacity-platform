@@ -6,6 +6,7 @@ const { buildSystemPrompt } = require("./promptBuilder");
 const { sourceScope, validatePlannedCoverage, verifyPlannedContent } = require("./contentVerification");
 const { resourceEvent, resourceStage } = require("./resourceLog");
 const { noteProgress } = require("./progressModel");
+const { referencedTextNumbers } = require("./stimulusIntegrity");
 const obj = (properties) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
 const str = { type: "string" };
 const int = { type: "integer" };
@@ -13,7 +14,7 @@ const list = (items) => ({ type: "array", items });
 const PLAN_SCHEMA = obj({
   title: str, timeAllowed: str, clarification: str,
   topics: list(obj({ name: str, evidence: str })),
-  questions: list(obj({ number: int, topic: str, section: str, difficulty: str, marks: int, sourceIds: list(str), estimatedMinutes: { type: "number" } })),
+  questions: list(obj({ number: int, topic: str, section: str, difficulty: str, marks: int, focus: str, sourceIds: list(str), estimatedMinutes: { type: "number" } })),
 });
 
 // RES-90. A plan's `section` becomes a printed heading. The planner sometimes
@@ -183,7 +184,35 @@ function questionRows(parsed, type) {
   return type === "practice-paper" ? (parsed?.sections || []).flatMap((s) => s.questions || []) : parsed?.questions;
 }
 
-function validateQuestions(result, specs, type, prior = []) {
+// RES-96. "Read the prose extract below and answer Questions 1 to 5" was
+// wrong as soon as Question 6 also used the extract, and a range in a stem
+// goes stale whenever a batch or a revision changes the numbering. Each
+// question names the text it uses instead.
+const QUESTION_RANGE = /\bquestions\s+\d+\s*(?:to|-|–|through)\s*\d+\b/i;
+
+const isTextEntry = (entry) => entry && typeof entry === "object" && entry.kind !== "image";
+const sameText = (a, b) => {
+  const norm = (v) => String(v ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  return (norm(a.title) && norm(a.title) === norm(b.title)) || (norm(a.body) && norm(a.body) === norm(b.body));
+};
+// The texts a batch adds to the booklet: those in its "stimulus" that are not
+// already there (a batch that repeats the whole booklet adds only the rest).
+function newStimulusTexts(parsed, existing = []) {
+  return (Array.isArray(parsed?.stimulus) ? parsed.stimulus : [])
+    .filter(isTextEntry)
+    .filter((entry) => !existing.some((have) => sameText(have, entry)));
+}
+
+function questionTextReferences(rows) {
+  const strings = [];
+  for (const q of rows) {
+    strings.push(q.stem);
+    for (const part of q.parts || []) strings.push(part?.stem);
+  }
+  return referencedTextNumbers(strings.filter((v) => typeof v === "string"));
+}
+
+function validateQuestions(result, specs, type, prior = [], { english = false, existingTexts = null } = {}) {
   const rows = questionRows(result?.parsed, type);
   if (!Array.isArray(rows) || rows.length !== specs.length || rows.some((q, i) =>
     !q || q.number !== specs[i].number || q.marks !== specs[i].marks || (q.parts?.length && q.parts.reduce((n, p) => n + (Number(p.marks) || 0), 0) !== q.marks) || typeof q.stem !== "string" || !q.stem.trim())) {
@@ -191,6 +220,27 @@ function validateQuestions(result, specs, type, prior = []) {
   }
   const stems = [...prior, ...rows.map((q) => q.stem)].map((v) => v.toLowerCase().replace(/\s+/g, " ").trim());
   if (new Set(stems).size !== stems.length) throw controlError("RESOURCE_BATCH_INVALID", "Repeated questions were detected in a question batch. Retry this stage.");
+  // RES-96. A question may only name a text the booklet has. The first batch
+  // wrote the booklet from its own questions alone, so the speech that Q6-Q8
+  // were about was never written and their model answers said so. A batch
+  // that needs a text the booklet lacks now adds it (see stimulusNote).
+  if (existingTexts) {
+    const available = existingTexts.length + newStimulusTexts(result?.parsed, existingTexts).length;
+    const missing = rows.filter((q) => [...questionTextReferences([q])].some((n) => n > available));
+    if (missing.length) {
+      throw Object.assign(controlError("RESOURCE_BATCH_INVALID", "A question named a text that is not in the stimulus booklet. Retry this stage."), {
+        reason: `question_text_missing: Q${missing.map((q) => q.number).join(", Q")} named a text beyond Text ${available}, but the booklet has ${available} text(s); write that text into "stimulus" (numbered after the existing ones) or use a text the booklet has`,
+      });
+    }
+  }
+  if (english) {
+    const ranged = rows.filter((q) => QUESTION_RANGE.test(q.stem));
+    if (ranged.length) {
+      throw Object.assign(controlError("RESOURCE_BATCH_INVALID", "A question named a range of questions. Retry this stage."), {
+        reason: `question_range_lead_in: Q${ranged.map((q) => q.number).join(", Q")} named a range of questions ("answer Questions 1 to 5"); name the text the question uses ("In Text 1, ...") and nothing about other questions`,
+      });
+    }
+  }
 }
 
 // RES-91. An answer that says the text it needs is missing ("Cannot determine
@@ -200,9 +250,17 @@ function validateQuestions(result, specs, type, prior = []) {
 // Only a claim that a text ITSELF is absent counts. "The narrator's age cannot
 // be determined from the text" is a correct answer about a detail the passage
 // leaves out, and must pass.
-const MISSING_CONTEXT = /\b(?:text|passage|extract|stimulus|source|image)\s*\d*\s+(?:is|was|has been)\s+(?:missing|not (?:provided|supplied|included|given))(?=\s*(?:[.;:,)"]|$|from\b|in the (?:supplied|provided)))/i;
+// RES-96 widened it to the wordings that still got through: "The prose extract
+// about Amira and Toby has not been supplied", "Image 1 has not been supplied".
+// A few words may sit between the noun and the verb, and "has not been" counts
+// as well as "has been not".
+const MISSING_CONTEXT = /\b(?:text|passage|extract|stimulus|source|image|poem|speech|article)\b(?:\s+[^\s.;:]+){0,6}?\s+(?:is|was|were|are|has|have)\s+(?:been\s+)?(?:missing|not\s+(?:been\s+)?(?:provided|supplied|included|given|shown|available))(?=\s*(?:[.;:,)"]|$|from\b|here\b|in the (?:supplied|provided)|so\b|and\b))/i;
+// And the one that answered Q6-Q8 of the 8 Nov replay: "The speech's exact
+// opening is needed to identify the addressee…" in place of an answer.
+const NEEDS_CONTEXT = /\b(?:text|passage|extract|stimulus|source|image|poem|speech|article)\b(?:['’]s)?[^.;]{0,40}?\b(?:is|are)\s+(?:needed|required)\s+to\s+(?:identify|quote|answer|provide|explain|write|analyse|analyze|complete)\b/i;
 function answerClaimsMissingContext(row) {
-  return MISSING_CONTEXT.test(JSON.stringify(row ?? ""));
+  const text = JSON.stringify(row ?? "");
+  return MISSING_CONTEXT.test(text) || NEEDS_CONTEXT.test(text);
 }
 
 function validateAnswers(result, questions, answerKey) {
@@ -241,7 +299,7 @@ async function generatePlannedResource({ job, request, callAi, hasStimulus = fal
     userMessage: planMessage,
     systemPrompt: `Plan an educational resource; do not write questions or solutions. Return the supplied JSON schema.
 Resolve the tutor's exact scope and exclusions using the supplied references. Topics must each quote exact evidence from the user's message or references. A textbook title alone does not establish its chapter contents. If the topic list or exclusions cannot be established, return a non-empty clarification and empty topics/questions; never invent a contents list. If the request clearly belongs to a different subject than the selected subject (for example, an English reading or writing paper with maths selected), return a clarification and empty topics/questions. Write any clarification other than "SIZE_LIMIT" as one or two plain sentences addressed to the tutor that name exactly what is unclear or mismatched and what to change, e.g. "The prompt describes an English paper, but the subject is set to Maths. Change the subject to English or rewrite the prompt for maths."
-For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwise obey any requested total. For timed papers, allocate sections, progressively harder questions and marks that reasonably fit the sitting time. Use a reasonable number of main questions with labelled parts to combine related skills. topics may group by chapter; sourceIds track detailed coverage independently of the primary topic label. Aim for the sitting time with representative chapter coverage. If the coverage is ambitious, produce a usable plan and let the review flag the trade-off; do not return a clarification solely for workload or coverage concerns. Do not silently reduce scope to fit a limit: if the resolved total exceeds ${MAX_QUESTIONS}, set clarification to "SIZE_LIMIT" and leave questions empty. Use consecutive global numbers from 1; assign each a topic, section, difficulty and marks. section is the student-facing heading a question is printed under, shared by every question in that section, e.g. "Section A: Reading" or "Section B: Writing"; never describe the parts, type or labels of its questions there. Give every question sourceIds from the eligible reference inventory (multiple IDs allowed when the actual multipart question tests those skills), and a realistic positive estimatedMinutes. For chapter coverageMode, sample across every eligible chapter; do not force every subsection into a timed paper. For section coverageMode, aim to cover every requested ID. Balance chapter marks fairly. Do not merely attach IDs to questions that do not test them. Sum the question minutes to 75–100% of the requested sitting time; preserve the exact requested timeAllowed. Without coded references use an empty sourceIds array. Supply title and timeAllowed (empty for untimed worksheets). For a paper whose request names no sitting time, choose a realistic one for the year level and question count. clarification must be empty when the scope is resolved.`,
+For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwise obey any requested total. For timed papers, allocate sections, progressively harder questions and marks that reasonably fit the sitting time. Use a reasonable number of main questions with labelled parts to combine related skills. topics may group by chapter; sourceIds track detailed coverage independently of the primary topic label. Aim for the sitting time with representative chapter coverage. If the coverage is ambitious, produce a usable plan and let the review flag the trade-off; do not return a clarification solely for workload or coverage concerns. Do not silently reduce scope to fit a limit: if the resolved total exceeds ${MAX_QUESTIONS}, set clarification to "SIZE_LIMIT" and leave questions empty. Use consecutive global numbers from 1; assign each a topic, section, difficulty and marks. Give each question a "focus": one short phrase naming the specific skill it tests and, for a question on a reading text or image, which text or part of it (e.g. "inference about the narrator's feelings, Text 1 opening" or "effect of the speech's rhetorical questions"). No two questions may share a focus, and questions on the same text should draw on different parts of it. section is the student-facing heading a question is printed under, shared by every question in that section, e.g. "Section A: Reading" or "Section B: Writing"; never describe the parts, type or labels of its questions there. Give every question sourceIds from the eligible reference inventory (multiple IDs allowed when the actual multipart question tests those skills), and a realistic positive estimatedMinutes. For chapter coverageMode, sample across every eligible chapter; do not force every subsection into a timed paper. For section coverageMode, aim to cover every requested ID. Balance chapter marks fairly. Do not merely attach IDs to questions that do not test them. Sum the question minutes to 75–100% of the requested sitting time; preserve the exact requested timeAllowed. Without coded references use an empty sourceIds array. Supply title and timeAllowed (empty for untimed worksheets). For a paper whose request names no sitting time, choose a realistic one for the year level and question count. clarification must be empty when the scope is resolved.`,
   });
   validateStageResult({ parsed: modelPlan });
   const { plan, reassigned, added } = reconcilePlanTopics(modelPlan);
@@ -264,13 +322,38 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
   // to questions on Text 2 and Text 3 said the texts were missing. Every later
   // stage is now given the booklet exactly as the student will see it.
   let fixedStimulus = null;
+  const english = job.subject === "english";
+  // RES-96. Images are inserted after generation, so they are never in the
+  // model's own stimulus. Without them here, the answer stage was told only an
+  // image's caption and wrote "Image 1 has not been supplied" as the model
+  // plan. Each image is described from its archive record instead.
+  const imageNotes = (Array.isArray(stimulusImages) ? stimulusImages : []).map((image, i) => ({
+    image: i + 1,
+    label: `Image ${i + 1}`,
+    title: image?.title || "",
+    description: image?.description || "",
+    task: image?.task || "",
+  }));
   const stimulusNote = (forAnswers) => {
-    if (!fixedStimulus) return "";
-    const numbered = fixedStimulus.map((entry, i) => ({ text: i + 1, ...entry }));
+    const numbered = (fixedStimulus || []).map((entry, i) => ({ text: i + 1, ...entry }));
+    if (!numbered.length && !imageNotes.length) return "";
+    const images = imageNotes.length
+      ? `\nIMAGES in the stimulus booklet (you cannot see them; this is each one's archive title and description). ${forAnswers ? "Write the model answer or plan from what the image shows as described here; never say the image is missing or was not supplied." : "Refer to each by its label."}\n${JSON.stringify(imageNotes)}`
+      : "";
+    if (!numbered.length) return `\n\nFINAL STIMULUS${images}`;
     return forAnswers
-      ? `\n\nFINAL STIMULUS — every text in the student's stimulus booklet, numbered as the questions refer to them ("Text 1" is text 1). All of them are present: answer from these texts and quote them as evidence. Never say a text is missing.\n${JSON.stringify(numbered)}`
-      : `\n\nFINAL STIMULUS — the stimulus booklet is already written. Write these questions against these texts, referring to them by these numbers. Set "stimulus" to null in this response; do not write new texts.\n${JSON.stringify(numbered)}`;
+      ? `\n\nFINAL STIMULUS — every text in the student's stimulus booklet, numbered as the questions refer to them ("Text 1" is text 1). All of them are present: answer from these texts and quote them as evidence. Never say a text is missing.\n${JSON.stringify(numbered)}${images}`
+      : `\n\nFINAL STIMULUS — the stimulus booklet is already written. Write these questions against these texts, referring to them by these numbers. Set "stimulus" to null in this response unless a question in this batch needs a reading text the booklet does not have: then put ONLY that new text in "stimulus" and refer to it as Text ${numbered.length + 1} (and so on). Never rewrite or repeat a text already in the booklet.\n${JSON.stringify(numbered)}${images}`;
   };
+  // RES-96. The first batch writes the booklet for the whole paper, so it is
+  // shown every planned question's section and focus, not just its own.
+  const wholePaperNote = () => (!fixedStimulus && hasStimulus
+    ? `\n\nWHOLE PAPER (for the stimulus booklet only): ${JSON.stringify(plan.questions.map((q) => ({ number: q.number, section: q.section, focus: q.focus || "" })))}\nThis response writes the stimulus booklet for the WHOLE paper: include every reading text that any question in the whole paper needs (for example the speech a later section analyses), in the order the paper uses them, not only the texts this batch's questions use.`
+    : "");
+
+  // Texts the booklet has before a batch, for the text-reference check; null
+  // (no check) when the resource has no stimulus booklet.
+  const textCheck = () => (english && hasStimulus ? (fixedStimulus || []).filter(isTextEntry) : null);
 
   async function batch(specs, path) {
     const prior = chunks.flatMap((p) => questionRows(p, job.resourceType)).map((q) => q.stem);
@@ -280,8 +363,8 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
         stageLabel: `Writing questions ${specs[0].number}–${specs.at(-1).number} of ${plan.questions.length}`,
         maxTokens: 16000, systemPrompt: buildSystemPrompt(job.resourceType, contentOptions),
         responseSchema: buildResponseSchema(job.resourceType, contentOptions),
-        validateStageResult: (r) => validateQuestions(r, specs, job.resourceType, prior),
-        userMessage: `${request.userMessage}\n\nSAVED PLAN (overrides whole-resource counts for this response): ${JSON.stringify(specs)}\nGenerate ONLY these question numbers, topics, difficulty, sections and exact marks. Preserve global numbering. Do not include solutions or marking guides in this response. Return the normal resource shape for this batch. Avoid these earlier stems: ${JSON.stringify(prior)}${stimulusNote(false)}`,
+        validateStageResult: (r) => validateQuestions(r, specs, job.resourceType, prior, { english, existingTexts: textCheck() }),
+        userMessage: `${request.userMessage}\n\nSAVED PLAN (overrides whole-resource counts for this response): ${JSON.stringify(specs)}\nGenerate ONLY these question numbers, topics, difficulty, sections and exact marks, each testing its planned focus. Preserve global numbering. Do not include solutions or marking guides in this response. Return the normal resource shape for this batch. ${prior.length ? `These questions are already written. Do not repeat their wording, their skill or the evidence (quotations, lines or details) they use: ${JSON.stringify(prior)}` : ""}${wholePaperNote()}${stimulusNote(false)}`,
       });
     } catch (err) {
       if (err?.code !== "RESOURCE_STAGE_SPLIT") throw err;
@@ -290,10 +373,19 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
       await batch(specs.slice(mid), `${path}.b`);
       return;
     }
-    validateQuestions(result, specs, job.resourceType, prior);
+    validateQuestions(result, specs, job.resourceType, prior, { english, existingTexts: textCheck() });
     const part = result.parsed;
-    // The first batch's stimulus is the paper's (assembly spreads chunks[0]).
+    // The first batch that writes a stimulus fixes the paper's booklet. A
+    // later batch adds only texts it needs that the booklet lacks; assembly
+    // uses the booklet built here.
     if (!fixedStimulus && hasStimulus && Array.isArray(part.stimulus) && part.stimulus.length) fixedStimulus = part.stimulus;
+    else if (fixedStimulus && hasStimulus) {
+      const added = newStimulusTexts(part, fixedStimulus);
+      if (added.length) {
+        fixedStimulus = [...fixedStimulus, ...added];
+        resourceEvent(job, "stimulus.text_added", { stageId: `questions.${path}`, added: added.length });
+      }
+    }
     const questions = questionRows(part, job.resourceType);
     if (job.answerMode !== "none") {
       const answers = await solutionBatch(questions, path);
@@ -327,6 +419,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     if (new Set(rows.map((q) => normal(q.stem))).size !== rows.length) throw controlError("RESOURCE_BATCH_INVALID", "Repeated questions were detected. Review the scope and retry.");
     const parsed = { ...chunks[0], title: plan.title, totalMarks: plan.questions.reduce((n, q) => n + q.marks, 0),
       [answerKey]: chunks.flatMap((p) => p[answerKey] || []) };
+    if (fixedStimulus) parsed.stimulus = fixedStimulus;
     if (job.resourceType === "practice-paper") {
       parsed.timeAllowed = scope.minutes ? `${scope.minutes} minutes` : plan.timeAllowed;
       parsed.topics = plan.topics.map((t) => t.name);
@@ -342,4 +435,4 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     warnings: [...planWarnings, ...validatePlannedCoverage(plan, scope), ...review.warnings] };
 }
 
-module.exports = { clarificationMessage, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };
+module.exports = { PLAN_SCHEMA, clarificationMessage, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };

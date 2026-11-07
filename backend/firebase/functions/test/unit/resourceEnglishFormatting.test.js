@@ -342,7 +342,7 @@ describe("English resource formatting", () => {
     }, { answerMode: "none", studentName: "Mei Tanaka" });
     const text = documentText(buffer);
 
-    assert.match(text, /Original passage/);
+    assert.match(text, /Tenacity Original/);
     assert.doesNotMatch(text, /Author:/);
     assert.doesNotMatch(text, /Tenacity Resources/);
   });
@@ -358,7 +358,7 @@ describe("English resource formatting", () => {
     const text = documentText(buffer);
 
     assert.match(text, /Source: Tutor upload/);
-    assert.doesNotMatch(text, /Original passage/);
+    assert.doesNotMatch(text, /Tenacity Original/);
     assert.doesNotMatch(text, /Author:/);
   });
 

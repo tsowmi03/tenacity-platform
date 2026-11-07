@@ -3,7 +3,7 @@
 const { AlignmentType, ImageRun, Paragraph } = require("docx");
 
 const { BRAND } = require("./branding");
-const { UNATTRIBUTED_PASSAGE_CAPTION } = require("../humanStyle");
+const { imageSourceLine, textSourceLine } = require("../stimulusIntegrity");
 const { cleanText, paragraph } = require("./shared");
 
 // Roughly two-thirds of the A4 content width. A visual stimulus has to be big
@@ -37,26 +37,21 @@ function splitPassageBlocks(value, opts = {}) {
 // When `verbatim` is true the body is a verified source text: it keeps its
 // original punctuation (no deAiPunctuation) and is never scanned for math
 // spans. Headings and attribution are our own composed text and stay cleaned.
-function makePassageContent({ label, title, author, source, body, verbatim } = {}) {
+function makePassageContent({ label, title, author, source, licence, body, verbatim } = {}) {
   const children = [];
   // A real public-domain text keeps its true author (the prompt requires
-  // accurate attribution). Our own writing carries no author at all, so it gets
-  // a plain caption saying so rather than a byline: crediting it by name only
-  // ever told the reader what the absent author already tells them, and having
-  // a name to credit was what led the model to tag its own maths scenarios.
-  const authorName = cleanText(author);
-  const sourceName = cleanText(source);
+  // accurate attribution) and where it came from. Our own writing carries no
+  // author at all, so it gets a plain "Tenacity Original" caption rather than
+  // a byline (RES-100): crediting it by name was what led the model to tag its
+  // own maths scenarios. A text that names where it came from is not ours to
+  // call original, even when its author is unknown; there the source line
+  // alone runs. See stimulusIntegrity.textSourceLine.
   const heading = [cleanText(label), cleanText(title)].filter(Boolean).join(": ");
-  // The caption is claimed only for a text with neither author nor source. A
-  // text that names where it came from is not ours to call original, even when
-  // its author is unknown; there it is the source line alone that runs.
-  const credit = authorName
-    ? `Author: ${authorName}`
-    : sourceName ? null : UNATTRIBUTED_PASSAGE_CAPTION;
-  const attribution = [
-    credit,
-    sourceName ? `Source: ${sourceName}` : null,
-  ].filter(Boolean).join("   |   ");
+  const attribution = textSourceLine({
+    author: cleanText(author),
+    source: cleanText(source),
+    licence: cleanText(licence),
+  });
   const blocks = splitPassageBlocks(body, verbatim ? { verbatim: true } : {});
   const hasBody = blocks.length > 0;
 
@@ -154,12 +149,12 @@ function makeImageContent({ label, title, creator, date, licence, source, image 
   // the questions' job; a task here would either duplicate them or quietly
   // contradict them. The planner's task still travels with the stimulus so the
   // generator knows what the image is for when it writes those questions.
-  const credit = [
-    creator ? `Image: ${cleanText(creator)}` : null,
-    date ? cleanText(date) : null,
-    licence ? cleanText(licence) : null,
-    source ? cleanText(source) : null,
-  ].filter(Boolean).join("   |   ");
+  const credit = imageSourceLine({
+    creator: cleanText(creator),
+    date: cleanText(date),
+    licence: cleanText(licence),
+    source: cleanText(source),
+  });
   if (credit) {
     children.push(paragraph(credit, {
       italics: true,

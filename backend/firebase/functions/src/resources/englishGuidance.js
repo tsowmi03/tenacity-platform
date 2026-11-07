@@ -11,7 +11,13 @@
 // The content was agreed with Tenacity on 2026-10-07 and is recorded on RES-37.
 // Change the agreed version first, then this file.
 
-const ENGLISH_GUIDANCE = `HOW TENACITY TEACHES ENGLISH. Everything English in this resource (explanations, model analysis, exemplar paragraphs, scaffolds, questions, marks, marking criteria and model answers) must teach and assess this approach. Use its terms (thesis, ETA, TETAL) wherever the resource teaches structure.
+const ENGLISH_GUIDANCE = `HOW TENACITY TEACHES ENGLISH. Everything English in this resource (explanations, model analysis, exemplar paragraphs, scaffolds, marks, marking criteria and model answers) must teach and assess this approach. Use its terms (thesis, ETA, TETAL) wherever the resource teaches structure.
+
+QUESTIONS STATE THE TASK ONLY
+- A question, short-answer or extended, gives only the task: what the student must do, and the audience or form when the task needs one.
+- Never tell the student how to structure the answer. No "Begin with a thesis", no number of ETAs, no "Evidence, Technique, Analysis" reminder, no TETAL or paragraph plan, and no remarks on what the question is not asking.
+- Students learn the structure in class. It is assessed in the marking criteria and shown in the model answers, where the tutor sees it, and the marks tell the student how much to write.
+- This is about the questions. An essay scaffold, or a booklet's teaching sections, still walk through the structure.
 
 ANALYSIS: THE ETA
 - An ETA is one piece of analysis: Evidence (a quotation or close reference), Technique (the device used in that evidence), and Analysis (what that technique does).
@@ -70,7 +76,7 @@ REFLECTION STATEMENTS
 - Then paired ETAs: an ETA on a technique in the prescribed text and what it achieves, followed by an ETA on how the student used the same technique in their own text, with evidence from it.
 
 YEAR LEVELS
-Every year level learns the same structure (thesis, TETAL, ETAs). For younger students, phrase questions more simply and ask for less depth. Never drop the structure.
+Every year level learns the same structure (thesis, TETAL, ETAs). For younger students, phrase questions more simply and ask for less depth. Never drop the structure from the marking criteria and model answers.
 
 Persuasive writing (speeches, opinion pieces) is not part of what students write. Do not set it unless the tutor asks for it.`;
 
@@ -82,7 +88,66 @@ const ENGLISH_CRITERIA_RULE = `Write each question's marking criteria from HOW T
 
 Criteria say what earns each mark, never what the answer is. Do not name the correct option, quote the text, name the technique, or state the point a response should make. A multiple-choice question gets exactly one criterion: "1 mark: selects the correct answer" (with its marks if it is worth more). A short answer is "1 mark: identifies a relevant technique", not "1 mark: identifies the metaphor in line 4".`;
 
+// RES-98. A backstop for the rule above: sentences in a question that coach
+// the answer's structure are removed after generation. Only sentences that are
+// unmistakably coaching match ("Begin with a thesis…", "Support it with two
+// ETAs…", "Use TETAL…"); a question that asks the student to WRITE a thesis
+// or a paragraph is the task itself and is left alone, and a tutor who asks to
+// practise the structure gets the questions as written.
+const COACHING_SENTENCES = [
+  /^(?:begin|start|open)\s+(?:your\s+\w+\s+)?(?:with|by\s+writing)\s+a\s+(?:clear\s+)?thesis\b/i,
+  /\bsupport\s+(?:it|this|them|your\s+\w+)\s+with\s+(?:one|two|three|four|five|\d+)\s+(?:strong\s+|brief\s+|developed\s+)?ETAs?\b/i,
+  /^(?:develop|write|use|include|give|provide)\s+(?:one|two|three|four|five|\d+)\s+(?:strong\s+|brief\s+|developed\s+)?(?:ETAs?|body\s+paragraphs?)\b/i,
+  /\bETAs?:?\s*\(?Evidence,\s*Technique,\s*(?:and\s+)?Analysis\b/i,
+  /^(?:in|for)\s+each\s+(?:ETA|body\s+paragraph)\b/i,
+  /\bTETAL\b/,
+  /^you\s+are\s+not\s+being\s+asked\s+to\b/i,
+  /^(?:end|finish|conclude)\s+(?:each\s+paragraph\s+)?with\s+a\s+link\b/i,
+  /^plan\s+(?:your\s+|each\s+|the\s+)?(?:ETAs?|paragraphs?|body\s+paragraphs?)\b/i,
+  /^each\s+(?:body\s+)?paragraph\s+should\b/i,
+  /\bplanning\s+labels\b/i,
+];
+const COACHED_TYPES = new Set(["practice-paper", "worksheet", "diagnostic-test", "mixed-review"]);
+const ASKS_FOR_STRUCTURE = /\b(?:thesis|ETAs?|TETAL|topic\s+sentences?|paragraph\s+structure)\b/i;
+
+function stripCoaching(stem) {
+  let removed = 0;
+  const paragraphs = String(stem).split(/\n\s*\n/).map((paragraph) => {
+    const sentences = paragraph.match(/[^.!?]+(?:[.!?]+["'”’)]*|$)\s*/g) || [paragraph];
+    const kept = sentences.filter((sentence) => {
+      const text = sentence.trim();
+      if (!text || /\?["'”’)]*$/.test(text)) return true;
+      if (COACHING_SENTENCES.some((re) => re.test(text))) { removed += 1; return false; }
+      return true;
+    });
+    return kept.join("").trim();
+  }).filter(Boolean);
+  const out = paragraphs.join("\n\n");
+  // Never leave a question empty: if everything matched, it was not coaching.
+  return removed && out ? { stem: out, removed } : { stem, removed: 0 };
+}
+
+function stripStructureGuidance(parsed, job = {}) {
+  const result = { removed: 0, questions: 0 };
+  if (!COACHED_TYPES.has(job.resourceType) || ASKS_FOR_STRUCTURE.test(job.customPrompt || "")) return result;
+  const visit = (node) => {
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    if (!node || typeof node !== "object" || Buffer.isBuffer(node)) return;
+    if (typeof node.stem === "string") {
+      const { stem, removed } = stripCoaching(node.stem);
+      if (removed) { node.stem = stem; result.removed += removed; result.questions += 1; }
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (["stimulus", "markingGuide", "answers", "image"].includes(key)) continue;
+      if (child && typeof child === "object") visit(child);
+    }
+  };
+  visit(parsed);
+  return result;
+}
+
 module.exports = {
   ENGLISH_CRITERIA_RULE,
   ENGLISH_GUIDANCE,
+  stripStructureGuidance,
 };

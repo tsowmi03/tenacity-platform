@@ -76,8 +76,11 @@ describe("writing-rule constants", () => {
     assert.match(HUMAN_WRITING_RULES, /straight quotation marks/i);
   });
 
+  // RES-100: the renderer, never the model, captions our own writing
+  // "Tenacity Original" so a tutor can tell it from a sourced text. The
+  // authorship rules the model reads still never name the business (RES-28).
   it("leaves generated writing unattributed and never names the business", () => {
-    assert.equal(UNATTRIBUTED_PASSAGE_CAPTION, "Original passage");
+    assert.equal(UNATTRIBUTED_PASSAGE_CAPTION, "Tenacity Original");
     assert.doesNotMatch(AUTHORSHIP_RULES, /Tenacity/i);
     assert.match(AUTHORSHIP_RULES, /author field null for your own writing/);
     assert.match(AUTHORSHIP_RULES, /public domain/i);
