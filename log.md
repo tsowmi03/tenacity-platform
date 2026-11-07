@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-07 | [A stopped plan says why, e.g. a subject mismatch (RES-51)](#2026-11-07--a-stopped-plan-says-why-eg-a-subject-mismatch-res-51) |
 | 2026-11-07 | [English papers: answers see every text, options lettered once, clean section headings (RES-91, RES-90, RES-50)](#2026-11-07--english-papers-answers-see-every-text-options-lettered-once-clean-section-headings-res-91-res-90-res-50) |
 | 2026-11-07 | [English resources with a photo build again, and a failed build no longer hangs at 99% (RES-94)](#2026-11-07--english-resources-with-a-photo-build-again-and-a-failed-build-no-longer-hangs-at-99-res-94) |
 | 2026-11-07 | [Live queue: steady progress bar, single ETA, no false "Queued" (RES-84)](#2026-11-07--live-queue-steady-progress-bar-single-eta-no-false-queued-res-84) |
@@ -229,6 +230,25 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-07 — A stopped plan says why, e.g. a subject mismatch (RES-51)
+
+**What changed**
+- When the planner can't settle what to generate, the tutor now sees its
+  reason (for example "The prompt describes an English paper, but the subject
+  is set to Maths…") instead of a generic "clarify the requested topics".
+- The planner is told the selected subject, year and resource type, and is
+  asked to stop when the prompt clearly belongs to another subject.
+- Deliberate stops (scope clarification, size limit) are recorded under their
+  own code in the job's failure attempts, not as `MODEL_FAILURE`.
+
+**Why:** A Year 9 English paper submitted with Maths selected failed on
+7 Nov with a message that didn't mention the subject, so the cause wasn't
+clear.
+
+**Status:** Live. Functions deployed with RES-51.
 
 ---
 

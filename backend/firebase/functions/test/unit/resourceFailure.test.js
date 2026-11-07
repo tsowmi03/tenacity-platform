@@ -120,3 +120,13 @@ describe("classifyResourceFailure", () => {
     assert.match(out.message, /too large to save/i);
   });
 });
+
+describe("resource control stops", () => {
+  it("records a deliberate stop by its own code, not as a model failure", () => {
+    const err = Object.assign(new Error("Change the subject."), { code: "RESOURCE_SCOPE_CLARIFICATION", resourceControl: true });
+    const classified = classifyResourceFailure(err);
+    assert.equal(classified.reasonCode, "RESOURCE_SCOPE_CLARIFICATION");
+    assert.equal(classified.failoverEligible, false);
+    assert.equal(classified.message, "Change the subject.");
+  });
+});
