@@ -108,4 +108,15 @@ describe("classifyResourceFailure", () => {
       assert.equal(classifyResourceFailure(err).failoverEligible, false);
     }
   });
+
+  it("classes a Firestore field-size refusal as a storage limit, not a model failure (RES-50)", () => {
+    const err = Object.assign(
+      new Error('3 INVALID_ARGUMENT: The value of property "generatedJson" is longer than 1048487 bytes.'),
+      { code: 3, rawAiText: "{\"title\":\"x\"}" },
+    );
+    const out = classifyResourceFailure(err);
+    assert.equal(out.reasonCode, "STORAGE_LIMIT");
+    assert.equal(out.failoverEligible, false);
+    assert.match(out.message, /too large to save/i);
+  });
 });

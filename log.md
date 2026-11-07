@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-07 | [English papers: answers see every text, options lettered once, clean section headings (RES-91, RES-90, RES-50)](#2026-11-07--english-papers-answers-see-every-text-options-lettered-once-clean-section-headings-res-91-res-90-res-50) |
 | 2026-11-07 | [English resources with a photo build again, and a failed build no longer hangs at 99% (RES-94)](#2026-11-07--english-resources-with-a-photo-build-again-and-a-failed-build-no-longer-hangs-at-99-res-94) |
 | 2026-11-07 | [Live queue: steady progress bar, single ETA, no false "Queued" (RES-84)](#2026-11-07--live-queue-steady-progress-bar-single-eta-no-false-queued-res-84) |
 | 2026-11-06 | [Booklet polish: answer space by question type, headings kept with tables, criteria without answers (RES-20, RES-33, RES-48)](#2026-11-06--booklet-polish-answer-space-by-question-type-headings-kept-with-tables-criteria-without-answers-res-20-res-33-res-48) |
@@ -228,6 +229,55 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-07 — English papers: answers see every text, options lettered once, clean section headings (RES-91, RES-90, RES-50)
+
+**What changed**
+- Answers can see every text in the paper (RES-91). On a planned paper, the
+  first question batch writes the stimulus booklet: the sourced texts plus
+  any the model writes itself. Only the sourced texts were in the request,
+  so the answer stages and later question batches never saw the model's own
+  texts. Answers to questions on those texts said "Text 2 is missing". Every
+  answer batch, and every question batch after the first, now gets the
+  whole booklet, numbered the way the questions refer to it. Later batches
+  return no stimulus of their own, so they can't drift from it.
+- An answer that says a text is missing is rejected. The stage is retried and
+  the model is told which questions did it. The same answer can't be
+  delivered again.
+- Each multiple-choice option is lettered once (RES-90). When the model
+  lettered its own options ("A. Fear"), the document lettered them again and
+  printed "A. A. Fear". A leading letter is removed only when it matches the
+  option's position, so "A dog barks" or "A-level" is left alone.
+- Section headings read as headings (RES-90). The planner sometimes wrote a
+  description of each question in the section field ("A, Three
+  multiple-choice parts, labelled (a), (c)"). Each question then became its
+  own section, with that note printed as its heading. A description like
+  that is now cut back to "Section A", and questions that share a letter
+  share one heading. Proper names such as "Section B: Writing" are kept, and
+  the planner is now told what the field is for.
+- A Firestore size refusal is labelled correctly (RES-50). "Value is longer
+  than 1048487 bytes" used to be logged as a model failure and handed to the
+  backup model, which would save the same size again. It is now
+  `STORAGE_LIMIT`. It doesn't fail over, and the tutor is told the resource
+  was too large to save. The rest of RES-50 (image bytes in the stored JSON,
+  failure writes refused for size, jobs stuck at "processing") was fixed by
+  RES-94. Endless continuation loops were fixed by RES-47.
+
+**Why:** A Year 8 English practice paper (job `q15LWKM0uzJ9V6mmLCsQ`) came
+back with no usable answers for Q3(a), Q3(b) and Q5(b), options printed as
+"A. A.", and planning notes as headings.
+
+**Verification:** Regression tests cover a three-batch English paper with
+three texts. Every answer and later question batch gets the full booklet,
+and a missing-text answer is retried with the reason. The test fails without
+the fix. Other tests cover pre-lettered and unlettered options, section
+grouping from per-question descriptions, and the storage-limit
+classification. A rendered sample paper shows one letter per option under a
+single "Section A" heading. All 2,179 Functions unit tests pass.
+
+**Status:** Live. Merged; Functions deployed to production.
 
 ---
 
