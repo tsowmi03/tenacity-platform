@@ -155,7 +155,6 @@ async function buildWorksheetDocx(resource, options = {}) {
   }
 
   return packDocument({
-    reviewNotice: options.reviewNotice,
     title,
     subject,
     year,

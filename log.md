@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-09 | [Warnings stay out of the document; papers are repaired to fit the sitting; better English ETA (RES-95, RES-89, RES-93)](#2026-11-09--warnings-stay-out-of-the-document-papers-are-repaired-to-fit-the-sitting-better-english-eta-res-95-res-89-res-93) |
 | 2026-11-08 | [English images are checked before printing, and print full width (RES-97)](#2026-11-08--english-images-are-checked-before-printing-and-print-full-width-res-97) |
 | 2026-11-08 | [English DOCX: no stranded booklet page, readable long marking-guide rows (RES-92, RES-99)](#2026-11-08--english-docx-no-stranded-booklet-page-readable-long-marking-guide-rows-res-92-res-99) |
 | 2026-11-08 | [English papers: texts in the booklet with source lines, task-only questions, real extracts (RES-96, RES-98, RES-100, RES-88, RES-11)](#2026-11-08--english-papers-texts-in-the-booklet-with-source-lines-task-only-questions-real-extracts-res-96-res-98-res-100-res-88-res-11) |
@@ -235,6 +236,70 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-09 — Warnings stay out of the document; papers are repaired to fit the sitting; better English ETA (RES-95, RES-89, RES-93)
+
+**What changed**
+- Warnings no longer appear in the document. "Tutor review recommended",
+  "DRAFT - tutor review required" and the review notes used to be printed at
+  the top of the first page. They now appear only in the portal (the queue row
+  and the resource's details), so the DOCX and PDF are ready to hand to a
+  student.
+- The content review stopped raising false alarms (RES-95). It wasn't told
+  that images are added after it runs, that verified texts replace the copy it
+  sees, or that marking deliberately expects a thesis and ETAs while questions
+  don't mention them, so nearly every English paper said "the content review
+  raised concerns". It now knows all three, reports defects only, and names the
+  questions and a fix for each. A warning reads "Question 3: …" instead of the
+  old generic line.
+- What can be fixed is fixed before anyone is warned (RES-95). A paper up to
+  15% over its sitting time, or down to 75% of it, now passes. Past that, or
+  when the review names a question and a fix, the generator rewrites only the
+  questions it must (marks can go down, never up), re-checks, and tries at
+  most twice. A warning appears only if the problem survives, and for timing
+  it names the longest questions. Each attempt is logged.
+- Papers are sized to the sitting (RES-89). Prose texts have a word budget
+  from the year level and sitting time (a Year 8 60-minute paper: 450 words a
+  text, 1,080 in total; assumptions are in `readingLoad.js`). Fetched extracts
+  are cut to it, and a text the generator writes is sent back if it runs over.
+  Timing now covers the whole paper: reading, rereading, planning, writing and
+  checking, with the first read counted once. Reading time the tutor sets aside
+  ("10 minutes reading time") is no longer mistaken for the sitting time or
+  counted twice.
+- The ETA is better for English (RES-93, partly). Only 6 production runs have
+  phase timings, far short of the ~20 the ticket needs per type, so per-type
+  calibration has to wait. The data did show clear faults, now fixed: English
+  used maths-shaped defaults (it spends 40% of its time finding texts and
+  planning and has almost nothing after the review), and a 4-second re-render
+  had taught the model that 16% of a paper happens after it is finished. English
+  now has measured defaults, runs under 30 seconds are ignored, and learning
+  restarts in a clean collection (`resourceTimingStatsV2`).
+- Three other fixes found in testing. A model calling the subject "English
+  Advanced" made the finished paper fail at the last step, because the builder
+  read that as not-English; the job's own subject now always wins. Topic
+  evidence built from several quotes no longer warns on every English paper.
+  A book's contents list no longer prints at the top of an extract when one of
+  its entries has an abbreviation in it (Mansfield's "Mr. and Mrs. Dove").
+
+**Why:** Tom wanted documents free of warnings, with the warnings in the
+generator. Every English paper carried timing and content warnings the
+generator should have dealt with or that weren't true.
+
+**Verification:** Four real generations with live models and sources. Year 7,
+8 and 11 papers (60, 60 and 90 minutes) passed with no warnings at 61.5, 60 and
+90 estimated minutes. A deliberately overloaded 30-minute Year 9 paper was repaired
+twice (83.5, 49, then 39 minutes) and kept one specific timing warning in the
+portal. Every document was rendered and read: none carries a notice. Replaying
+real runs, the median ETA error by third of the run fell from 72/76/94% to
+26/37/31%; on three runs held out of tuning, from 67/60/52% to 33/28/28%.
+
+**Status:** Live. Merged and Functions deployed to production on 9 Nov 2026.
+
+**Next steps**
+- Finish RES-93 once about 20 resources per type have progress data: tune per
+  type and re-measure against the under-25% target for the last third of a run.
 
 ---
 

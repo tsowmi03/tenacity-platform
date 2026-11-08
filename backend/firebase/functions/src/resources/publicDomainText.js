@@ -421,6 +421,7 @@ async function planStimulusSelections({
   posthogProperties,
   posthogTraceId,
   posthogDistinctId,
+  readingBudget = null,
 }) {
   if (!apiKey && !anthropicApiKey && !openaiApiKey) {
     throw new TypeError("planStimulusSelections requires a provider api key");
@@ -435,6 +436,10 @@ async function planStimulusSelections({
     job.customPrompt
       ? `- Tutor instructions: ${job.customPrompt}`
       : "- Tutor instructions: (none given — infer a suitable general reading resource)",
+    // RES-89. What the sitting can hold; longer prose is cut to fit.
+    readingBudget
+      ? `- Reading budget: at most about ${readingBudget.perTextWords} words per prose text${readingBudget.totalWords ? ` and ${readingBudget.totalWords} words in total` : ""}. Plan every text the request needs, and keep each short enough to fit.`
+      : null,
     uploadedExcerpts ? `\n${uploadedExcerpts}` : null,
     "",
     "Respond with the JSON object only.",
@@ -978,6 +983,9 @@ function excerptOpening(passage, targetWords, title, { fromChapterStart = true, 
       // An unwrapped list of illustration captions runs on with no sentence
       // punctuation; prose always has some.
       !/[.!?]/.test(para) ||
+      // A merged contents list can hold an abbreviation ("Mr. and Mrs. Dove The
+      // Young Girl ... The Lady's Maid") but never ends on a stop, as prose does.
+      !/[.!?:;,—–-]["'”’)\]_*]*$/.test(para) ||
       // Bare headings, bylines and edition lines are short; real prose is not.
       words < 15;
     if (!isFrontMatter) break;
@@ -1255,8 +1263,12 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
   // like headings to the prose heuristics).
   let wordCount = countWords(passage);
   let excerpted = false;
-  const targetWords = Number(brief.lengthWords) || Number(selection.approxWordCount) || 0;
-  if (wordCount > EXCERPT_TRIGGER_WORDS && extraction.confidence !== "none") {
+  const planned = Number(brief.lengthWords) || Number(selection.approxWordCount) || 0;
+  // RES-89. A paper's reading budget caps prose; poems are short and never cut.
+  const maxWords = !isPoemSelection && Number(brief.maxWords) > 0 ? Number(brief.maxWords) : null;
+  const targetWords = maxWords ? Math.min(planned || maxWords, maxWords) : planned;
+  const trigger = maxWords ? Math.min(EXCERPT_TRIGGER_WORDS, Math.round(maxWords * 1.15)) : EXCERPT_TRIGGER_WORDS;
+  if (wordCount > trigger && extraction.confidence !== "none") {
     passage = excerptOpening(passage, targetWords, selection.title, {
       fromChapterStart: wholeWork && !isPoemSelection,
       skipFrontMatter: !isPoemSelection,
