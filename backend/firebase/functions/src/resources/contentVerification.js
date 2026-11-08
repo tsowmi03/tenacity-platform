@@ -18,10 +18,22 @@ const REVIEW_SCHEMA = object({
 const TIME_PHRASE = /\b(\d+(?:\.\d+)?)\s*[- ]?\s*(minutes?|mins?|hours?|hrs?)\b/gi;
 const toMinutes = (match) => Number(match[1]) * (/^(?:hour|hr)/i.test(match[2]) ? 60 : 1);
 // "10 minutes reading time" / "reading time of 10 minutes" / "perusal: 5 mins".
+function isExplicitReadingTime(prompt, match) {
+  const end = match.index + match[0].length;
+  return /^\s*(?:of\s+)?(?:reading\s+time|perusal)\b/i.test(prompt.slice(end, end + 24)) ||
+    /\b(?:reading\s+time|perusal(?:\s+time)?)\s*(?:of|is|:|-)?\s*$/i.test(prompt.slice(Math.max(0, match.index - 24), match.index));
+}
+
+// "Reading" alone usually names the assessment ("a 60-minute reading
+// comprehension paper", "a 60-minute reading, writing and grammar paper"). It
+// is an allocation only beside another stated time for the sitting: "10
+// minutes reading, then 50 minutes writing", "Reading: 10 minutes; writing: 50".
 function isReadingTime(prompt, match) {
-  const after = prompt.slice(match.index + match[0].length, match.index + match[0].length + 24);
-  const before = prompt.slice(Math.max(0, match.index - 24), match.index);
-  return /^\s*(?:of\s+)?(?:reading|perusal)\b/i.test(after) || /\b(?:reading(?:\s+time)?|perusal)\s*(?:time\s*)?(?:of|is|:|-)?\s*$/i.test(before);
+  if (isExplicitReadingTime(prompt, match)) return true;
+  const end = match.index + match[0].length;
+  const standsAlone = /^\s*(?:of\s+)?reading\s*(?:$|[,.;)]|then\b|before\b|first\b|and\s+\d)/i.test(prompt.slice(end, end + 24)) ||
+    /\breading\s*[:\-–]\s*$/i.test(prompt.slice(Math.max(0, match.index - 24), match.index));
+  return standsAlone && [...prompt.matchAll(TIME_PHRASE)].some((m) => m.index !== match.index && !isExplicitReadingTime(prompt, m));
 }
 
 // The sitting time, skipping any separately stated reading time (RES-89).

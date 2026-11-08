@@ -177,6 +177,24 @@ describe("reading load (RES-89)", () => {
     assert.equal(separateReadingMinutes("10 minutes reading time plus a 60-minute paper"), 10);
     assert.equal(requestedMinutes("Reading time: 5 minutes. Writing 40 minutes."), 40);
     assert.equal(separateReadingMinutes("A 60 minute paper"), null);
+    // A reading assessment's own length is the sitting, not reading time.
+    for (const prompt of ["Create a 60-minute reading comprehension paper for Year 8", "A 60 minute reading and writing paper", "60 minutes reading comprehension", "Year 8 reading 60 minutes"]) {
+      assert.equal(requestedMinutes(prompt), 60, prompt);
+      assert.equal(separateReadingMinutes(prompt), null, prompt);
+    }
+    assert.equal(requestedMinutes("A 60-minute reading, writing and grammar paper"), 60);
+    assert.equal(requestedMinutes("A 60-minute reading, writing and grammar paper with 5 minutes reading time"), 60);
+    assert.equal(separateReadingMinutes("A 60-minute reading, writing and grammar paper with 5 minutes reading time"), 5);
+    for (const prompt of ["10-minute reading, then 50-minute writing", "Reading: 10 minutes; writing: 50 minutes"]) {
+      assert.equal(requestedMinutes(prompt), 50, prompt);
+      assert.equal(separateReadingMinutes(prompt), 10, prompt);
+    }
+    assert.equal(requestedMinutes("Reading: 60 minutes"), 60);
+    assert.equal(separateReadingMinutes("10 minutes reading, then 50 minutes writing"), 10);
+    assert.equal(requestedMinutes("10 minutes reading, then 50 minutes writing"), 50);
+    assert.equal(separateReadingMinutes("5 minutes of reading and 40 minutes writing"), 5);
+    assert.equal(separateReadingMinutes("a 10-minute perusal then a 40-minute paper"), 10);
+    assert.equal(separateReadingMinutes("Reading time of 10 minutes"), 10);
   });
 
   it("cuts an extract to the limit", () => {
