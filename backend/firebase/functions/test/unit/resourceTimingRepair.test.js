@@ -182,6 +182,14 @@ describe("reading load (RES-89)", () => {
       assert.equal(requestedMinutes(prompt), 60, prompt);
       assert.equal(separateReadingMinutes(prompt), null, prompt);
     }
+    assert.equal(requestedMinutes("A 60-minute reading, writing and grammar paper"), 60);
+    assert.equal(requestedMinutes("A 60-minute reading, writing and grammar paper with 5 minutes reading time"), 60);
+    assert.equal(separateReadingMinutes("A 60-minute reading, writing and grammar paper with 5 minutes reading time"), 5);
+    for (const prompt of ["10-minute reading, then 50-minute writing", "Reading: 10 minutes; writing: 50 minutes"]) {
+      assert.equal(requestedMinutes(prompt), 50, prompt);
+      assert.equal(separateReadingMinutes(prompt), 10, prompt);
+    }
+    assert.equal(requestedMinutes("Reading: 60 minutes"), 60);
     assert.equal(separateReadingMinutes("10 minutes reading, then 50 minutes writing"), 10);
     assert.equal(requestedMinutes("10 minutes reading, then 50 minutes writing"), 50);
     assert.equal(separateReadingMinutes("5 minutes of reading and 40 minutes writing"), 5);
