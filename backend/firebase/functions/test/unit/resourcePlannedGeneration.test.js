@@ -202,11 +202,12 @@ it("retains a labelled downloadable draft after a review failure across worker c
   assert.equal(reviews, 1, "failed optional review is not repeated on every continuation");
   assert.ok(result.warnings.some((w) => w.code === "RESOURCE_REVIEW_UNAVAILABLE"));
   const text = await mammoth.extractRawText({ buffer: Buffer.from(h.values.get(result.outputPath)) });
-  assert.match(text.value, /DRAFT - tutor review required/);
+  // The tutor is told in the portal; the document itself stays clean.
+  assert.doesNotMatch(text.value, /DRAFT|tutor review|could not finish/i);
   assert.match(text.value, /Unique problem 14/);
 });
 
-it("returns a real DOCX with review notes for content concerns instead of throwing away the paper", async () => {
+it("keeps review warnings on the job and out of the DOCX, after trying to repair an overrun", async () => {
   const { runGenerationPipeline } = require("../../src/resources");
   const mammoth = require("mammoth");
   const h = harness({ resourceType: "practice-paper", subject: "maths", year: "10", answerMode: "none", createdBy: "tutor", customPrompt: "90-minute paper. Algebra; Geometry." });
@@ -216,6 +217,7 @@ it("returns a real DOCX with review notes for content concerns instead of throwi
   for (let turn = 0; turn < 20; turn++) {
     try {
       result = await runGenerationPipeline(h.job(), { db: h.db, storage: h.storage, callAi: h.caller(async (req) => {
+        if (req.userMessage.includes("A review of the finished resource")) return { parsed: { questions: [{ number: 1, marks: 2, stem: "A shorter problem 1", type: "short-answer", diagram: null, diagramType: "none", diagramRequired: false, parts: null }] }, provider: "openai" };
         const response = await provider(req);
         if (req.systemPrompt.startsWith("Independently audit")) { response.parsed.scopePass = false; response.parsed.questions.forEach((q) => { q.estimatedMinutes = 8; }); }
         return response;
@@ -227,8 +229,10 @@ it("returns a real DOCX with review notes for content concerns instead of throwi
   assert.equal(result.reviewStatus, "warnings");
   assert.ok(result.warnings.some((w) => w.code === "RESOURCE_TIMING_WARNING"));
   const text = await mammoth.extractRawText({ buffer: Buffer.from(h.values.get(result.outputPath)) });
-  assert.match(text.value, /Tutor review recommended/);
-  assert.match(text.value, /Estimated answering time is 112 minutes/);
+  assert.equal(result.warnings.filter((w) => w.code === "RESOURCE_TIMING_WARNING").length, 1);
+  assert.match(result.warnings.find((w) => w.code === "RESOURCE_TIMING_WARNING").message, /about 112 minutes for the requested 90-minute sitting.*Question \d+ \(8 min\)/);
+  assert.doesNotMatch(text.value, /review recommended|about 112 minutes/i);
+  assert.match(text.value, /A shorter problem 1/);
 });
 
 // RES-70. "Short answer questions in response to a poem" names no sitting time.

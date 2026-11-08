@@ -32,12 +32,25 @@ const PHASES = [
   { key: "finish", label: "Building the PDF" },
 ];
 const PHASE_KEYS = PHASES.map((p) => p.key);
-const STATS_COLLECTION = "resourceTimingStats";
+// RES-93. V2 started clean: the first collection's English history included a
+// 4-second "run" (a re-render, all of it counted as Building the PDF), which
+// taught the model that 16% of an English paper happens after it is finished.
+const STATS_COLLECTION = "resourceTimingStatsV2";
+// A run shorter than this did not generate anything worth learning from.
+const MIN_SAMPLE_ACTIVE_MS = 30_000;
 const MIN_SAMPLES = 3;
 const SHARE_ALPHA = 0.2;
 // Used only until history exists (the RES-73 backfill seeds it from past runs).
 const DEFAULT_FIT = { a: 60, b: 22 }; // seconds, seconds per question (Nov 2026 runs)
-const DEFAULT_SHARES = { plan: 0.08, write: 0.55, diagrams: 0.15, check: 0.14, finish: 0.08 };
+const DEFAULT_SHARES = { plan: 0.08, write: 0.66, diagrams: 0.22, check: 0.02, finish: 0.02 };
+// RES-93. English measured separately (9 paper runs, Nov 2026): finding the
+// texts and planning takes 40% of the run, and once the review is done there
+// is almost nothing left. Maths-shaped defaults kept the ETA at a minute or
+// more after an English paper had finished writing.
+const SUBJECT_DEFAULTS = {
+  english: { questions: 10, fit: { a: 150, b: 20 }, shares: { plan: 0.4, write: 0.58, diagrams: 0, check: 0, finish: 0.02 } },
+};
+const MAX_FINISH_SHARE = 0.05;
 const DEFAULT_LOG_ERROR = 0.4;
 const DEFAULT_QUESTIONS = 20;
 
@@ -88,6 +101,8 @@ function fitFromStats(stats) {
 function chooseStats(statsByKey = {}, job = {}) {
   const own = statsByKey[kindKey(job)];
   if (own?.n >= MIN_SAMPLES) return own;
+  // A subject with its own measured defaults uses those over a mixed history.
+  if (SUBJECT_DEFAULTS[job.subject]) return null;
   const all = statsByKey.all;
   return all?.n >= MIN_SAMPLES ? all : null;
 }
@@ -95,17 +110,21 @@ function chooseStats(statsByKey = {}, job = {}) {
 // RES-84. English has no diagram step: borrowed all-resource shares (14% for
 // diagrams) left minutes on the clock after an English paper was written.
 function normalisedShares(stats, job = {}) {
-  const raw = { ...DEFAULT_SHARES, ...(stats?.shares || {}) };
-  if (job.subject && job.subject !== "maths") raw.diagrams = 0;
+  const raw = { ...(SUBJECT_DEFAULTS[job.subject]?.shares || DEFAULT_SHARES), ...(stats?.shares || {}) };
+  // Only maths draws diagrams or has its answers and notation checked.
+  if (job.subject && job.subject !== "maths") { raw.diagrams = 0; raw.check = 0; }
   const total = PHASE_KEYS.reduce((sum, k) => sum + Math.max(0, raw[k] || 0), 0) || 1;
-  return Object.fromEntries(PHASE_KEYS.map((k) => [k, Math.max(0, raw[k] || 0) / total]));
+  // Building the document takes seconds, whatever a stray sample suggests.
+  const finish = Math.min(Math.max(0, raw.finish || 0) / total, MAX_FINISH_SHARE);
+  const rest = (total - Math.max(0, raw.finish || 0)) || 1;
+  return Object.fromEntries(PHASE_KEYS.map((k) => [k, k === "finish" ? finish : (Math.max(0, raw[k] || 0) / rest) * (1 - finish)]));
 }
 
-function expectedQuestions({ tracker = {}, stats, requested }) {
+function expectedQuestions({ tracker = {}, stats, requested, job = {} }) {
   if (tracker.questionCount > 0) return tracker.questionCount;
   if (requested > 0) return requested;
   if (stats?.n && stats.sq > 0) return stats.sq / stats.n;
-  return DEFAULT_QUESTIONS;
+  return SUBJECT_DEFAULTS[job.subject]?.questions || DEFAULT_QUESTIONS;
 }
 
 const STEP_CEILING = 0.95; // inside a step: how close to its end time alone can take the bar
@@ -142,8 +161,8 @@ const MIN_SMOOTHING = 0.2;
  */
 function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 0, wallMs = activeMs, phaseStarts = {}, requestedQuestions = null, previous = null, recentWait = null, countChangedAtMs = null }) {
   const stats = chooseStats(statsByKey, job);
-  const fit = fitFromStats(stats) || DEFAULT_FIT;
-  const questions = expectedQuestions({ tracker, stats, requested: requestedQuestions });
+  const fit = fitFromStats(stats) || SUBJECT_DEFAULTS[job.subject]?.fit || DEFAULT_FIT;
+  const questions = expectedQuestions({ tracker, stats, requested: requestedQuestions, job });
   const expectedTotalMs = Math.max(30_000, (fit.a + fit.b * questions) * 1000);
   const shares = normalisedShares(stats, job);
   const phase = PHASE_KEYS.includes(tracker.phase) ? tracker.phase : "plan";
@@ -312,7 +331,7 @@ async function loadTimingStats(db, job) {
 }
 
 async function recordTimingSample(db, job, sample) {
-  if (!db?.collection || !(sample.activeMs > 0)) return;
+  if (!db?.collection || !(sample.activeMs >= MIN_SAMPLE_ACTIVE_MS)) return;
   const col = db.collection(STATS_COLLECTION);
   await db.runTransaction(async (tx) => {
     const refs = [col.doc(kindKey(job)), col.doc("all")];
@@ -322,7 +341,7 @@ async function recordTimingSample(db, job, sample) {
 }
 
 module.exports = {
-  PHASES, PHASE_KEYS, STATS_COLLECTION, DEFAULT_FIT,
+  PHASES, PHASE_KEYS, STATS_COLLECTION, DEFAULT_FIT, MIN_SAMPLE_ACTIVE_MS, SUBJECT_DEFAULTS,
   phaseForStage, phaseIndex, kindKey, fitFromStats, estimateProgress, trackWait,
   phaseDurations, addSample, noteProgress, countResourceQuestions, loadTimingStats, recordTimingSample,
 };

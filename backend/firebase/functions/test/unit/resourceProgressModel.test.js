@@ -29,7 +29,8 @@ it("counts written questions toward the bar and stretches the ETA for a slow run
   const base = { job, statsByKey: { [kindKey(job)]: stats }, tracker: { phase: "write", questionCount: 20, questionsDone: 10 }, phaseStarts: { plan: 0, write: 15_000 } };
   // Each report lands just as a batch is counted (no time-based partial batch).
   const onPace = estimateProgress({ ...base, activeMs: 67_500, wallMs: 67_500, countChangedAtMs: 67_500 });
-  assert.ok(Math.abs(onPace.fraction - 0.45) < 0.01);
+  // Plan 10.5% + half of writing's 73.7% (shares after the 5% finish cap).
+  assert.ok(Math.abs(onPace.fraction - 0.474) < 0.01, `${onPace.fraction}`);
   const slow = estimateProgress({ ...base, activeMs: 135_000, wallMs: 135_000, countChangedAtMs: 135_000 });
   assert.equal(slow.fraction, onPace.fraction);
   assert.ok(slow.remainingMs > onPace.remainingMs * 1.8, `${slow.remainingMs} vs ${onPace.remainingMs}`);
@@ -137,11 +138,11 @@ it("never writes a lower bar than the run's last report", () => {
 it("keeps moving through an overrunning step instead of freezing short of its end", () => {
   // Diagrams on a booklet: no question count, so time moves the bar.
   const at = (activeMs) => estimateProgress({ job: booklet, tracker: { phase: "diagrams" }, activeMs, phaseStarts: { diagrams: 0 }, requestedQuestions: 20 }).fraction;
-  const expected = 500_000 * 0.15; // default fit for 20 questions × the default diagram share
+  const expected = 500_000 * 0.22; // default fit for 20 questions × the default diagram share
   const [once, twice, thrice] = [1, 2, 3].map((n) => at(expected * n));
   assert.ok(once < twice && twice < thrice, `${once} ${twice} ${thrice}`);
-  // Never reaches the next step's start (plan 8% + write 55% + diagrams 15%).
-  assert.ok(at(expected * 50) < 0.78);
+  // Never reaches the next step's start (plan 8% + write 66% + diagrams 22%).
+  assert.ok(at(expected * 50) < 0.96);
 });
 
 it("counts waiting as part of the ETA once the run has some work behind it", () => {
@@ -225,7 +226,7 @@ it("gives English no diagram step in the bar or the ETA", () => {
   const english = { resourceType: "practice-paper", subject: "english", answerMode: "worked" };
   const done = estimateProgress({ job: english, statsByKey: stats, tracker: { phase: "write", questionCount: 8, questionsDone: 8 }, activeMs: 280_000, countChangedAtMs: 280_000, phaseStarts: { plan: 0, write: 30_000 } });
   // Writing done and nothing but writing after planning: almost no time left.
-  assert.ok(done.remainingMs < 15_000, `${done.remainingMs}`);
+  assert.ok(done.remainingMs < 20_000, `${done.remainingMs}`);
   const maths = estimateProgress({ job: { ...english, subject: "maths" }, statsByKey: stats, tracker: { phase: "write", questionCount: 8, questionsDone: 8 }, activeMs: 280_000, countChangedAtMs: 280_000, phaseStarts: { plan: 0, write: 30_000 } });
   assert.ok(maths.remainingMs > done.remainingMs * 3);
 });
@@ -249,4 +250,35 @@ it("counts unnamed work before the first step as planning", async () => {
   assert.equal(current.progress.phase, "plan");
   assert.equal(current.progress.phaseStarts.plan, 0);
   assert.ok(current.progress.fraction > 0, `${current.progress.fraction}`);
+});
+
+// RES-93. Measured on nine English paper runs in November 2026.
+it("uses English's measured defaults, not a mixed history", () => {
+  const { SUBJECT_DEFAULTS } = require("../../src/resources/progressModel");
+  const english = { resourceType: "practice-paper", subject: "english", answerMode: "worked" };
+  const mixed = { all: history([1, 2, 3].map(() => ({ questions: 40, activeMs: 900_000, phaseMs: { plan: 10, write: 60, diagrams: 30, check: 0, finish: 0 } }))) };
+  const fresh = estimateProgress({ job: english, statsByKey: mixed, tracker: { phase: "plan" }, activeMs: 0 });
+  assert.equal(fresh.expectedTotalMs, (SUBJECT_DEFAULTS.english.fit.a + SUBJECT_DEFAULTS.english.fit.b * SUBJECT_DEFAULTS.english.questions) * 1000);
+  // Its own history still takes over once there is enough of it.
+  const own = { [kindKey(english)]: history([1, 2, 3].map(() => ({ questions: 10, activeMs: 200_000 }))) };
+  assert.equal(estimateProgress({ job: english, statsByKey: own, tracker: { phase: "plan" }, activeMs: 0 }).expectedTotalMs, 200_000);
+});
+
+it("leaves no time for checking or a long finish on an English paper", () => {
+  const english = { resourceType: "practice-paper", subject: "english", answerMode: "worked" };
+  const polluted = { [kindKey(english)]: history([1, 2, 3].map(() => ({ questions: 10, activeMs: 300_000, phaseMs: { plan: 10, write: 50, diagrams: 0, check: 10, finish: 30 } }))) };
+  const done = estimateProgress({ job: english, statsByKey: polluted, tracker: { phase: "finish", questionCount: 10, questionsDone: 10 }, activeMs: 299_000, phaseStarts: { plan: 0, write: 30_000, finish: 299_000 } });
+  assert.ok(done.fraction >= 0.92, `${done.fraction}`);
+  assert.ok(done.remainingMs < 20_000, `${done.remainingMs}`);
+});
+
+it("does not learn from a run too short to have generated anything", async () => {
+  const { recordTimingSample, MIN_SAMPLE_ACTIVE_MS } = require("../../src/resources/progressModel");
+  let writes = 0;
+  const doc = () => ({ get: async () => ({ exists: false }) });
+  const db = { collection: () => ({ doc }), runTransaction: async (fn) => fn({ get: async () => ({ exists: false }), set: () => { writes += 1; } }) };
+  await recordTimingSample(db, job, { questions: 10, activeMs: 4_000, phaseMs: { finish: 4_000 } });
+  assert.equal(writes, 0);
+  await recordTimingSample(db, job, { questions: 10, activeMs: MIN_SAMPLE_ACTIVE_MS, phaseMs: { write: MIN_SAMPLE_ACTIVE_MS } });
+  assert.equal(writes, 2);
 });

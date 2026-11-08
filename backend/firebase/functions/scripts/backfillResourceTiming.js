@@ -1,5 +1,5 @@
 /*
- * RES-73 one-off: seeds the generation ETA's history (resourceTimingStats)
+ * RES-73 one-off: seeds the generation ETA's history (the timing stats collection)
  * from completed runs still in Cloud Logging, so the ETA is accurate from day
  * one instead of learning from scratch.
  *
@@ -16,7 +16,7 @@
  *   node scripts/backfillResourceTiming.js --write         # replaces the stats docs
  *   --project=tenacity-tutoring-staging   --freshness=30d
  *
- * --write replaces resourceTimingStats wholesale, so run it once, before live
+ * --write replaces the timing stats collection wholesale, so run it once, before live
  * completions have started adding to it (or accept that those are re-counted
  * only if their logs are in range — they are, so a rerun stays correct).
  */

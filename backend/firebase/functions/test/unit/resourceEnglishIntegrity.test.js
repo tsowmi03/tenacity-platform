@@ -68,6 +68,21 @@ describe("excerpting a novel (RES-88)", () => {
     assert.equal(readsAsBodyText(out), true);
   });
 
+  it("skips a merged contents list even when an entry holds an abbreviation", () => {
+    const collection = [
+      "Contents",
+      "At the Bay The Garden-Party The Daughters of the Late Colonel Mr. and Mrs. Dove The Young Girl Life of Ma Parker Marriage à la Mode The Voyage Miss Brill Her First Ball The Lady’s Maid",
+      "At the Bay",
+      "I",
+      "Very early morning. The sun was not yet risen, and the whole of the bay was hidden under a white sea-mist.",
+      narration(1),
+      narration(2),
+    ].join("\n\n");
+    const out = excerptOpening(collection, 200, "The Garden Party and Other Stories");
+    assert.match(out, /^Very early morning/);
+    assert.doesNotMatch(out, /Lady’s Maid/);
+  });
+
   it("starts at the chapter the planner named", () => {
     const out = excerptOpening(tomSawyerLike(), 200, "The Adventures of Tom Sawyer", { pieceTitle: "Chapter II (The Glorious Whitewasher)" });
     assert.match(out, /^Saturday morning was come/);

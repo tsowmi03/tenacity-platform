@@ -104,7 +104,6 @@ async function packDocument({
   studentName,
   children,
   updateFields = false,
-  reviewNotice = null,
 }) {
   const doc = new Document({
     features: updateFields ? { updateFields: true } : undefined,
@@ -118,11 +117,7 @@ async function packDocument({
         footers: {
           default: makeFooter(cleanText(studentName)),
         },
-        children: reviewNotice ? [
-          paragraph(reviewNotice.label, { bold: true, color: "8A4B00", spacing: { after: 120 } }),
-          ...reviewNotice.messages.map((message) => paragraph(message, { color: "555555", size: BRAND.FONT_SIZE_SMALL, spacing: { after: 100 } })),
-          ...children,
-        ] : children,
+        children,
       },
     ],
   });

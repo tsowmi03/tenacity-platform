@@ -11,11 +11,12 @@ const admin = require("firebase-admin");
 
 const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSHEET_BATCH_SIZE, MAX_RECOVERIES } = require("./durableStages");
 const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
-const { canKeepDraftAfterReview, unavailableReviewWarning } = require("./contentVerification");
+const { canKeepDraftAfterReview, requestedMinutes, unavailableReviewWarning } = require("./contentVerification");
 const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
 const { PUBLIC_DOMAIN, hoistPartReferences, normaliseStimulusAttribution, removeUnusedStimulusTexts } = require("./stimulusIntegrity");
 const { stripStructureGuidance } = require("./englishGuidance");
 const { judgeStimulusImages } = require("./imageJudge");
+const { readingBudget, textWordLimit } = require("./readingLoad");
 const { countResourceQuestions, noteProgress, phaseDurations, recordTimingSample } = require("./progressModel");
 const { callAiForResource } = require("./aiClient");
 const {
@@ -1503,6 +1504,9 @@ async function saveGeneratedResource(args) {
 
 async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, clock, model, callAi, signal, reviewWarnings = [], reviewStatus = "passed", contentReview = null }) {
   const answerMode = answerModeForJob(job);
+  // The tutor's selection is the subject. A model's "English Advanced" read as
+  // not-English here and failed the finished paper at the last step.
+  if (job.subject && parsed && typeof parsed === "object") parsed.subject = job.subject;
   let outputFileName = buildOutputFileName({
     resourceType: job.resourceType,
     title: parsed.title,
@@ -1511,10 +1515,8 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     subject: job.subject,
     date: clock ? clock() : new Date(),
   });
-  const notice = () => reviewStatus === "draft" || reviewWarnings.length ? {
-    label: reviewStatus === "draft" ? "DRAFT - tutor review required" : "Tutor review recommended",
-    messages: [...new Set(reviewWarnings.map((w) => w.message))].slice(0, 6),
-  } : null;
+  // Warnings are for the tutor, in the portal (job.warnings and reviewStatus).
+  // The document itself stays clean, ready to hand to a student.
   let built;
   let mathRepairUsed = false;
   // RES-73. Unplanned resources learn their question count only here; history
@@ -1546,7 +1548,6 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
         })); }
         : null,
       options: {
-        reviewNotice: notice(),
         studentName: job.studentName,
         subject: job.subject,
         year: job.year,
@@ -1566,7 +1567,7 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
       built = await resourceStage(job, "document.build_draft", () => buildDocxWithDiagramReliability({
         resourceType: job.resourceType, parsed, buildDocx, repairMath: null,
         options: { studentName: job.studentName, subject: job.subject, year: job.year,
-          answerMode, showMarks: job.showMarks, reviewNotice: notice() },
+          answerMode, showMarks: job.showMarks },
       }));
     } else {
       if (!isDiagramRenderError(err) && err?.name !== "ResourceValidationError" && !err?.resourceControl &&
@@ -1873,6 +1874,14 @@ function applySourcedPassage(parsed, sourced) {
   parsed.passageSource = sourced.sourceName || sourced.source || parsed.passageSource;
 }
 
+// RES-89. Practice papers have a sitting to fit; other resources are worked
+// through at the tutor's pace.
+function paperReadingBudget(job) {
+  return job?.resourceType === "practice-paper" && isEnglishSubject(job.subject)
+    ? readingBudget({ year: job.year, minutes: requestedMinutes(job.customPrompt || "") })
+    : null;
+}
+
 function shouldSourceStimulusSet({ job, enablePdTextSourcing }) {
   // Uploaded files do NOT disable sourcing here: uploads are usually context
   // (an assessment notification, a past paper, a copyrighted stimulus booklet
@@ -1889,11 +1898,12 @@ function shouldSourceStimulusSet({ job, enablePdTextSourcing }) {
 // Build a fetch brief for an already-chosen selection, so the deterministic
 // sourcing (Gutenberg/Wikisource) has the length/theme hints it wants without a
 // second model-selection call.
-function briefForSelection(job, selection) {
+function briefForSelection(job, selection, maxWords = null) {
   return {
     year: job.year,
     textType: selection.type,
     lengthWords: Number(selection.approxWordCount) || 0,
+    maxWords,
     skillFocus: job.customPrompt
       ? `tutor instructions: ${job.customPrompt}`
       : "close reading, inference, tone and language analysis",
@@ -1954,6 +1964,7 @@ async function maybeSourceStimulusSetLogged({
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
         callAi,
+        readingBudget: paperReadingBudget(job),
       });
     } catch (err) {
       if (isCancellationError(err) || err?.resourceControl) throw err;
@@ -1979,6 +1990,8 @@ async function maybeSourceStimulusSetLogged({
 
   const texts = [];
   const attemptedTitles = plannedTexts.map((selection) => selection.title).filter(Boolean);
+  // RES-89. A paper's prose is cut to what the sitting can hold.
+  const maxWords = textWordLimit(paperReadingBudget(job), plannedTexts.length);
   let planner = plan.planner || null;
   for (const selection of plannedTexts) {
     try {
@@ -1986,7 +1999,7 @@ async function maybeSourceStimulusSetLogged({
         anthropicApiKey,
         openaiApiKey,
         selection,
-        brief: briefForSelection(job, selection),
+        brief: briefForSelection(job, selection, maxWords),
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
         callAi,
@@ -1999,7 +2012,7 @@ async function maybeSourceStimulusSetLogged({
       const alternative = await selectAlternative({
         anthropicApiKey,
         openaiApiKey,
-        brief: briefForSelection(job, selection),
+        brief: briefForSelection(job, selection, maxWords),
         excludedTitles: attemptedTitles,
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
@@ -2010,7 +2023,7 @@ async function maybeSourceStimulusSetLogged({
         anthropicApiKey,
         openaiApiKey,
         selection: alternative,
-        brief: briefForSelection(job, alternative),
+        brief: briefForSelection(job, alternative, maxWords),
         signal,
         safetyIdentifier: safetyIdentifierForUid(job.createdBy),
         callAi,
@@ -2721,7 +2734,7 @@ async function runGenerationPipelineLogged(job, deps) {
     resourceEvent(job, "stage.skipped", { stageId: "content.review.v1", reason: "unplanned_resource" });
   }
   let { parsed, raw, warnings: contentWarnings = [], reviewStatus = "passed", contentReview = null } = usePlan
-    ? await generatePlannedResource({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, hasStimulus, stimulusImages, referenceText: uploadedContent.map((f) => f.content).join("\n") })
+    ? await generatePlannedResource({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, hasStimulus, stimulusImages, referenceText: uploadedContent.map((f) => f.content).join("\n"), maxTextWords: textWordLimit(paperReadingBudget(job), Math.max(1, stimulusSourcing.texts.length)), sourcedCount: stimulusSourcing.texts.length })
     : job.resourceType === "worksheet" && job.subject === "maths" && questionCount > WORKSHEET_BATCH_SIZE
     ? await generateWorksheetBatches({ job: { ...job, answerMode }, request: generationRequest, callAi: trackedCallAi, count: questionCount })
     : splitSchemas
