@@ -18,10 +18,16 @@ const REVIEW_SCHEMA = object({
 const TIME_PHRASE = /\b(\d+(?:\.\d+)?)\s*[- ]?\s*(minutes?|mins?|hours?|hrs?)\b/gi;
 const toMinutes = (match) => Number(match[1]) * (/^(?:hour|hr)/i.test(match[2]) ? 60 : 1);
 // "10 minutes reading time" / "reading time of 10 minutes" / "perusal: 5 mins".
+// "Reading" alone usually names the assessment ("a 60-minute reading
+// comprehension paper"), so without "time" it counts only when it stands as its
+// own allocation ("10 minutes reading, then 50 minutes writing").
 function isReadingTime(prompt, match) {
-  const after = prompt.slice(match.index + match[0].length, match.index + match[0].length + 24);
+  const end = match.index + match[0].length;
+  const after = prompt.slice(end, end + 24);
   const before = prompt.slice(Math.max(0, match.index - 24), match.index);
-  return /^\s*(?:of\s+)?(?:reading|perusal)\b/i.test(after) || /\b(?:reading(?:\s+time)?|perusal)\s*(?:time\s*)?(?:of|is|:|-)?\s*$/i.test(before);
+  return /^\s*(?:of\s+)?(?:reading\s+time|perusal)\b/i.test(after) ||
+    (!match[0].includes("-") && /^\s*(?:of\s+)?reading\s*(?:$|[,.;)]|then\b|before\b|first\b|and\s+\d)/i.test(after)) ||
+    /\b(?:reading\s+time|perusal(?:\s+time)?)\s*(?:of|is|:|-)?\s*$/i.test(before);
 }
 
 // The sitting time, skipping any separately stated reading time (RES-89).
