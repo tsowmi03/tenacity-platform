@@ -6,10 +6,13 @@ const { BRAND } = require("./branding");
 const { imageSourceLine, textSourceLine } = require("../stimulusIntegrity");
 const { cleanText, paragraph } = require("./shared");
 
-// Roughly two-thirds of the A4 content width. A visual stimulus has to be big
-// enough to analyse — students are asked about salience, small print and
-// composition — while still leaving the question space on the page.
-const STIMULUS_IMAGE_TARGET_WIDTH = 400;
+// RES-97. A visual stimulus prints the full text width (A4 content width, 9026
+// twips, is about 600px at 96 dpi) and at most about 17 cm tall, so a poster's
+// small print can be read. It used to be held to 400px, about two-thirds of
+// the width, which left the words on a scanned poster unreadable. The booklet
+// is its own section, so a large image costs no question space.
+const STIMULUS_IMAGE_TARGET_WIDTH = 600;
+const STIMULUS_IMAGE_MAX_HEIGHT = 660;
 
 // Split passage/stimulus text into blocks (paragraphs / stanzas) separated by
 // blank lines, each block being its cleaned, non-empty lines. A blank line is a
@@ -145,7 +148,10 @@ function makeImageContent({ label, title, creator, date, licence, source, image 
     }));
   }
 
-  const scale = Math.min(1, STIMULUS_IMAGE_TARGET_WIDTH / (image.width || STIMULUS_IMAGE_TARGET_WIDTH));
+  const naturalWidth = image.width || STIMULUS_IMAGE_TARGET_WIDTH;
+  const naturalHeight = image.height || STIMULUS_IMAGE_TARGET_WIDTH;
+  // Never enlarged: a small original would only print blurred.
+  const scale = Math.min(1, STIMULUS_IMAGE_TARGET_WIDTH / naturalWidth, STIMULUS_IMAGE_MAX_HEIGHT / naturalHeight);
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { after: 120 },
@@ -155,8 +161,8 @@ function makeImageContent({ label, title, creator, date, licence, source, image 
         data: image.buffer,
         type: image.type,
         transformation: {
-          width: Math.round((image.width || STIMULUS_IMAGE_TARGET_WIDTH) * scale),
-          height: Math.round((image.height || STIMULUS_IMAGE_TARGET_WIDTH) * scale),
+          width: Math.round(naturalWidth * scale),
+          height: Math.round(naturalHeight * scale),
         },
       }),
     ],
@@ -194,4 +200,5 @@ module.exports = {
   makePassageGroups,
   makeImageContent,
   STIMULUS_IMAGE_TARGET_WIDTH,
+  STIMULUS_IMAGE_MAX_HEIGHT,
 };

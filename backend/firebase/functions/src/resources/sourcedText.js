@@ -85,9 +85,10 @@ async function sourceVerifiedText({
 async function sourceVisualStimulus({
   selection,
   excludeClusters,
+  judge = null,
   commons = sourceCommonsImage,
 } = {}) {
-  const sourced = await commons({ selection, excludeClusters });
+  const sourced = await commons({ selection, excludeClusters, judge });
   return { selection, ...sourced };
 }
 

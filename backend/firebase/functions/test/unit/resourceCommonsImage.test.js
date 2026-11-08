@@ -344,3 +344,95 @@ describe("sourceCommonsImage", () => {
     assert.equal(result.checks.downloadError, "socket hang up");
   });
 });
+
+// RES-97: the Ecoregions map (both sides of a sheet, 1280x505) and an
+// Arabic-language flyer reached real papers. These cover the filters, the
+// ranking and the judge step that stop them.
+describe("Commons image suitability (RES-97)", () => {
+  const { cleanImageTitle } = require("../../src/resources/commonsImage");
+  const image = { buffer: Buffer.from("bytes"), type: "jpg", width: 1200, height: 1600 };
+
+  it("rejects a strip or double-page scan, and a map, chart or document by its title", () => {
+    assert.equal(rejectionReason(candidate({ width: 1280, height: 505 }), {}), "shape");
+    assert.equal(rejectionReason(candidate({ title: "File:Ecoregions of New York.jpg" }), {}), "document");
+    assert.equal(rejectionReason(candidate({ title: "File:Map of Sydney 1920.jpg" }), {}), "document");
+    assert.equal(rejectionReason(candidate({ title: "File:J. M. Flagg, I Want You for U.S. Army poster (1917).jpg" }), {}), null);
+  });
+
+  it("no longer lets sheer size win: a printable picture outranks a huge scan", () => {
+    const picture = candidate({ width: 1600, height: 1200 });
+    const scan = candidate({ width: 9000, height: 4500 });
+    assert.ok(scoreCandidate(picture) > scoreCandidate(scan));
+  });
+
+  it("captions an image without file names or catalogue numbers", () => {
+    assert.equal(cleanImageTitle("Ecoregions of New York - (New York State) LOC 2011587021"), "Ecoregions of New York");
+    assert.equal(cleanImageTitle("File:Storm_at_sea_(NARA_123456).jpg"), "Storm at sea");
+    assert.equal(cleanImageTitle("Christ in the Storm on the Sea of Galilee"), "Christ in the Storm on the Sea of Galilee");
+  });
+
+  function deps(candidates, { downloads } = {}) {
+    return {
+      search: async () => candidates.map((c) => c.title),
+      info: async (titles) => candidates.filter((c) => titles.includes(c.title)),
+      download: async (c) => { downloads?.push(c.title); return { ...image, from: c.title }; },
+    };
+  }
+
+  it("prints the image the judge picks, with its caption and description", async () => {
+    const candidates = [
+      candidate({ title: "File:Flyer.jpg", cluster: "flyer" }),
+      candidate({ title: "File:Save the forests.jpg", cluster: "save the forests", description: "archive text" }),
+    ];
+    let shown;
+    const judge = async ({ images, purpose, task }) => {
+      shown = { count: images.length, purpose, task };
+      return [
+        { index: 1, suitable: false, fit: 1, reason: "Text-heavy flyer.", title: "", description: "" },
+        { index: 2, suitable: true, fit: 5, reason: "Clear poster.", title: "Save New Zealand forests poster", description: "A child beside a forest stream." },
+      ];
+    };
+    const result = await sourceCommonsImage({ selection: { searchTerms: "conservation poster", purpose: "creative-prompt", task: "Write from it." }, judge, ...deps(candidates) });
+    assert.equal(result.ok, true);
+    assert.equal(result.judged, true);
+    assert.equal(result.image.from, "File:Save the forests.jpg");
+    assert.equal(result.title, "Save New Zealand forests poster");
+    assert.equal(result.description, "A child beside a forest stream.");
+    assert.deepEqual(shown, { count: 2, purpose: "creative-prompt", task: "Write from it." });
+  });
+
+  it("shows the judge at most four candidates, and gives up rather than print one it rejected", async () => {
+    const candidates = Array.from({ length: 6 }, (_, i) => candidate({ title: `File:Scan ${i}.jpg`, cluster: `scan ${i}` }));
+    const downloads = [];
+    let calls = 0;
+    const judge = async ({ images }) => { calls += 1; return images.map((_, i) => ({ index: i + 1, suitable: false, fit: 1, reason: "Map.", title: "", description: "" })); };
+    const result = await sourceCommonsImage({ selection: { searchTerms: "old city scan" }, judge, ...deps(candidates, { downloads }) });
+    assert.equal(result.ok, false);
+    assert.equal(downloads.length <= 8, true);
+    assert.ok(calls >= 1 && calls <= 2, `judged at most twice (${calls})`);
+    assert.ok(result.checks.rejected.judged >= 4);
+  });
+
+  it("passes a stop, a worker hand-off or a stage recovery straight through", async () => {
+    const candidates = [candidate({ title: "File:Good.jpg", cluster: "good" })];
+    for (const err of [
+      Object.assign(new Error("Continuing in a fresh worker."), { code: "RESOURCE_STAGE_YIELD", resourceControl: true }),
+      Object.assign(new Error("aborted"), { name: "APIUserAbortError" }),
+      Object.assign(new Error("stopped"), { cancelled: true }),
+    ]) {
+      await assert.rejects(
+        sourceCommonsImage({ selection: { searchTerms: "good picture" }, judge: async () => { throw err; }, ...deps(candidates) }),
+        (thrown) => thrown === err
+      );
+    }
+  });
+
+  it("falls back to the top-ranked image when the judge cannot run", async () => {
+    const candidates = [candidate({ title: "File:Good.jpg", cluster: "good", displayTitle: "Good picture (LOC 12345678)" })];
+    const result = await sourceCommonsImage({ selection: { searchTerms: "good picture" }, judge: async () => { throw new Error("401"); }, ...deps(candidates) });
+    assert.equal(result.ok, true);
+    assert.equal(result.judged, false);
+    assert.equal(result.title, "Good picture");
+    assert.match(result.checks.judgeError, /401/);
+  });
+});

@@ -4,6 +4,7 @@ const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  STIMULUS_IMAGE_MAX_HEIGHT,
   STIMULUS_IMAGE_TARGET_WIDTH,
   makeImageContent,
   makePassageContent,
@@ -146,12 +147,18 @@ describe("makeImageContent", () => {
     assert.ok(!textOf(makeImageContent(base)).includes("http"));
   });
 
-  it("embeds the image at the target width, scaled down from a large original", () => {
+  // RES-97: full text width, or the height limit for a tall image.
+  it("prints a landscape image the full text width", () => {
+    const content = makeImageContent({ ...base, image: { ...base.image, width: 1600, height: 1000 } });
+    assert.deepEqual(embeddedSize(content), { width: STIMULUS_IMAGE_TARGET_WIDTH, height: 375 });
+  });
+
+  it("holds a tall image to the height limit, keeping its shape", () => {
     const content = makeImageContent({ ...base, image: { ...base.image, width: 4000, height: 5200 } });
     const size = embeddedSize(content);
-    assert.equal(size.width, STIMULUS_IMAGE_TARGET_WIDTH);
-    // Aspect ratio preserved: 5200/4000 * 400 = 520.
-    assert.equal(size.height, 520);
+    assert.equal(size.height, STIMULUS_IMAGE_MAX_HEIGHT);
+    // 4000/5200 * 660 = 508.
+    assert.equal(size.width, 508);
   });
 
   it("never enlarges an image that is already smaller than the target", () => {

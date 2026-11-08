@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-08 | [English images are checked before printing, and print full width (RES-97)](#2026-11-08--english-images-are-checked-before-printing-and-print-full-width-res-97) |
 | 2026-11-08 | [English DOCX: no stranded booklet page, readable long marking-guide rows (RES-92, RES-99)](#2026-11-08--english-docx-no-stranded-booklet-page-readable-long-marking-guide-rows-res-92-res-99) |
 | 2026-11-08 | [English papers: texts in the booklet with source lines, task-only questions, real extracts (RES-96, RES-98, RES-100, RES-88, RES-11)](#2026-11-08--english-papers-texts-in-the-booklet-with-source-lines-task-only-questions-real-extracts-res-96-res-98-res-100-res-88-res-11) |
 | 2026-11-08 | [Production Functions deploys ride out Google's "Failed to list functions" (TP-45)](#2026-11-08--production-functions-deploys-ride-out-googles-failed-to-list-functions-tp-45) |
@@ -234,6 +235,51 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-08 — English images are checked before printing, and print full width (RES-97)
+
+**What changed**
+- Candidate images are judged before one is printed. The best four Commons
+  matches are shown to Claude with the student's year, the image's purpose
+  (writing prompt or visual analysis) and the task. It rejects anything that
+  isn't one clear picture (multi-panel sheets, both sides of a document, book
+  or newspaper pages), maps, charts, tables and text-heavy documents, words
+  that aren't English or are too small to read when printed, and anything
+  unsuitable for the year level. It picks the best fit, or none, and writes
+  the image's caption and a one-line description for the question writers.
+  If none of up to two batches passes, the resource goes ahead without an
+  image rather than with a bad one. If the judge can't run, the top-ranked
+  image is used as before.
+- Before the judge, strips and double-page scans (wider than 2.2:1) and files
+  titled as maps, charts, censuses and the like are filtered out. Ranking no
+  longer favours the biggest file (which was always an archival scan):
+  resolution only counts up to what printing needs, and a printable shape
+  scores higher.
+- Images print the full text width (about 16 cm), or up to about 17 cm tall,
+  from a 1600px Commons rendition, so words in a poster can be read. They used
+  to be held to 400px wide (about two-thirds of the width) from a 1200px copy.
+- Captions are clean titles: "Ecoregions of New York - (New York State) LOC
+  2011587021" would now read "Ecoregions of New York". The credit line under
+  the image is unchanged.
+
+**Why:** The 7 Nov Year 7 paper printed "Ecoregions of New York", a scan of
+both sides of a dense poster at 4.2 × 1.65 in, as a persuasive-writing image,
+and a later test printed an Arabic-language event flyer.
+
+**Verification:** Unit tests cover the filters, ranking, captions, the judge
+request (images, year, purpose, task) and its fallbacks. All 2,243 Functions
+unit tests pass. Live sourcing for four searches ("environmental
+conservation poster", "World War I recruitment poster", "storm at sea
+painting", "litter pollution") picked a Save New Zealand forests poster, a WWI
+air-raid recruitment poster, Rembrandt's storm at sea and a littered beach, and
+rejected a text-heavy flyer. A Year 7 paper was then generated end to end: it
+printed a full-width photo of a 1973 jobs rally, captioned "Crowd rallying for
+jobs", with its writing task and model plan built on what the photo shows.
+Sourcing an image now takes about 20 seconds longer.
+
+**Status:** Live. Merged and Functions deployed to production on 8 Nov 2026.
 
 ---
 

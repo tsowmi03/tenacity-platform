@@ -15,6 +15,7 @@ const { canKeepDraftAfterReview, unavailableReviewWarning } = require("./content
 const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
 const { PUBLIC_DOMAIN, hoistPartReferences, normaliseStimulusAttribution, removeUnusedStimulusTexts } = require("./stimulusIntegrity");
 const { stripStructureGuidance } = require("./englishGuidance");
+const { judgeStimulusImages } = require("./imageJudge");
 const { countResourceQuestions, noteProgress, phaseDurations, recordTimingSample } = require("./progressModel");
 const { callAiForResource } = require("./aiClient");
 const {
@@ -1927,6 +1928,7 @@ async function maybeSourceStimulusSetLogged({
   callAi,
   selectAlternative = selectAlternativePublicDomainText,
   sourceVisual = sourceVisualStimulus,
+  judgeImages = judgeStimulusImages,
 }) {
   let plan;
   const persistedSelections = Array.isArray(job.sourceSelections)
@@ -2034,9 +2036,14 @@ async function maybeSourceStimulusSetLogged({
   const visuals = [];
   const plannedVisuals = Array.isArray(plan.visuals) ? plan.visuals : [];
   const usedClusters = new Set();
+  // RES-97. Candidate images are judged for this student and task before one
+  // is printed (imageJudge.js).
+  const judge = anthropicApiKey && judgeImages
+    ? ({ images, purpose, task }) => judgeImages({ images, purpose, task, year: job.year, anthropicApiKey, callAi, signal })
+    : null;
   for (const selection of plannedVisuals) {
     try {
-      const sourced = await sourceVisual({ selection, excludeClusters: usedClusters });
+      const sourced = await sourceVisual({ selection, excludeClusters: usedClusters, judge });
       if (sourced?.ok && sourced.image) {
         usedClusters.add(sourced.cluster);
         visuals.push(sourced);
@@ -2623,6 +2630,7 @@ async function runGenerationPipelineLogged(job, deps) {
         texts: stimulusSourcing.texts.length,
         images: stimulusSourcing.visuals.length,
         regionFallbacks: stimulusSourcing.visuals.filter((v) => v?.regionFallbackUsed).length,
+        imagesJudged: stimulusSourcing.visuals.filter((v) => v?.judged).length,
       });
     } else if (stimulusSourcing.skipped) {
       logger.info("[resource] stimulus not needed for this resource", { jobId: job.jobId });
