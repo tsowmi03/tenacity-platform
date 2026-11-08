@@ -277,7 +277,7 @@ reference after reviewing the test papers.
 no "keep with next" inside a text box, the opening row unsplittable, whole
 stanzas, a repeating header, and "Q2 cont." rows spanning the guide. Others
 cover the pasted-passage check and moving a shared reference into the
-question. All 2,229 Functions unit tests pass. Both
+question. All 2,230 Functions unit tests pass. Both
 live papers from the RES-96 run were rebuilt with the new layout, and a
 fresh Year 7 paper (prose extract, speech, image) was generated end to end.
 Every page was rendered in LibreOffice and checked: the booklet starts on

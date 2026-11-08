@@ -202,6 +202,18 @@ describe("a text reference every part repeats (RES-99)", () => {
     assert.equal(partial.parts[0].stem, "In Text 1, what?");
   });
 
+  // From review: a question naming several texts, or "Text 10", must not lose
+  // the parts' "In Text 1".
+  it("moves nothing when the question names a different text", () => {
+    const both = { stem: "After reading Text 1 and Text 2, answer the following questions.", parts: [{ stem: "In Text 1, what?" }, { stem: "In Text 1, why?" }] };
+    const ten = { stem: "Answer these about Text 10.", parts: [{ stem: "In Text 1, what?" }, { stem: "In Text 1, why?" }] };
+    assert.equal(hoistSharedPartReference(both), false);
+    assert.equal(hoistSharedPartReference(ten), false);
+    assert.deepEqual(both.parts.map((p) => p.stem), ["In Text 1, what?", "In Text 1, why?"]);
+    assert.deepEqual(ten.parts.map((p) => p.stem), ["In Text 1, what?", "In Text 1, why?"]);
+    assert.equal(both.stem, "After reading Text 1 and Text 2, answer the following questions.");
+  });
+
   it("walks every question in a paper and leaves the marking guide alone", () => {
     const parsed = { sections: [{ questions: [{ number: 1, stem: "Answer these.", parts: [{ stem: "In Text 1, what?" }, { stem: "In Text 1, why?" }] }] }],
       markingGuide: [{ questionNumber: 1, suggestedResponse: "In Text 1, the answer." }] };

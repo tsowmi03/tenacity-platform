@@ -196,12 +196,20 @@ function hoistSharedPartReference(question) {
   const norm = (value) => value.toLowerCase().replace(/\s+/g, " ").trim();
   const reference = matches[0][1].trim();
   if (matches.some((m) => norm(m[1]) !== norm(reference))) return false;
+  // The question's own scope decides. If it names a different text or image
+  // ("After reading Text 1 and Text 2, …"), the parts' qualifier is what says
+  // which one they mean, so nothing moves. Labels are matched whole: "Text 10"
+  // is not "Text 1".
+  const label = reference.match(/\b(?:Text|Image)\s+\d+\b/i)[0];
+  const labelKey = norm(label);
+  const stemLabels = [...question.stem.matchAll(/\b(Text|Image)\s+(\d+)(?!\d)/gi)].map((m) => norm(`${m[1]} ${m[2]}`));
+  if (stemLabels.some((other) => other !== labelKey)) return false;
   parts.forEach((part, i) => { part.stem = capitalise(matches[i][2].trim()); });
   const stem = question.stem.trim();
-  if (norm(stem).includes(norm(reference))) return true;
+  const escaped = norm(reference).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (new RegExp(`(^|[^a-z0-9])${escaped}(?![0-9])`).test(norm(stem))) return true;
   // "…about Mole's spring-cleaning in Text 1." would name Text 1 twice once
   // the reference leads the stem, so a trailing mention of the same text goes.
-  const label = reference.match(/\b(?:Text|Image)\s+\d+\b/i)[0];
   const trimmed = stem.replace(new RegExp(`\\s+(?:in|from)\\s+${label}(?=[.?!:]?$)`, "i"), "");
   question.stem = `${capitalise(`Refer to ${reference}.`)} ${trimmed}`.trim();
   return true;
