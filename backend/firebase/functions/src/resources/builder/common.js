@@ -18,7 +18,7 @@ const {
 
 const { BRAND, PAGE } = require("./branding");
 const { estimateTextHeight, layoutDiagramBlock, lineItems, textItem } = require("./questionLayout");
-const { makeImageContent, makePassageContent } = require("./passage");
+const { makeImageContent, makePassageGroups } = require("./passage");
 const {
   cleanText,
   formatSubject,
@@ -34,6 +34,7 @@ const {
   makeResponseLines,
   makeSectionHeading,
   makeShadedBox,
+  makeShadedRows,
   makeSubHeading,
   makeTableOfContents,
   makeWorkingLines,
@@ -153,6 +154,7 @@ function makeDetailLine(parts) {
 function makeCell(children, width, opts = {}) {
   return new TableCell({
     width: { size: width, type: WidthType.DXA },
+    columnSpan: opts.columnSpan,
     verticalAlign: opts.verticalAlign || VerticalAlign.CENTER,
     margins: opts.margins || { top: 90, bottom: 90, left: 120, right: 120 },
     shading: opts.fill ? { fill: opts.fill, type: ShadingType.CLEAR } : undefined,
@@ -170,8 +172,16 @@ function makeTable(headers, rows, opts = {}) {
   const widths = opts.widths || headers.map(() => Math.floor(PAGE.CONTENT_WIDTH / headers.length));
   const plain = opts.plain === true;
   const tableRows = [
-    new TableRow({
+    // RES-92: the header row repeats at the top of every page the table runs onto.
+    makeTableHeaderRow(headers, widths, plain),
+  ];
+  return finishTable(tableRows, headers, rows, widths, plain);
+}
+
+function makeTableHeaderRow(headers, widths, plain = false) {
+  return new TableRow({
       cantSplit: true,
+      tableHeader: true,
       children: headers.map((header, index) =>
         plain
           ? makeCell(
@@ -197,34 +207,97 @@ function makeTable(headers, rows, opts = {}) {
               { fill: "000000" }
             )
       ),
-    }),
-  ];
+    });
+}
 
+function cellParagraphs(value) {
+  const parts = splitParagraphs(value);
+  return parts.length
+    ? parts.map((part) => (parseListMarker(part)
+        ? makeListItem(part, { spacing: { after: 60 } })
+        : paragraph(part, { spacing: { after: 60 } })))
+    : [paragraph("", { spacing: { after: 0 } })];
+}
+
+function makeDataRow(row, headers, widths, plain = false) {
+  return new TableRow({
+    cantSplit: true,
+    children: headers.map((_, index) => (plain
+      ? makeCell(cellParagraphs(row[index]), widths[index], { borders: blackBorders })
+      : makeCell(cellParagraphs(row[index]), widths[index]))),
+  });
+}
+
+function finishTable(tableRows, headers, rows, widths, plain = false) {
   for (const row of rows) {
-    tableRows.push(
-      new TableRow({
-        cantSplit: true,
-        children: headers.map((_, index) => {
-          const parts = splitParagraphs(row[index]);
-          const children = parts.length
-            ? parts.map((part) => (parseListMarker(part)
-                ? makeListItem(part, { spacing: { after: 60 } })
-                : paragraph(part, { spacing: { after: 60 } })))
-            : [paragraph("", { spacing: { after: 0 } })];
-          return plain
-            ? makeCell(children, widths[index], { borders: blackBorders })
-            : makeCell(children, widths[index]);
-        }),
-      })
-    );
+    tableRows.push(row instanceof TableRow ? row : makeDataRow(row, headers, widths, plain));
   }
-
   return new Table({
     width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
     columnWidths: widths,
     layout: TableLayoutType.FIXED,
     rows: tableRows,
   });
+}
+
+// RES-92. How many lines a cell's text takes at a column width, roughly
+// (Calibri 11pt is about 105 twips a character). Only used to tell a long row
+// from a short one.
+function estimatedLines(value, width) {
+  const perLine = Math.max(8, Math.floor((width - 240) / 105));
+  return splitParagraphs(value).reduce((sum, part) => sum + Math.max(1, Math.ceil(part.length / perLine)), 0);
+}
+
+const LONG_GUIDE_ROW_LINES = 26;
+const STACKED_CHUNK_LINES = 16;
+
+// RES-92. A marking-guide row whose answer or criteria run long (an
+// extended-response plan beside its criteria) was one row taller than a page:
+// it jumped to a new page, then spilled over several more with no question
+// number or headings on the continued pages. Such a question is laid out
+// full width instead: the suggested response, then the marking criteria, in
+// rows of a few lines each. Every row keeps its question number in the first
+// column ("Q9", then "Q9 cont."), and the header row repeats on each page.
+function stackedGuideRows(label, sections, widths, { lead = "" } = {}) {
+  const spanWidth = widths.slice(1).reduce((sum, width) => sum + width, 0);
+  const rows = [];
+  for (const { heading, text } of sections) {
+    const parts = splitParagraphs(text);
+    if (!parts.length) continue;
+    let chunk = [];
+    let lines = 0;
+    let first = true;
+    const flush = () => {
+      if (!chunk.length) return;
+      const children = [
+        ...(!rows.length && lead ? [paragraph(lead, { italics: true, color: "555555", spacing: { after: 60 } })] : []),
+        ...(first && heading ? [paragraph(heading, { bold: true, color: BRAND.NAVY, spacing: { after: 60 } })] : []),
+        ...chunk.map((part) => (parseListMarker(part)
+          ? makeListItem(part, { spacing: { after: 60 } })
+          : paragraph(part, { spacing: { after: 60 } }))),
+      ];
+      const tooTall = lines > STACKED_CHUNK_LINES * 2;
+      rows.push(new TableRow({
+        // A single paragraph taller than this is allowed to break.
+        cantSplit: !tooTall,
+        children: [
+          makeCell([paragraph(rows.length ? `${label} cont.` : label, { bold: !rows.length, color: rows.length ? "555555" : undefined, spacing: { after: 0 } })], widths[0], { verticalAlign: VerticalAlign.TOP }),
+          makeCell(children, spanWidth, { columnSpan: widths.length - 1, verticalAlign: VerticalAlign.TOP }),
+        ],
+      }));
+      chunk = [];
+      lines = 0;
+      first = false;
+    };
+    for (const part of parts) {
+      const partLines = estimatedLines(part, spanWidth);
+      if (chunk.length && lines + partLines > STACKED_CHUNK_LINES) flush();
+      chunk.push(part);
+      lines += partLines;
+    }
+    flush();
+  }
+  return rows;
 }
 
 function isPipeTableLine(line) {
@@ -548,7 +621,7 @@ function renderStimulusItems(stimulus) {
           source: entry.source,
           image: entry.image,
         })
-      : makePassageContent({
+      : makePassageGroups({
           label: entry.label || `Text ${index + 1}`,
           title: entry.title,
           author: entry.author,
@@ -567,7 +640,9 @@ function renderStimulusItems(stimulus) {
     if (entry?.kind === "image") {
       children.push(...content);
     } else {
-      children.push(makeShadedBox(content, BRAND.LIGHT_GREY));
+      // One row per paragraph or stanza, so a long text breaks across pages
+      // instead of moving whole (RES-92).
+      children.push(makeShadedRows(content, BRAND.LIGHT_GREY));
     }
     if (index < stimulus.length - 1) children.push(makeSpacer(200));
   });
@@ -583,20 +658,23 @@ function renderStimulusBooklet(resource, subject, opts = {}) {
   const stimulus = asArray(resource?.stimulus);
   if (!isEnglishSubject(subject) || !stimulus.length) return [];
 
-  const hasImage = stimulus.some((entry) => entry?.kind === "image");
-  const hasText = stimulus.some((entry) => entry?.kind !== "image");
-  const material = hasImage && hasText
-    ? "text(s) and image(s)"
-    : hasImage
-      ? "image(s)"
-      : "text(s)";
+  // Said in plain words for what the booklet holds ("texts and image"), not
+  // "text(s) and image(s)" (RES-99).
+  const images = stimulus.filter((entry) => entry?.kind === "image").length;
+  const texts = stimulus.length - images;
+  const material = [
+    texts ? (texts === 1 ? "text" : "texts") : null,
+    images ? (images === 1 ? "image" : "images") : null,
+  ].filter(Boolean).join(" and ");
   const children = [
     opts.includeInTableOfContents
       ? makeContentsHeading("Stimulus booklet", { section: true })
       : makeSectionHeading("Stimulus booklet"),
     paragraph(
       `Examine the following ${material} carefully. You may annotate this stimulus booklet during reading time.`,
-      { italics: true, color: "555555", spacing: { after: 160 } }
+      // Held to the first text, whose opening row never splits (RES-92), and
+      // set a little below the heading band rather than against it.
+      { italics: true, color: "555555", keepNext: true, spacing: { before: 120, after: 160 } }
     ),
     ...renderStimulusItems(stimulus),
   ];
@@ -703,12 +781,20 @@ function makeQuestionMarkingGuide(guidance = [], opts = {}) {
   ];
   const fixedWidths = [900, ...(includeContext ? [1800] : []), ...(includeResponse ? [includeContext ? 3300 : 4000] : [])];
   const widths = [...fixedWidths, PAGE.CONTENT_WIDTH - fixedWidths.reduce((sum, width) => sum + width, 0)];
-  const tableRows = rows.map((row) => [
-    answerLabel(row),
-    ...(includeContext ? [guideContext(row)] : []),
-    ...(includeResponse ? [guideResponse(row)] : []),
-    guideCriteria(row),
-  ]);
+  const tableRows = rows.flatMap((row) => {
+    const cells = [
+      answerLabel(row),
+      ...(includeContext ? [guideContext(row)] : []),
+      ...(includeResponse ? [guideResponse(row)] : []),
+      guideCriteria(row),
+    ];
+    const tallest = Math.max(...cells.slice(1).map((value, i) => estimatedLines(value, widths[i + 1])));
+    if (tallest <= LONG_GUIDE_ROW_LINES) return [cells];
+    return stackedGuideRows(cells[0], [
+      ...(includeResponse ? [{ heading: "Suggested response", text: guideResponse(row) }] : []),
+      { heading: "Marking criteria", text: guideCriteria(row) },
+    ], widths, { lead: includeContext && guideContext(row) ? `${opts.contextHeader || "Focus"}: ${guideContext(row)}` : "" });
+  });
 
   if (!tableRows.length) {
     const empty = headers.map(() => "");
@@ -783,6 +869,7 @@ module.exports = {
   splitParagraphs,
   makeSectionHeading,
   makeShadedBox,
+  makeShadedRows,
   makeSubHeading,
   optionText,
 };

@@ -37,8 +37,15 @@ function splitPassageBlocks(value, opts = {}) {
 // When `verbatim` is true the body is a verified source text: it keeps its
 // original punctuation (no deAiPunctuation) and is never scanned for math
 // spans. Headings and attribution are our own composed text and stay cleaned.
-function makePassageContent({ label, title, author, source, licence, body, verbatim } = {}) {
-  const children = [];
+// RES-92. The passage as groups of paragraphs, one group per shaded-box row
+// (makeShadedRows): the title, source line and opening block together, then one
+// group per further paragraph or stanza. Nothing here carries keepNext. Inside
+// a table cell LibreOffice reads keepNext as "keep this whole table with what
+// follows", so a passage box longer than the rest of the page was pushed whole
+// onto the next one, leaving the "Stimulus booklet" heading alone on its page.
+// Keeping the title with the opening is the first row's job instead.
+const SHORT_BLOCK_CHARS = 700;
+function makePassageGroups({ label, title, author, source, licence, body, verbatim } = {}) {
   // A real public-domain text keeps its true author (the prompt requires
   // accurate attribution) and where it came from. Our own writing carries no
   // author at all, so it gets a plain "Tenacity Original" caption rather than
@@ -55,17 +62,17 @@ function makePassageContent({ label, title, author, source, licence, body, verba
   const blocks = splitPassageBlocks(body, verbatim ? { verbatim: true } : {});
   const hasBody = blocks.length > 0;
 
+  const opening = [];
   if (heading) {
-    children.push(paragraph(heading, {
+    opening.push(paragraph(heading, {
       bold: true,
       color: BRAND.NAVY,
       size: BRAND.FONT_SIZE_H3,
-      keepNext: Boolean(attribution || hasBody),
       spacing: { after: attribution || hasBody ? 60 : 0 },
     }));
   }
   if (attribution) {
-    children.push(paragraph(attribution, {
+    opening.push(paragraph(attribution, {
       italics: true,
       color: "555555",
       size: BRAND.FONT_SIZE_SMALL,
@@ -78,21 +85,31 @@ function makePassageContent({ label, title, author, source, licence, body, verba
       math: false,
     }));
   }
-  blocks.forEach((lines, blockIndex) => {
+  const groups = blocks.map((lines, blockIndex) => {
     const lastBlock = blockIndex === blocks.length - 1;
-    lines.forEach((line, lineIndex) => {
+    const group = lines.map((line, lineIndex) => {
       const lastLineOfBlock = lineIndex === lines.length - 1;
       // Tight spacing between lines of the same block (verse lines / wrapped
       // prose); a paragraph-sized gap between blocks; none after the last line.
       const after = !lastLineOfBlock ? 30 : lastBlock ? 0 : 160;
-      children.push(paragraph(line, {
+      return paragraph(line, {
         spacing: { after },
         ...(verbatim ? { math: false, verbatim: true } : {}),
-      }));
+      });
     });
+    // A stanza or a short paragraph stays in one piece; a long paragraph may
+    // break across a page like any prose.
+    group.keepTogether = lines.join(" ").length <= SHORT_BLOCK_CHARS;
+    return group;
   });
+  if (groups.length) groups[0] = Object.assign([...opening, ...groups[0]], { keepTogether: true });
+  else if (opening.length) groups.push(Object.assign(opening, { keepTogether: true }));
+  return groups.length ? groups : [[paragraph("", { spacing: { after: 0 } })]];
+}
 
-  return children.length ? children : [paragraph("", { spacing: { after: 0 } })];
+// The same content as makePassageGroups, as one flat list of paragraphs.
+function makePassageContent(args = {}) {
+  return makePassageGroups(args).flat();
 }
 
 /**
@@ -174,6 +191,7 @@ function makeImageContent({ label, title, creator, date, licence, source, image 
 module.exports = {
   splitPassageBlocks,
   makePassageContent,
+  makePassageGroups,
   makeImageContent,
   STIMULUS_IMAGE_TARGET_WIDTH,
 };

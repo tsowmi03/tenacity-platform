@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-08 | [English DOCX: no stranded booklet page, readable long marking-guide rows (RES-92, RES-99)](#2026-11-08--english-docx-no-stranded-booklet-page-readable-long-marking-guide-rows-res-92-res-99) |
 | 2026-11-08 | [English papers: texts in the booklet with source lines, task-only questions, real extracts (RES-96, RES-98, RES-100, RES-88, RES-11)](#2026-11-08--english-papers-texts-in-the-booklet-with-source-lines-task-only-questions-real-extracts-res-96-res-98-res-100-res-88-res-11) |
 | 2026-11-08 | [Production Functions deploys ride out Google's "Failed to list functions" (TP-45)](#2026-11-08--production-functions-deploys-ride-out-googles-failed-to-list-functions-tp-45) |
 | 2026-11-07 | [Two model slips no longer fail a finished paper (RES-51)](#2026-11-07--two-model-slips-no-longer-fail-a-finished-paper-res-51) |
@@ -233,6 +234,58 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-08 — English DOCX: no stranded booklet page, readable long marking-guide rows (RES-92, RES-99)
+
+**What changed**
+- The stimulus booklet no longer leaves page 2 with only its heading
+  (RES-92). The passage title inside each text's shaded box was marked "keep
+  with next", which LibreOffice (the portal preview) reads as "keep this whole
+  box with what follows", so a text longer than the rest of the page moved
+  whole onto the next one. Each text is now a box of rows: the title, source
+  line and opening paragraph stay together, then the text breaks across pages
+  between paragraphs. A poem's stanzas and short paragraphs never split. The
+  booklet instruction stays with the first text, with a little space under
+  the heading band. Annotation tasks use the same box.
+- Long marking-guide rows are readable (RES-92). The header row now repeats
+  on every page the guide runs onto (every table built the same way gets
+  this). An extended response whose plan or criteria run long is laid out
+  full width in rows of a few lines: "Suggested response", then "Marking
+  criteria", with "Q9" on the first row and "Q9 cont." on the rest. Before,
+  one three-column row ran over three pages with no headings or question
+  number. Short answers keep the three columns.
+- Stimuli read as stimuli (RES-99). The booklet instruction names what it
+  holds ("Examine the following texts and image carefully"). A question batch
+  that pastes a passage into a question while the paper has a stimulus
+  booklet is sent back to put the text in the booklet. When every part of a
+  question opens with the same reference ("(a) In the opening paragraph of
+  Text 1, …", "(b) In the opening paragraph of Text 1, …"), it is said once
+  in the question ("Refer to the opening paragraph of Text 1.") and the parts
+  start at their questions; the generator is also told to write them that
+  way. The rest of RES-99
+  (titled, boxed texts with a source line, kept out of question stems) was
+  done by RES-96 and RES-100.
+
+**Why:** The 6–7 Nov English papers had a near-empty page 2 and a Q6 marking
+row spread over pages 18–21 with nothing on the later pages saying which
+question it was. Tom asked for the heading spacing and the once-per-question
+reference after reviewing the test papers.
+
+**Verification:** New tests check the DOCX itself: one row per paragraph,
+no "keep with next" inside a text box, the opening row unsplittable, whole
+stanzas, a repeating header, and "Q2 cont." rows spanning the guide. Others
+cover the pasted-passage check and moving a shared reference into the
+question. All 2,229 Functions unit tests pass. Both
+live papers from the RES-96 run were rebuilt with the new layout, and a
+fresh Year 7 paper (prose extract, speech, image) was generated end to end.
+Every page was rendered in LibreOffice and checked: the booklet starts on
+page 2 with Text 1, texts flow across pages, and the marking guide repeats
+its headings, with Q9 marked "cont." on each continued row. Not checked in
+Word.
+
+**Status:** Live. Merged and Functions deployed to production on 8 Nov 2026.
 
 ---
 

@@ -1275,6 +1275,44 @@ function makeShadedBox(content, colour = BRAND.LIGHT_BLUE_BG, opts = {}) {
   });
 }
 
+// RES-92. A shaded box built from several rows, so a long passage can break
+// across pages between paragraphs or stanzas instead of moving whole. The first
+// row (title, source line and opening paragraph) never splits, so the title
+// always arrives with the start of its text; a short row (a stanza, a short
+// paragraph) never splits either. Inner edges carry no border, so the rows read
+// as one box. See makePassageGroups for why no paragraph inside uses keepNext.
+// A group may carry `keepTogether` (set by makePassageGroups from its text);
+// without it only the first row is held together.
+function makeShadedRows(groups, colour = BRAND.LIGHT_BLUE_BG) {
+  const rows = (Array.isArray(groups) ? groups : []).filter((group) => Array.isArray(group) && group.length);
+  if (!rows.length) return makeShadedBox([], colour);
+  const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+  const accent = { style: BorderStyle.SINGLE, size: 8, color: BRAND.LIGHT_BLUE };
+  const last = rows.length - 1;
+  return new Table({
+    width: { size: PAGE.CONTENT_WIDTH, type: WidthType.DXA },
+    columnWidths: [PAGE.CONTENT_WIDTH],
+    layout: TableLayoutType.FIXED,
+    borders: { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none },
+    rows: rows.map((children, index) => new TableRow({
+      cantSplit: index === 0 || children.keepTogether === true,
+      children: [
+        cell(children, PAGE.CONTENT_WIDTH, {
+          fill: colour,
+          verticalAlign: VerticalAlign.TOP,
+          margins: { top: index === 0 ? 100 : 0, bottom: index === last ? 100 : 0, left: 140, right: 140 },
+          borders: {
+            top: index === 0 ? thinGreyBorder : none,
+            bottom: index === last ? thinGreyBorder : none,
+            left: accent,
+            right: thinGreyBorder,
+          },
+        }),
+      ],
+    })),
+  });
+}
+
 // A navy header row that repeats on a new page and keeps with the first data
 // row, so a table's heading never sits alone at the foot of a page (RES-33).
 // keepNext on the header's paragraphs is what holds it to the next row in both
@@ -1410,6 +1448,7 @@ module.exports = {
   makeResponseLines,
   makeSectionHeading,
   makeShadedBox,
+  makeShadedRows,
   makeSubHeading,
   makeTableOfContents,
   makeWorkedExampleTable,

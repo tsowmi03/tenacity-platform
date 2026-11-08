@@ -13,7 +13,7 @@ const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSH
 const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
 const { canKeepDraftAfterReview, unavailableReviewWarning } = require("./contentVerification");
 const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
-const { PUBLIC_DOMAIN, normaliseStimulusAttribution, removeUnusedStimulusTexts } = require("./stimulusIntegrity");
+const { PUBLIC_DOMAIN, hoistPartReferences, normaliseStimulusAttribution, removeUnusedStimulusTexts } = require("./stimulusIntegrity");
 const { stripStructureGuidance } = require("./englishGuidance");
 const { countResourceQuestions, noteProgress, phaseDurations, recordTimingSample } = require("./progressModel");
 const { callAiForResource } = require("./aiClient");
@@ -1821,6 +1821,12 @@ function applyEnglishIntegrity(job, parsed) {
   if (Array.isArray(parsed.stimulus)) {
     const { originals } = normaliseStimulusAttribution(parsed.stimulus);
     if (originals) changed = true;
+  }
+  // A reference every part repeats is said once, in the question (RES-99).
+  const hoisted = hoistPartReferences(parsed);
+  if (hoisted.questions) {
+    changed = true;
+    resourceEvent(job, "questions.part_reference_hoisted", { questions: hoisted.questions });
   }
   const guidance = stripStructureGuidance(parsed, job);
   if (guidance.removed) {

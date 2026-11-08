@@ -177,8 +177,55 @@ function removeUnusedStimulusTexts(parsed) {
   return { removed, renumbered: changed };
 }
 
+// RES-99 follow-up. Parts that all open with the same reference ("(a) In the
+// opening paragraph of Text 1, what…", "(b) In the opening paragraph of Text
+// 1, which…") say it once, in the question's own stem: "Refer to the opening
+// paragraph of Text 1." leads the stem unless it already says so, and each
+// part starts at its question.
+const PART_REFERENCE = /^(?:In|From|Using|Based on)\s+((?:the\s+)?[^,]{0,80}?\b(?:Text|Image)\s+\d+\b[^,]{0,40}?),\s+(\S[\s\S]*)$/i;
+
+function capitalise(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function hoistSharedPartReference(question) {
+  const parts = Array.isArray(question?.parts) ? question.parts : [];
+  if (parts.length < 2 || typeof question.stem !== "string") return false;
+  const matches = parts.map((part) => String(part?.stem ?? "").match(PART_REFERENCE));
+  if (matches.some((m) => !m)) return false;
+  const norm = (value) => value.toLowerCase().replace(/\s+/g, " ").trim();
+  const reference = matches[0][1].trim();
+  if (matches.some((m) => norm(m[1]) !== norm(reference))) return false;
+  parts.forEach((part, i) => { part.stem = capitalise(matches[i][2].trim()); });
+  const stem = question.stem.trim();
+  if (norm(stem).includes(norm(reference))) return true;
+  // "…about Mole's spring-cleaning in Text 1." would name Text 1 twice once
+  // the reference leads the stem, so a trailing mention of the same text goes.
+  const label = reference.match(/\b(?:Text|Image)\s+\d+\b/i)[0];
+  const trimmed = stem.replace(new RegExp(`\\s+(?:in|from)\\s+${label}(?=[.?!:]?$)`, "i"), "");
+  question.stem = `${capitalise(`Refer to ${reference}.`)} ${trimmed}`.trim();
+  return true;
+}
+
+function hoistPartReferences(parsed) {
+  let questions = 0;
+  const visit = (node) => {
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    if (!node || typeof node !== "object" || Buffer.isBuffer(node)) return;
+    if (typeof node.stem === "string" && Array.isArray(node.parts) && hoistSharedPartReference(node)) questions += 1;
+    for (const [key, child] of Object.entries(node)) {
+      if (["stimulus", "markingGuide", "answers", "image"].includes(key)) continue;
+      if (child && typeof child === "object") visit(child);
+    }
+  };
+  visit(parsed);
+  return { questions };
+}
+
 module.exports = {
   PUBLIC_DOMAIN,
+  hoistPartReferences,
+  hoistSharedPartReference,
   TENACITY_ORIGINAL,
   imageSourceLine,
   normaliseStimulusAttribution,
