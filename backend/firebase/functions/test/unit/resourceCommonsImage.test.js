@@ -413,6 +413,20 @@ describe("Commons image suitability (RES-97)", () => {
     assert.ok(result.checks.rejected.judged >= 4);
   });
 
+  it("passes a stop, a worker hand-off or a stage recovery straight through", async () => {
+    const candidates = [candidate({ title: "File:Good.jpg", cluster: "good" })];
+    for (const err of [
+      Object.assign(new Error("Continuing in a fresh worker."), { code: "RESOURCE_STAGE_YIELD", resourceControl: true }),
+      Object.assign(new Error("aborted"), { name: "APIUserAbortError" }),
+      Object.assign(new Error("stopped"), { cancelled: true }),
+    ]) {
+      await assert.rejects(
+        sourceCommonsImage({ selection: { searchTerms: "good picture" }, judge: async () => { throw err; }, ...deps(candidates) }),
+        (thrown) => thrown === err
+      );
+    }
+  });
+
   it("falls back to the top-ranked image when the judge cannot run", async () => {
     const candidates = [candidate({ title: "File:Good.jpg", cluster: "good", displayTitle: "Good picture (LOC 12345678)" })];
     const result = await sourceCommonsImage({ selection: { searchTerms: "good picture" }, judge: async () => { throw new Error("401"); }, ...deps(candidates) });

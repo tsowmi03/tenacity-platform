@@ -24,6 +24,7 @@
 
 const { lazyRequire } = require("../shared/lazyRequire");
 const { bestVerdict } = require("./imageJudge");
+const { isCancellationError } = require("./cancellation");
 
 const loadSharp = lazyRequire(() => require("sharp"));
 const sharp = (...args) => loadSharp()(...args);
@@ -489,7 +490,10 @@ async function sourceCommonsImage({
         const chosen = downloaded[best.index - 1];
         picked = { ...chosen, title: best.title, description: best.description, judged: true };
       } catch (err) {
-        if (err?.name === "AbortError" || err?.cancelled) throw err;
+        // A stop, a worker hand-off or a stage recovery is not "no judge": it
+        // must reach the job's own handling, not be turned into an unjudged
+        // image (review on #344).
+        if (isCancellationError(err) || err?.resourceControl) throw err;
         // No judge after all: use the top-ranked download, as before RES-97.
         checks.judgeError = String(err?.message || err).slice(0, 200);
         picked = downloaded[0];

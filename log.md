@@ -269,7 +269,7 @@ both sides of a dense poster at 4.2 × 1.65 in, as a persuasive-writing image,
 and a later test printed an Arabic-language event flyer.
 
 **Verification:** Unit tests cover the filters, ranking, captions, the judge
-request (images, year, purpose, task) and its fallbacks. All 2,242 Functions
+request (images, year, purpose, task) and its fallbacks. All 2,243 Functions
 unit tests pass. Live sourcing for four searches ("environmental
 conservation poster", "World War I recruitment poster", "storm at sea
 painting", "litter pollution") picked a Save New Zealand forests poster, a WWI
