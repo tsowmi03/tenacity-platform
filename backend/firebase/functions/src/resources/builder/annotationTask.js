@@ -8,7 +8,7 @@ const {
   makePageBreak,
   makeParagraphs,
   makeSectionHeading,
-  makeShadedBox,
+  makeShadedRows,
   makeSpacer,
   makeSubHeading,
   packDocument,
@@ -22,7 +22,7 @@ const {
   paragraph,
   responseLineCount,
 } = require("./shared");
-const { makePassageContent, splitPassageBlocks } = require("./passage");
+const { makePassageGroups, splitPassageBlocks } = require("./passage");
 const {
   assertArray,
   assertNumber,
@@ -60,7 +60,7 @@ function validateAnnotationTaskResource(resource, options = {}) {
 // passage renderer (see builder/passage.js), which keeps prose paragraph breaks
 // and poem stanza/line breaks intact instead of collapsing them to one block.
 function makePassageBox(resource) {
-  return makePassageContent({
+  return makePassageGroups({
     title: resource.passageTitle,
     author: resource.passageAuthor,
     source: resource.passageSource,
@@ -97,7 +97,7 @@ async function buildAnnotationTaskDocx(resource, options = {}) {
     "Close reading and annotation",
     resource.passageTitle ? `Passage: ${resource.passageTitle}` : null,
   ]));
-  children.push(makeShadedBox(makePassageBox(resource), BRAND.LIGHT_GREY));
+  children.push(makeShadedRows(makePassageBox(resource), BRAND.LIGHT_GREY));
   if (resource.contextNote) {
     children.push(...makeParagraphs(resource.contextNote, { italics: true, color: "555555" }));
   }

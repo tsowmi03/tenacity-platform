@@ -212,6 +212,17 @@ function questionTextReferences(rows) {
   return referencedTextNumbers(strings.filter((v) => typeof v === "string"));
 }
 
+// A stem whose paragraphs before the last run to a passage's length. A task's
+// own instructions are a sentence or two; a pasted extract or speech is
+// hundreds of words over several paragraphs.
+const PASTED_PASSAGE_WORDS = 220;
+function stemHoldsPassage(question) {
+  const paragraphs = String(question?.stem || "").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  if (paragraphs.length < 3) return false;
+  const words = paragraphs.slice(0, -1).join(" ").split(/\s+/).filter(Boolean).length;
+  return words >= PASTED_PASSAGE_WORDS;
+}
+
 function validateQuestions(result, specs, type, prior = [], { english = false, existingTexts = null } = {}) {
   const rows = questionRows(result?.parsed, type);
   if (!Array.isArray(rows) || rows.length !== specs.length || rows.some((q, i) =>
@@ -230,6 +241,17 @@ function validateQuestions(result, specs, type, prior = [], { english = false, e
     if (missing.length) {
       throw Object.assign(controlError("RESOURCE_BATCH_INVALID", "A question named a text that is not in the stimulus booklet. Retry this stage."), {
         reason: `question_text_missing: Q${missing.map((q) => q.number).join(", Q")} named a text beyond Text ${available}, but the booklet has ${available} text(s); write that text into "stimulus" (numbered after the existing ones) or use a text the booklet has`,
+      });
+    }
+  }
+  // RES-99. With a stimulus booklet available, a passage pasted into a
+  // question (the 7 Nov paper's prose and speech sat inside Q1 and Q7) is
+  // sent back to be written into the booklet instead.
+  if (existingTexts) {
+    const pasted = rows.filter(stemHoldsPassage);
+    if (pasted.length) {
+      throw Object.assign(controlError("RESOURCE_BATCH_INVALID", "A question contained a reading passage. Retry this stage."), {
+        reason: `passage_in_question: Q${pasted.map((q) => q.number).join(", Q")} contained a reading passage; put the passage in "stimulus" as its own text and refer to it by its label in the question`,
       });
     }
   }
@@ -435,4 +457,4 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     warnings: [...planWarnings, ...validatePlannedCoverage(plan, scope), ...review.warnings] };
 }
 
-module.exports = { PLAN_SCHEMA, clarificationMessage, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };
+module.exports = { PLAN_SCHEMA, stemHoldsPassage, clarificationMessage, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };

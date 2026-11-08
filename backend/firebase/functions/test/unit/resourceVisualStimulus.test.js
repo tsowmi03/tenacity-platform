@@ -178,20 +178,22 @@ describe("stimulus booklet with images", () => {
   };
   const textEntry = { label: "Text 1", title: "A poem", author: "A poet", body: "A line" };
 
-  it("says 'text(s) and image(s)' for a mixed booklet", () => {
+  // RES-99: the instruction names what the booklet holds in plain words.
+  it("says 'text and image' for a mixed booklet", () => {
     const text = textOf(renderStimulusBooklet({ stimulus: [textEntry, imageEntry] }, "english"));
-    assert.ok(text.includes("Examine the following text(s) and image(s)"));
+    assert.ok(text.includes("Examine the following text and image carefully"));
+    assert.ok(!text.includes("(s)"));
   });
 
-  it("says 'image(s)' when the booklet is visual only", () => {
+  it("says 'image' when the booklet is visual only", () => {
     const text = textOf(renderStimulusBooklet({ stimulus: [imageEntry] }, "english"));
-    assert.ok(text.includes("Examine the following image(s)"));
-    assert.ok(!text.includes("text(s)"));
+    assert.ok(text.includes("Examine the following image carefully"));
+    assert.ok(!/\btext\b/.test(text.split("carefully")[0]));
   });
 
-  it("says 'text(s)' when there is no image, as before", () => {
-    const text = textOf(renderStimulusBooklet({ stimulus: [textEntry] }, "english"));
-    assert.ok(text.includes("Examine the following text(s)"));
+  it("counts texts when there is no image", () => {
+    const text = textOf(renderStimulusBooklet({ stimulus: [textEntry, { ...textEntry, label: "Text 2" }] }, "english"));
+    assert.ok(text.includes("Examine the following texts carefully"));
   });
 
   it("renders both entries in one booklet", () => {
