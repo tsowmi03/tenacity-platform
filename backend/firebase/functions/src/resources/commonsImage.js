@@ -15,13 +15,15 @@
  * tutoring, so NonCommercial and NoDerivatives material is unusable however
  * pedagogically apt.
  *
- * Selection is deterministic once the search returns: candidates are filtered
- * (licence, restrictions, resolution, decodable format), then ranked, then the
- * winner's bytes are downloaded. Nothing about which image is chosen depends on
- * a second model call.
+ * Candidates are filtered (licence, restrictions, resolution, decodable
+ * format, shape, map/chart/document titles), then ranked. RES-97: the best few
+ * are then shown to a vision model with the student's year and the task (see
+ * imageJudge.js), which picks the one fit to print, or none. Without a judge
+ * the top-ranked candidate is used, as before.
  */
 
 const { lazyRequire } = require("../shared/lazyRequire");
+const { bestVerdict } = require("./imageJudge");
 
 const loadSharp = lazyRequire(() => require("sharp"));
 const sharp = (...args) => loadSharp()(...args);
@@ -41,9 +43,21 @@ let lastCommonsFetchAt = 0;
 // Commons will happily serve a 1200px *thumbnail* of a 149x108 original, so the
 // gate must be applied to the NATIVE size, never the thumbnail's.
 const MIN_LONG_EDGE = 800;
-// Width to request from Commons' thumbnailer. Wide enough for a full-page
-// stimulus, small enough that three of them do not bloat the .docx.
-const TARGET_WIDTH = 1200;
+// Box to request from Commons' thumbnailer (RES-97). An image now prints the
+// full text width (about 16 cm) or up to about 17 cm tall, and 1600px across
+// that keeps any words in it sharp; three such images still keep a .docx
+// small. 1200px wide left a tall poster soft when printed large.
+const TARGET_WIDTH = 1600;
+const TARGET_HEIGHT = 1600;
+// RES-97. A strip or a double-page scan (the Ecoregions poster was both sides
+// of a sheet, 1280x505) prints as a ribbon nobody can read.
+const MAX_ASPECT = 2.2;
+// Titles that name a map, chart or document rather than a picture.
+const DOCUMENT_TITLE = /\b(?:maps?|chart|graph|diagram|table|census|ecoregions?|blueprint|schematic|infographic|manuscript|newspaper|leaflet|brochure|catalogu?e|timetable|statistics|page \d+|p\.\s*\d+)\b/i;
+// How many ranked candidates the judge sees at once, and how many searches it
+// may judge before the visual is given up.
+const JUDGE_BATCH = 4;
+const MAX_JUDGED_QUERIES = 2;
 const SEARCH_LIMIT = 50;
 
 // docx's ImageRun accepts these directly; anything else is transcoded to png.
@@ -234,16 +248,50 @@ function rejectionReason(candidate, { excludeClusters }) {
   if (candidate.licence.restrictions) return "restricted";
   if (Math.max(candidate.width || 0, candidate.height || 0) < MIN_LONG_EDGE) return "too-small";
   if (!candidate.mime || !/^image\/(jpeg|png|gif|webp|tiff)$/.test(candidate.mime)) return "format";
+  const longEdge = Math.max(candidate.width || 0, candidate.height || 0);
+  const shortEdge = Math.max(1, Math.min(candidate.width || 0, candidate.height || 0));
+  if (longEdge / shortEdge > MAX_ASPECT) return "shape";
+  if (DOCUMENT_TITLE.test(`${candidate.title || ""} ${candidate.displayTitle || ""}`)) return "document";
   if (excludeClusters?.has(candidate.cluster)) return "duplicate";
   return null;
 }
 
-// Prefer bigger, and prefer an attributable creator — an image credited to a
-// named artist or institution makes a better citation than "Unknown".
+// Prefer an attributable creator (a named artist or institution makes a better
+// citation than "Unknown"), then a printable shape, then enough resolution.
+// RES-97: size used to decide everything, and the biggest files on Commons are
+// archival scans of maps and posters, so resolution now only counts up to what
+// printing needs.
 function scoreCandidate(candidate) {
-  const pixels = (candidate.width || 0) * (candidate.height || 0);
   const attributable = /^unknown$/i.test(candidate.creator) ? 0 : 1;
-  return attributable * 1e12 + pixels;
+  const longEdge = Math.max(candidate.width || 0, candidate.height || 0);
+  const shortEdge = Math.max(1, Math.min(candidate.width || 0, candidate.height || 0));
+  const aspect = longEdge / shortEdge;
+  const shape = aspect <= 1.6 ? 2 : aspect <= 2 ? 1 : 0;
+  const resolution = Math.min(longEdge, 2400) / 2400;
+  return attributable * 10 + shape * 2 + resolution;
+}
+
+/**
+ * RES-97. A caption from Commons metadata without archival clutter:
+ * "Ecoregions of New York - (New York State) LOC 2011587021" becomes
+ * "Ecoregions of New York". Used when the judge gives no title.
+ */
+function cleanImageTitle(raw) {
+  let text = String(raw || "")
+    .replace(/^File:/i, "")
+    .replace(/\.(?:jpe?g|png|gif|tiff?|webp)$/i, "")
+    .replace(/_/g, " ");
+  text = text
+    .replace(/\bLOC\s*\d+\b/gi, "")
+    .replace(/\b(?:NARA|LCCN|ID)\s*[-:]?\s*\d+\b/gi, "")
+    .replace(/\(\s*[^)]*\d{4,}[^)]*\)/g, "")
+    .replace(/\b\d{6,}\b/g, "")
+    .replace(/\s+-\s+\([^)]*\)\s*$/, "")
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/[\s\-–—,;:.]+$/, "")
+    .trim();
+  return text || String(raw || "").trim();
 }
 
 /**
@@ -303,6 +351,7 @@ async function imageInfoFor(titles) {
         titles: titles.slice(i, i + 50).join("|"),
         iiprop: "url|extmetadata|size|mime",
         iiurlwidth: String(TARGET_WIDTH),
+        iiurlheight: String(TARGET_HEIGHT),
         iiextmetadatafilter:
           "LicenseShortName|License|LicenseUrl|Artist|Credit|DateTimeOriginal|Restrictions|ObjectName|ImageDescription",
       }),
@@ -367,6 +416,9 @@ async function sourceCommonsImage({
   search = searchCommons,
   info = imageInfoFor,
   download = downloadImage,
+  // RES-97. ({ images, purpose, task }) => verdicts, from imageJudge.js with
+  // the job's year and keys bound. Without one, the top-ranked image is used.
+  judge = null,
 } = {}) {
   const terms = String(selection?.searchTerms || selection?.title || "").trim();
   if (!terms) {
@@ -378,6 +430,9 @@ async function sourceCommonsImage({
 
   const checks = { queries: [], rejected: {} };
   let regionFallbackUsed = false;
+  let judgedQueries = 0;
+  // A shorter query often returns the same files; each is judged once.
+  const judgedTitles = new Set();
 
   for (const { query, isRegional } of queries) {
     let candidates;
@@ -401,30 +456,72 @@ async function sourceCommonsImage({
     checks.queries.push({ query, found: candidates.length, usable: usable.length });
 
     if (!usable.length) continue;
-    if (region && !isRegional) regionFallbackUsed = true;
 
-    const chosen = usable.sort((a, b) => scoreCandidate(b) - scoreCandidate(a))[0];
-    let image;
-    try {
-      image = await download(chosen);
-    } catch (err) {
-      checks.downloadError = err.message;
+    const ranked = usable.sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
+    let picked = null;
+    if (judge && judgedQueries < MAX_JUDGED_QUERIES) {
+      // Download the strongest few and let the judge choose among them.
+      const downloaded = [];
+      for (const candidate of ranked.filter((c) => !judgedTitles.has(c.title)).slice(0, JUDGE_BATCH)) {
+        judgedTitles.add(candidate.title);
+        try {
+          downloaded.push({ candidate, image: await download(candidate) });
+        } catch (err) {
+          checks.downloadError = err.message;
+        }
+      }
+      if (!downloaded.length) continue;
+      try {
+        judgedQueries += 1;
+        const verdicts = await judge({
+          images: downloaded.map(({ image }) => image),
+          purpose: selection?.purpose,
+          task: selection?.task,
+        });
+        checks.judged = [...(checks.judged || []), ...verdicts.map((v, i) => ({
+          title: downloaded[i].candidate.title, suitable: v.suitable, fit: v.fit, reason: v.reason,
+        }))];
+        const best = bestVerdict(verdicts);
+        if (!best) {
+          checks.rejected.judged = (checks.rejected.judged || 0) + downloaded.length;
+          continue;
+        }
+        const chosen = downloaded[best.index - 1];
+        picked = { ...chosen, title: best.title, description: best.description, judged: true };
+      } catch (err) {
+        if (err?.name === "AbortError" || err?.cancelled) throw err;
+        // No judge after all: use the top-ranked download, as before RES-97.
+        checks.judgeError = String(err?.message || err).slice(0, 200);
+        picked = downloaded[0];
+      }
+    } else if (judge) {
+      // The judge has already turned down every candidate it was shown.
       continue;
+    } else {
+      try {
+        picked = { candidate: ranked[0], image: await download(ranked[0]) };
+      } catch (err) {
+        checks.downloadError = err.message;
+        continue;
+      }
     }
 
+    if (region && !isRegional) regionFallbackUsed = true;
+    const chosen = picked.candidate;
     return {
       ok: true,
       source: "commons",
       sourceName: "Wikimedia Commons",
       sourceUrl: chosen.pageUrl,
-      title: chosen.displayTitle,
+      title: picked.title || cleanImageTitle(chosen.displayTitle),
       creator: chosen.creator,
       date: chosen.date,
-      description: chosen.description || "",
+      description: picked.description || chosen.description || "",
       licence: chosen.licence.name,
       licenceUrl: chosen.licence.url,
       cluster: chosen.cluster,
-      image,
+      image: picked.image,
+      judged: Boolean(picked.judged),
       regionFallbackUsed,
       checks,
     };
@@ -437,6 +534,7 @@ module.exports = {
   COMMONS_API,
   MIN_LONG_EDGE,
   TARGET_WIDTH,
+  cleanImageTitle,
   clusterKey,
   queryVariants,
   titleFor,
