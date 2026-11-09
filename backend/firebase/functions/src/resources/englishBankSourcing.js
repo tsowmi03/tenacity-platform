@@ -18,7 +18,7 @@ const { lazyRequire } = require("../shared/lazyRequire");
 const { createEmbedder, getStimulus, linkedRecords, searchStimuli } = require("../englishBank/search");
 const { isCancellationError } = require("./cancellation");
 const { bestVerdict } = require("./imageJudge");
-const { sourcePlannerModel } = require("./modelRegistry");
+const { providerForModel, sourcePlannerModel } = require("./modelRegistry");
 
 const loadSharp = lazyRequire(() => require("sharp"));
 const loadOpenAi = lazyRequire(() => require("openai"));
@@ -36,6 +36,8 @@ const SEARCH_CANDIDATES = 400;
 const SEARCH_CANDIDATES_PRIMARY = 800;
 const SEARCH_TIMEOUT_MS = 20000;
 const STORAGE_TIMEOUT_MS = 15000;
+const RESTORE_ATTEMPTS = 3;
+const RESTORE_RETRY_MS = 1000;
 const BRIEF_PROMPT_CHARS = 1500;
 const DEFAULT_MAX_WORDS = 800;
 const ANNOTATION_MAX_WORDS = 600;
@@ -352,10 +354,10 @@ async function pickTexts({ job, slots, pool, callAi, anthropicApiKey, openaiApiK
     progressPhase: "plan",
   });
   try {
-    return (await request())?.parsed?.picks || [];
+    return await request();
   } catch (err) {
     if (err?.refusal !== true) throw err;
-    return (await request())?.parsed?.picks || [];
+    return request();
   }
 }
 
@@ -539,31 +541,64 @@ async function pickImage({ slot, bank, judge, exclude }) {
   return { ...loaded[best.index - 1], verdict: best };
 }
 
+// A hand-off must not lose a stimulus to a brief storage or Firestore error.
+async function withRetries(work) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await work();
+    } catch (err) {
+      if (isFatal(err) || attempt >= RESTORE_ATTEMPTS) throw err;
+      await new Promise((resolve) => setTimeout(resolve, RESTORE_RETRY_MS * attempt));
+    }
+  }
+}
+
 async function restoreFromBank({ job, plannedTexts, plannedVisuals, bank }) {
   const out = { texts: new Map(), visuals: new Map(), usage: job.stimulusBankUsage || null };
   const needed = [...plannedTexts, ...plannedVisuals].some((selection) => selection?.bankStimulusId);
   if (!needed) return out;
   const saved = await pickedFile(bank.bucket, job).load();
-  const stimulusFor = async (id) => saved.stimuli?.[id] || withDeadline(getStimulus(bank.db, id), SEARCH_TIMEOUT_MS);
+  const stimulusFor = (id) => saved.stimuli?.[id] || withDeadline(getStimulus(bank.db, id), SEARCH_TIMEOUT_MS);
+  // The record must say what the resource actually carries.
+  const lost = (kind, index, stimulusId) => {
+    const usage = out.usage || { used: [], fallbacks: [] };
+    out.usage = {
+      ...usage,
+      used: usage.used.filter((entry) => entry.stimulusId !== stimulusId),
+      fallbacks: [...usage.fallbacks, { kind, slot: index + 1, reason: "bank_unavailable" }],
+    };
+  };
   for (const [index, selection] of plannedTexts.entries()) {
-    if (!selection?.bankStimulusId) continue;
+    const id = selection?.bankStimulusId;
+    if (!id) continue;
     try {
-      const stimulus = await stimulusFor(selection.bankStimulusId);
-      if (!stimulus?.text) continue;
-      const examples = saved.examples?.[stimulus.id] || (await examplesFor(bank.db, [stimulus.id]))[stimulus.id] || [];
-      out.texts.set(index, sourcedText(stimulus, examples));
+      const restored = await withRetries(async () => {
+        const stimulus = await stimulusFor(id);
+        if (!stimulus?.text) return null;
+        const examples = saved.examples?.[stimulus.id] || (await examplesFor(bank.db, [stimulus.id]))[stimulus.id] || [];
+        return sourcedText(stimulus, examples);
+      });
+      if (restored) out.texts.set(index, restored);
+      else lost("text", index, id);
     } catch (err) {
       if (isFatal(err)) throw err;
+      lost("text", index, id);
     }
   }
   for (const [index, selection] of plannedVisuals.entries()) {
-    if (!selection?.bankStimulusId) continue;
+    const id = selection?.bankStimulusId;
+    if (!id) continue;
     try {
-      const stimulus = await stimulusFor(selection.bankStimulusId);
-      if (!stimulus?.pageCrops?.length) continue;
-      out.visuals.set(index, sourcedVisual(stimulus, await cropFor(bank.bucket, stimulus), selection, saved.verdicts?.[stimulus.id]));
+      const restored = await withRetries(async () => {
+        const stimulus = await stimulusFor(id);
+        if (!stimulus?.pageCrops?.length) return null;
+        return sourcedVisual(stimulus, await cropFor(bank.bucket, stimulus), selection, saved.verdicts?.[stimulus.id]);
+      });
+      if (restored) out.visuals.set(index, restored);
+      else lost("image", index, id);
     } catch (err) {
       if (isFatal(err)) throw err;
+      lost("image", index, id);
     }
   }
   return out;
@@ -640,7 +675,11 @@ async function sourceSetFromBank({
     const pool = numberCandidates(openText);
     let picks = null;
     try {
-      picks = await pickTexts({ job, slots: openText, pool, callAi, anthropicApiKey, openaiApiKey, signal });
+      const result = await pickTexts({ job, slots: openText, pool, callAi, anthropicApiKey, openaiApiKey, signal });
+      picks = result?.parsed?.picks || [];
+      // Saved with the record, so a later worker that doesn't repeat the pick
+      // still counts its tokens.
+      if (result?.usage) usage.aiUsage = { provider: result.provider || providerForModel(sourcePlannerModel()), usage: result.usage };
     } catch (err) {
       if (isFatal(err)) throw err;
       openText.forEach((slot) => fallback(slot, "pick_failed"));
