@@ -22,6 +22,14 @@ on:
         required: false
         type: boolean
         default: false
+      deploy_all:
+        description: >-
+          Deploy every Function instead of only the ones changed since the last
+          successful deploy. Tick after a Secret Manager change or a deploy made
+          outside this workflow, neither of which shows in a git diff.
+        required: false
+        type: boolean
+        default: false
 
   workflow_call:
     inputs:
@@ -32,6 +40,10 @@ on:
         required: true
         type: string
       allow_minimum_bill_increase:
+        required: false
+        type: boolean
+        default: false
+      deploy_all:
         required: false
         type: boolean
         default: false
@@ -115,6 +127,8 @@ jobs:
     timeout-minutes: 240
     environment: tenacity-production
     permissions:
+      # Reads this workflow's own job history to find the last successful deploy.
+      actions: read
       contents: read
       id-token: write
     steps:
@@ -126,9 +140,10 @@ jobs:
       - name: Check out authorized commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Two commits so the deploy scope can be diffed against the parent,
-          # the same depth the orchestrator's plan job uses.
-          fetch-depth: 2
+          # Full commit history without old file contents: the deploy scope is
+          # diffed against the last successful deploy, however far back it is.
+          fetch-depth: 0
+          filter: blob:none
           ref: ${{ inputs.git_sha }}
           persist-credentials: false
       - name: Set up Node.js
@@ -164,29 +179,6 @@ jobs:
           reports_dir="${RUNNER_TEMP}/function-deploy-reports"
           raw_dir="${RUNNER_TEMP}/function-inventory-raw"
           mkdir -p "$reports_dir" "$raw_dir"
-          selectors_file="$reports_dir/selectors.txt"
-          node scripts/ci/check-functions-inventory.mjs --print-selectors > "$selectors_file"
-          mapfile -t selectors < "$selectors_file"
-          # Derived from the inventory rather than written down. This was the
-          # literal `9`, which was correct at exactly 90 managed Functions and
-          # became wrong the moment the 91st was added — failing here, inside
-          # the production window, after the environment gate had already been
-          # cleared. The guard is worth keeping; the number is not something a
-          # human should have to remember to update.
-          expected_batches="$(node -e 'const p = require("./backend/firebase/inventory/production-functions.json"); process.stdout.write(String(Math.ceil(p.managed.names.length / 10)))')"
-          [[ "${#selectors[@]}" -eq "$expected_batches" ]]
-          for selector in "${selectors[@]}"; do
-            [[ "$selector" =~ ^functions:default:[A-Za-z0-9_-]+(,functions:default:[A-Za-z0-9_-]+)*$ ]]
-            IFS=',' read -r -a names <<< "$selector"
-            [[ "${#names[@]}" -ge 1 && "${#names[@]}" -le 10 ]]
-          done
-          # The invariant the batch count was standing in for: every managed
-          # Function is selected exactly once, none invented, none dropped.
-          tr ',' '\n' < "$selectors_file" \
-            | sed 's/^functions:default://' | sort > "$raw_dir/selected-names.txt"
-          node -e 'const p = require("./backend/firebase/inventory/production-functions.json"); process.stdout.write(p.managed.names.join("\n") + "\n")' \
-            | sort > "$raw_dir/policy-names.txt"
-          diff "$raw_dir/policy-names.txt" "$raw_dir/selected-names.txt"
           printf 'batch\tdeploy_exit\tinventory_exit\tverification_exit\tselector\n' \
             > "$reports_dir/batch-status.tsv"
           source scripts/ci/firebase-retry.sh
@@ -198,34 +190,60 @@ jobs:
             --live "$raw_dir/functions-before.json" \
             --pre-deploy \
             --report "$reports_dir/before.json"
-      # Shadow mode: records the scoped set this commit would have deployed,
-      # while the deploy below still covers all of them.
-      #
-      # This is observation, not verification, and cannot be more than that. A
-      # full deploy reports "Successful update operation" for every Function and
-      # rewrites every live inventory record, whether or not the source changed,
-      # so neither the log nor the inventory can say which Functions genuinely
-      # needed deploying. The check that the scoping rests on -- that no local
-      # require escapes the module graph -- runs against the source in
-      # validate.yml instead.
-      #
-      # What these runs are for is the batch counts: real evidence of the saving
-      # before anything about the deploy changes. Non-fatal by design.
-      - name: Record the scoped deploy set that would have run
-        continue-on-error: true
+      # Deploys only the Functions changed since the last successful deploy
+      # (TP-44). Skipping an unchanged Function is safe because the check the
+      # scoping rests on, that no local require escapes the module graph, runs
+      # against the source in validate.yml. Anything the resolver cannot
+      # account for, including its own failure, widens to a full deploy.
+      - name: Choose the Functions this deploy covers
+        env:
+          DEPLOY_ALL: ${{ inputs.deploy_all }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           reports_dir="${RUNNER_TEMP}/function-deploy-reports"
-          node scripts/ci/resolve-function-deploys.mjs \
-            --base HEAD^ \
-            --head HEAD \
-            --report "$reports_dir/scoped-deploy-shadow.json"
+          raw_dir="${RUNNER_TEMP}/function-inventory-raw"
+          plan="$reports_dir/scoped-deploy.json"
+          selectors_file="$reports_dir/selectors.txt"
+          resolver=(node scripts/ci/resolve-function-deploys.mjs --report "$plan")
+          if [[ "$DEPLOY_ALL" == "true" ]]; then
+            "${resolver[@]}" --all --reason "Requested with deploy_all."
+          else
+            last_deployed="$(node scripts/ci/find-last-function-deploy.mjs)" || last_deployed=""
+            "${resolver[@]}" \
+              --last-deployed "${last_deployed:-none}" \
+              --head HEAD \
+              --pending-from "$reports_dir/before.json" \
+              || "${resolver[@]}" --all --reason "Deploy scoping failed; deploying everything."
+          fi
+          node -e 'for (const s of require(process.argv[1]).selectors) console.log(s)' "$plan" \
+            > "$selectors_file"
+          mapfile -t selectors < "$selectors_file"
+          # Derived from the plan rather than written down: a literal here once
+          # failed inside the production window when one Function was added.
+          expected_batches="$(node -e 'process.stdout.write(String(Math.ceil(require(process.argv[1]).deployCount / 10)))' "$plan")"
+          [[ "${#selectors[@]}" -eq "$expected_batches" ]]
+          for selector in "${selectors[@]}"; do
+            [[ "$selector" =~ ^functions:default:[A-Za-z0-9_-]+(,functions:default:[A-Za-z0-9_-]+)*$ ]]
+            IFS=',' read -r -a names <<< "$selector"
+            [[ "${#names[@]}" -ge 1 && "${#names[@]}" -le 10 ]]
+          done
+          # The batches ship exactly the planned set, and every managed Function
+          # is either in it or recorded as unchanged: none invented, none dropped.
+          tr ',' '\n' < "$selectors_file" \
+            | sed 's/^functions:default://' | sort > "$raw_dir/selected-names.txt"
+          node -e 'for (const n of require(process.argv[1]).deploy) console.log(n)' "$plan" \
+            | sort > "$raw_dir/planned-names.txt"
+          diff "$raw_dir/planned-names.txt" "$raw_dir/selected-names.txt"
+          node -e 'const r = require(process.argv[1]); for (const n of [...r.deploy, ...r.skipped]) console.log(n)' "$plan" \
+            | sort > "$raw_dir/accounted-names.txt"
+          node -e 'const p = require("./backend/firebase/inventory/production-functions.json"); process.stdout.write(p.managed.names.join("\n") + "\n")' \
+            | sort > "$raw_dir/policy-names.txt"
+          diff "$raw_dir/policy-names.txt" "$raw_dir/accounted-names.txt"
           node -e '
-            const report = require(process.argv[1]);
-            const line = `shadow: mode=${report.mode} ` +
-              `would deploy ${report.deployCount}/${report.managedCount} ` +
-              `in ${report.batches} batches; this run deploys all in 10`;
-            console.log(`::notice::${line}`);
-          ' "$reports_dir/scoped-deploy-shadow.json"
+            const r = require(process.argv[1]);
+            console.log(`::notice::${r.mode}: deploying ${r.deployCount}/${r.managedCount} ` +
+              `in ${r.batches} batches. ${r.reason}`);
+          ' "$plan"
       # Firebase refuses, without its --force flag, any deploy that raises the
       # standing bill (a new or higher minInstances). --force also skips every
       # other confirmation, so it is never passed blind: only when the operator
@@ -284,6 +302,8 @@ jobs:
           # back-to-back deploys put on the project.
           batch_pause_seconds=15
           batch_number=0
+          # A deploy with nothing to ship has no post-batch list to check.
+          current_inventory="$raw_dir/functions-before.json"
           while IFS= read -r selector; do
             batch_number=$((batch_number + 1))
             if [[ "$batch_number" -gt 1 ]]; then

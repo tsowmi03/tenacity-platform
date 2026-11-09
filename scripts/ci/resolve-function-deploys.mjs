@@ -80,6 +80,25 @@ export function isIgnoredPath(path) {
 }
 
 /**
+ * Narrows the modules holding a Function down to the ones that define it.
+ *
+ * A barrel holds every Function it re-exports and, because Node caches a module
+ * before loading its children, always comes first in `require.cache`. Taking
+ * the first holder therefore credited all 103 Functions to `lib/allFunctions.js`
+ * and made each one depend on every file, so every change selected everything
+ * (TP-44). A definer is a holder that reaches no other holder.
+ *
+ * Fails wide: holders that are unrelated all count, and a require cycle that
+ * leaves no such module keeps every holder.
+ */
+export function definingModules(candidates, closure) {
+  const definers = candidates.filter(
+    (file) => !candidates.some((other) => other !== file && closure(file).has(other))
+  );
+  return definers.length > 0 ? definers : candidates;
+}
+
+/**
  * Builds the Function -> source files map by loading the entry point and
  * walking Node's resolved module graph.
  *
@@ -112,14 +131,26 @@ export function buildFunctionGraph({
   const require = createRequire(import.meta.url);
   const exportsObject = require(realEntryPoint);
 
-  // Reference identity, not name matching: an export is attributed to the
-  // module whose own exports hold the very same function object.
-  const definingModule = new Map();
+  const isLocal = (file) => !file.includes("node_modules");
+
+  // Reference identity, not name matching: every local module whose exports
+  // hold the very same function object is a candidate for defining it. A
+  // barrel that re-exports the object is a candidate too, which is why the
+  // choice between them is made below rather than here.
+  const holders = new Map();
+  const recordHolder = (value, file) => {
+    if (!value) return;
+    if (typeof value !== "object" && typeof value !== "function") return;
+    if (!holders.has(value)) holders.set(value, []);
+    holders.get(value).push(file);
+  };
   for (const [file, module] of Object.entries(require.cache)) {
-    if (file === realEntryPoint) continue;
+    if (file === realEntryPoint || !isLocal(file)) continue;
     const moduleExports = module.exports;
     if (!moduleExports) continue;
     if (typeof moduleExports !== "object" && typeof moduleExports !== "function") continue;
+    // A module that exports the function directly: `module.exports = fn`.
+    recordHolder(moduleExports, file);
     let keys = [];
     try {
       keys = Object.keys(moduleExports);
@@ -133,13 +164,10 @@ export function buildFunctionGraph({
       } catch {
         continue;
       }
-      if (!value) continue;
-      if (typeof value !== "object" && typeof value !== "function") continue;
-      if (!definingModule.has(value)) definingModule.set(value, file);
+      recordHolder(value, file);
     }
   }
 
-  const isLocal = (file) => !file.includes("node_modules");
   const closureCache = new Map();
   function closure(file) {
     if (closureCache.has(file)) return closureCache.get(file);
@@ -162,14 +190,16 @@ export function buildFunctionGraph({
   const graph = new Map();
   const unattributed = [];
   for (const name of managedNames) {
-    const owner = definingModule.get(exportsObject[name]);
-    if (!owner) {
+    const candidates = holders.get(exportsObject[name]);
+    if (!candidates) {
       unattributed.push(name);
       continue;
     }
     const files = new Set();
-    for (const file of closure(owner)) {
-      files.add(relative(realRoot, file).split("\\").join("/"));
+    for (const owner of definingModules(candidates, closure)) {
+      for (const file of closure(owner)) {
+        files.add(relative(realRoot, file).split("\\").join("/"));
+      }
     }
     graph.set(name, files);
   }
@@ -430,6 +460,50 @@ export function changedPathsBetween(base, head, { cwd = repositoryRoot } = {}) {
     .filter(Boolean);
 }
 
+export function isAncestor(base, head, { cwd = repositoryRoot } = {}) {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", base, head], { cwd, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Decides what to compare against, or why nothing can be compared.
+ *
+ * A deploy has to cover everything since the last one that succeeded, not just
+ * the newest commit: comparing to the parent would leave a Function stale
+ * whenever a deploy failed or several commits landed between deploys.
+ *
+ * Returns { base } or { fullDeployReason }.
+ */
+export function chooseComparisonBase({ lastDeployed, head, ancestorCheck }) {
+  if (!/^[0-9a-f]{40}$/.test(lastDeployed ?? "")) {
+    return { fullDeployReason: "No record of a previous successful Functions deploy." };
+  }
+  if (!ancestorCheck(lastDeployed, head)) {
+    return {
+      fullDeployReason: `Last deployed commit ${lastDeployed} is not an ancestor of ${head}.`,
+    };
+  }
+  return { base: lastDeployed };
+}
+
+/**
+ * A Function not yet live has to ship even if this diff does not touch it, for
+ * example when the deploy that first added it failed partway.
+ */
+export function widenForPendingAdditions({ resolution, pendingAdditions, managedNames }) {
+  const uncovered = pendingAdditions.filter((name) => !resolution.names.includes(name));
+  if (uncovered.length === 0) return resolution;
+  return {
+    mode: "all",
+    names: [...managedNames],
+    reason: `Functions not yet live and outside the scoped set: ${uncovered.join(", ")}.`,
+  };
+}
+
 export function selectorsFor(names, batchSize = 10) {
   const selectors = [];
   for (let index = 0; index < names.length; index += batchSize) {
@@ -502,19 +576,38 @@ function main() {
     return;
   }
 
+  const everything = (reason) => ({ mode: "all", names: [...managedNames], reason });
+  const lastDeployed = argumentValue(args, "--last-deployed");
+  const pendingFrom = argumentValue(args, "--pending-from");
+  let comparedAgainst = base;
   let resolution;
   if (forceAll) {
-    resolution = { mode: "all", names: [...managedNames], reason: "Requested with --all." };
+    resolution = everything(argumentValue(args, "--reason") ?? "Requested with --all.");
   } else {
     if (!head) throw new Error("--head is required unless --all is used.");
-    const graph = buildFunctionGraph({
-      managedNames,
-      projectId: policy.projectId,
-      entryPoint,
-    });
-    resolution = resolveChangedFunctions({
-      changedPaths: changedPathsBetween(base, head),
-      graph,
+    const choice = lastDeployed
+      ? chooseComparisonBase({ lastDeployed, head, ancestorCheck: isAncestor })
+      : { base };
+    comparedAgainst = choice.base ?? null;
+    if (choice.fullDeployReason) {
+      resolution = everything(choice.fullDeployReason);
+    } else {
+      const graph = buildFunctionGraph({
+        managedNames,
+        projectId: policy.projectId,
+        entryPoint,
+      });
+      resolution = resolveChangedFunctions({
+        changedPaths: changedPathsBetween(choice.base, head),
+        graph,
+        managedNames,
+      });
+    }
+  }
+  if (pendingFrom) {
+    resolution = widenForPendingAdditions({
+      resolution,
+      pendingAdditions: JSON.parse(readFileSync(pendingFrom, "utf8")).pendingAdditions ?? [],
       managedNames,
     });
   }
@@ -530,6 +623,7 @@ function main() {
     schemaVersion: 1,
     mode: resolution.mode,
     reason: resolution.reason,
+    comparedAgainst,
     managedCount: managedNames.length,
     deployCount: resolution.names.length,
     deploy: resolution.names,

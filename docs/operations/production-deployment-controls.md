@@ -112,9 +112,10 @@ drift — they had read 87 and 91 for three Functions before this one. The
 manifest is the authority; count it rather than trusting this sentence.
 
 The workflow validates the manifest, package, emulator suite, export set and
-render fixtures before credentials exist; captures the live inventory;
+render fixtures before credentials exist; captures the live inventory; works
+out which Functions changed since the last successful deploy (below);
 materialises deterministic batches of at most ten explicit
-`functions:default:<id>` selectors; dry-runs each batch; applies without
+`functions:default:<id>` selectors for those; dry-runs each batch; applies without
 `--force` (except a batch approved through `allow_minimum_bill_increase`, see
 above); retries a deploy only when it fails with Google's transient "Failed
 to list functions for <project>" (three attempts, 30s then 60s apart, via
@@ -123,6 +124,19 @@ to list functions for <project>" (three attempts, 30s then 60s apart, via
 state after every batch including a failed one; and finally requires the exact 91-resource inventory,
 rejects metadata drift, and compares the complete raw records of all four
 external Functions against their pre-deploy state.
+
+**A deploy ships only what changed (TP-44).** The last successful deploy is read
+from GitHub's job history, covering both the direct dispatch and the
+orchestrator, and `scripts/ci/resolve-function-deploys.mjs` maps the files
+changed since then onto the Functions that load them. It widens to all Functions
+when it cannot be sure: a change to `package.json`, an `.env` file or the export
+list, a changed file no Function loads, a Function not yet live, no usable
+deploy record, or any failure in the scoping itself. Adding a Function is
+therefore always a full deploy.
+
+Two changes never show in a diff: a new Secret Manager version and a deploy made
+outside this workflow. After either, dispatch `firebase-functions-production.yml`
+with `deploy_all` ticked, or the orchestrator with `surfaces: all`.
 
 **Introducing a new Function needs no special handling.** It cannot be live
 before its first deployment, so the pre-deploy comparison reports it and

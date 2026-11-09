@@ -154,6 +154,8 @@ jobs:
     needs: [plan, rules]
     if: always() && !failure() && !cancelled() && needs.plan.outputs.functions == 'true'
     permissions:
+      # The Functions workflow reads job history to find the last good deploy.
+      actions: read
       contents: read
       id-token: write
       issues: write
@@ -162,6 +164,7 @@ jobs:
     with:
       git_sha: ${{ inputs.git_sha }}
       confirmation: DEPLOY FUNCTIONS tenacity-tutoring-b8eb2
+      deploy_all: ${{ inputs.surfaces == 'all' }}
 
   resource_portal:
     name: Resource portal
