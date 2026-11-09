@@ -257,8 +257,9 @@ omitted, and open follow-ups are tracked at the bottom.
   leave a Function stale.
 - Added a `deploy_all` option for changes a diff cannot see, such as a new
   Secret Manager version. `surfaces: all` on the orchestrator also deploys all.
-- Anything the scoping cannot account for, including its own failure, falls back
-  to deploying every Function.
+- Anything the scoping cannot account for, including its own failure or an
+  earlier deploy that may have shipped partway, falls back to deploying every
+  Function.
 
 **Why:** Every deploy took about 25 minutes however small the change. Replaying
 14 recent deploys through the fix selected 10 of about 103 Functions each, which

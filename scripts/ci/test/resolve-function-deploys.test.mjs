@@ -296,7 +296,7 @@ describe("chooseComparisonBase", () => {
 
   it("forces a full deploy with no usable record", () => {
     for (const value of ["none", "", null, undefined, "abc123"]) {
-      assert.match(choose(value).fullDeployReason, /No record/);
+      assert.match(choose(value).fullDeployReason, /No usable Functions deploy record/);
     }
   });
 

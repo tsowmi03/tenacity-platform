@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { readFileSync } from "node:fs";
+
 import {
+  deployStepName,
   findLastFunctionDeploy,
   isSuccessfulDeployJob,
+  mayHavePartlyDeployed,
 } from "../find-last-function-deploy.mjs";
 
 const job = (name, conclusion, completed_at = "2026-11-09T02:00:00Z") => ({
@@ -42,15 +46,72 @@ describe("isSuccessfulDeployJob", () => {
   });
 });
 
+describe("mayHavePartlyDeployed", () => {
+  const name = "Authorized Function deployment";
+
+  it("ignores a job that succeeded, was skipped or is still running", () => {
+    assert.ok(!mayHavePartlyDeployed(job(name, "success")));
+    assert.ok(!mayHavePartlyDeployed(job(name, "skipped")));
+    assert.ok(!mayHavePartlyDeployed(job(name, null)));
+  });
+
+  it("assumes partial when it cannot see the deploy step", () => {
+    assert.ok(mayHavePartlyDeployed(job(name, "failure")));
+  });
+
+  it("names a step that exists in the workflow", () => {
+    const workflow = readFileSync(".github/workflows/firebase-functions-production.yml", "utf8");
+    assert.ok(workflow.includes(`- name: ${deployStepName}`));
+  });
+});
+
 describe("findLastFunctionDeploy", () => {
-  it("skips a failed deploy, so its changes are still covered next time", async () => {
+  const name = "Authorized Function deployment";
+  const withDeployStep = (base, conclusion) => ({
+    ...base,
+    steps: [{ name: deployStepName, conclusion }],
+  });
+
+  it("skips a deploy that failed before shipping anything", async () => {
     const result = await find({
       direct: [
-        { id: 2, head_sha: "new", jobs: [job("Authorized Function deployment", "failure")] },
-        { id: 1, head_sha: "old", jobs: [job("Authorized Function deployment", "success")] },
+        { id: 2, head_sha: "new", jobs: [withDeployStep(job(name, "failure", "2026-11-09T03:00:00Z"), "skipped")] },
+        { id: 1, head_sha: "old", jobs: [job(name, "success")] },
       ],
     });
     assert.equal(result.sha, "old");
+  });
+
+  // A failed deploy can leave a Function on newer code, and a later revert
+  // removes that file from the diff against the last good deploy.
+  it("reports nothing after a deploy that may have shipped partway", async () => {
+    const result = await find({
+      direct: [
+        { id: 2, head_sha: "new", jobs: [withDeployStep(job(name, "failure", "2026-11-09T03:00:00Z"), "failure")] },
+        { id: 1, head_sha: "old", jobs: [job(name, "success")] },
+      ],
+    });
+    assert.equal(result, null);
+  });
+
+  it("sees a partial deploy on the other route into production", async () => {
+    const result = await find({
+      direct: [{ id: 1, head_sha: "old", jobs: [job(name, "success", "2026-11-09T02:00:00Z")] }],
+      orchestrated: [
+        { id: 2, head_sha: "new", jobs: [withDeployStep(job(`Functions / ${name}`, "cancelled", "2026-11-09T03:00:00Z"), "cancelled")] },
+      ],
+    });
+    assert.equal(result, null);
+  });
+
+  it("trusts a successful deploy made after the partial one", async () => {
+    const result = await find({
+      direct: [{ id: 3, head_sha: "full", jobs: [job(name, "success", "2026-11-09T04:00:00Z")] }],
+      orchestrated: [
+        { id: 2, head_sha: "new", jobs: [withDeployStep(job(`Functions / ${name}`, "failure", "2026-11-09T03:00:00Z"), "failure")] },
+      ],
+    });
+    assert.equal(result.sha, "full");
   });
 
   it("passes over an orchestrator run that skipped the Functions surface", async () => {

@@ -131,7 +131,8 @@ orchestrator, and `scripts/ci/resolve-function-deploys.mjs` maps the files
 changed since then onto the Functions that load them. It widens to all Functions
 when it cannot be sure: a change to `package.json`, an `.env` file or the export
 list, a changed file no Function loads, a Function not yet live, no usable
-deploy record, or any failure in the scoping itself. Adding a Function is
+deploy record, a later deploy that may have shipped partway, or any failure in
+the scoping itself. Adding a Function is
 therefore always a full deploy.
 
 Two changes never show in a diff: a new Secret Manager version and a deploy made

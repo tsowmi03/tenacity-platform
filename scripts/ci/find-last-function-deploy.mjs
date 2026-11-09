@@ -15,17 +15,32 @@ import { fileURLToPath } from "node:url";
 
 export const deployWorkflows = ["firebase-functions-production.yml", "production-deploy.yml"];
 const deployJobName = "Authorized Function deployment";
+export const deployStepName = "Deploy reviewed Functions in bounded batches";
 
 // A job called from the orchestrator is reported as "Functions / <job name>".
+function isDeployJob(job) {
+  return job.name === deployJobName || job.name.endsWith(` / ${deployJobName}`);
+}
+
 export function isSuccessfulDeployJob(job) {
-  return (
-    job.conclusion === "success" &&
-    (job.name === deployJobName || job.name.endsWith(` / ${deployJobName}`))
-  );
+  return job.conclusion === "success" && isDeployJob(job);
+}
+
+/**
+ * A deploy that ended badly after its batches began may have left production
+ * partly updated, and a later revert would hide that from any diff. Assumed
+ * partial unless the deploy step is known not to have run.
+ */
+export function mayHavePartlyDeployed(job) {
+  if (!isDeployJob(job)) return false;
+  if (job.conclusion === null || ["success", "skipped"].includes(job.conclusion)) return false;
+  const step = job.steps?.find((candidate) => candidate.name === deployStepName);
+  return !step || !["skipped", null].includes(step.conclusion);
 }
 
 export async function findLastFunctionDeploy({ repository, fetchJson, runsPerWorkflow = 50 }) {
   const candidates = [];
+  const partial = [];
   for (const workflow of deployWorkflows) {
     const { workflow_runs: runs } = await fetchJson(
       `/repos/${repository}/actions/workflows/${workflow}/runs?branch=main&per_page=${runsPerWorkflow}`
@@ -41,10 +56,19 @@ export async function findLastFunctionDeploy({ repository, fetchJson, runsPerWor
         candidates.push({ sha: run.head_sha, completedAt: job.completed_at, runId: run.id });
         break;
       }
+      partial.push(...jobs.filter(mayHavePartlyDeployed));
     }
   }
   candidates.sort((left, right) => Date.parse(right.completedAt) - Date.parse(left.completedAt));
-  return candidates[0] ?? null;
+  const last = candidates[0];
+  if (!last) return null;
+  // Written so that a job with no usable end time counts as newer.
+  const lastTime = Date.parse(last.completedAt);
+  if (partial.some((job) => !(Date.parse(job.completed_at) <= lastTime))) {
+    console.error("A Functions deploy after the last successful one may have shipped partway.");
+    return null;
+  }
+  return last;
 }
 
 async function main() {
@@ -60,7 +84,7 @@ async function main() {
   };
   const last = await findLastFunctionDeploy({ repository, fetchJson });
   if (!last) {
-    console.error("No successful Functions deploy found in recent runs.");
+    console.error("No usable Functions deploy found in recent runs.");
     return;
   }
   console.error(`Last successful Functions deploy: run ${last.runId} at ${last.completedAt}.`);

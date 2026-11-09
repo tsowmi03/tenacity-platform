@@ -480,7 +480,10 @@ export function isAncestor(base, head, { cwd = repositoryRoot } = {}) {
  */
 export function chooseComparisonBase({ lastDeployed, head, ancestorCheck }) {
   if (!/^[0-9a-f]{40}$/.test(lastDeployed ?? "")) {
-    return { fullDeployReason: "No record of a previous successful Functions deploy." };
+    return {
+      fullDeployReason:
+        "No usable Functions deploy record: none found, or a later deploy may have shipped partway.",
+    };
   }
   if (!ancestorCheck(lastDeployed, head)) {
     return {
