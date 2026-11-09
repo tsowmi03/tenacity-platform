@@ -161,8 +161,8 @@ function reviewContext({ job, images = [], scope, trimmedForTime = false }) {
     lines.push("This paper was too long for the sitting, so tasks in it were deliberately shortened. Do not report a task as too short or ask for it to be longer.");
   }
   if (job.subject === "english") {
-    lines.push("Reading texts with an author are verified public-domain sources. Their exact wording is inserted after this check, so the copy you see may differ in punctuation: do not report that.");
-    lines.push("Tenacity's marking deliberately expects a thesis, ETAs (Evidence, Technique, Analysis) and TETAL, and questions deliberately do not mention them. Do not report that as an unfair or uncommunicated requirement. Extended responses are marked on Tenacity's criteria.");
+    lines.push("Reading texts come from verified sources. Their exact wording, title, author and source are inserted after this check, so the copy you see may differ in punctuation or leave those details out: do not report that.");
+    lines.push("On analytical tasks, Tenacity's marking deliberately expects a thesis, ETAs (Evidence, Technique, Analysis) and TETAL, and questions deliberately do not mention them. Do not report that as an unfair or uncommunicated requirement. Extended analytical responses are marked on Tenacity's criteria. A narrative, creative or discursive writing task must never be planned or marked with a thesis, paragraph theses, ETAs, TETAL or links: report that as an issue if you see it.");
   }
   if (images.length) {
     lines.push(`These images are inserted in the stimulus booklet after this check, so you cannot see them. Never report one as missing; judge the questions that use them against these records: ${JSON.stringify(images)}`);

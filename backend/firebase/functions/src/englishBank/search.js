@@ -16,7 +16,7 @@
 // so a narrow filter is given more candidates to choose from.
 
 const { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, createEmbedder } = require("../questionBank/search");
-const { GUIDES_COLLECTION, QUESTIONS_COLLECTION, STIMULI_COLLECTION } = require("./records");
+const { GUIDES_COLLECTION, QUESTIONS_COLLECTION, STIMULI_COLLECTION } = require("./collections");
 
 const MAX_CANDIDATES = 1000; // Firestore's findNearest limit
 const PRIMARY_MAX_YEAR = 6;
@@ -157,12 +157,25 @@ async function searchStimuli({ db, embed, brief, filters = {}, limit = 20, candi
   return results;
 }
 
+/** One live stimulus by ID, in the shape a search returns; null if it has gone or been hidden. */
+async function getStimulus(db, id) {
+  const snapshot = await db.collection(STIMULI_COLLECTION).doc(id).get();
+  if (!snapshot.exists) return null;
+  const data = snapshot.data();
+  if (data.status !== "live") return null;
+  const stimulus = { id: snapshot.id };
+  for (const field of RESULT_FIELDS) if (data[field] !== undefined) stimulus[field] = data[field];
+  return stimulus;
+}
+
 module.exports = {
   EMBEDDING_DIMENSIONS,
   EMBEDDING_MODEL,
   RESULT_FIELDS,
   createEmbedder,
   embeddingText,
+  getStimulus,
+  linkedRecords,
   matchesFilters,
   searchStimuli,
   usableForYear,

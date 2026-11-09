@@ -3,16 +3,16 @@
   "pendingAdditions": {
     "indexes": [
       {
-        "collectionGroup": "questionBank",
+        "collectionGroup": "englishStimuli",
         "queryScope": "COLLECTION",
         "fields": [
           { "fieldPath": "status", "order": "ASCENDING" },
-          { "fieldPath": "diagramType", "order": "ASCENDING" },
+          { "fieldPath": "medium", "order": "ASCENDING" },
           { "fieldPath": "embedding", "vectorConfig": { "dimension": 512, "flat": {} } }
         ]
       },
       {
-        "collectionGroup": "questionBank",
+        "collectionGroup": "englishStimuli",
         "queryScope": "COLLECTION",
         "fields": [
           { "fieldPath": "status", "order": "ASCENDING" },

@@ -14,10 +14,8 @@ const crypto = require("node:crypto");
 const { clampBox } = require("../questionBank/pages");
 const { yearsOf } = require("../questionBank/search");
 const { isTechniqueFor, mediumOf } = require("./taxonomy");
+const { GUIDES_COLLECTION, QUESTIONS_COLLECTION, STIMULI_COLLECTION } = require("./collections");
 
-const STIMULI_COLLECTION = "englishStimuli";
-const QUESTIONS_COLLECTION = "englishQuestions";
-const GUIDES_COLLECTION = "englishGuides";
 
 // "Question 3 (b)" and "Q3b" both become "3b".
 function labelKey(label) {
