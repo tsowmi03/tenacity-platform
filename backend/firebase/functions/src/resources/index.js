@@ -2021,7 +2021,8 @@ async function maybeSourceStimulusSetLogged({
       texts.push(fromBank.texts.get(index));
       continue;
     }
-    // Chosen from the bank on an earlier run and since hidden: nothing to fetch.
+    // Chosen from the bank on an earlier run and now gone: the text it replaced
+    // isn't known any more, so the slot is left to the shortfall below.
     if (selection?.bankStimulusId) continue;
     try {
       let sourced = await sourceText({
@@ -2082,9 +2083,10 @@ async function maybeSourceStimulusSetLogged({
       visuals.push(fromBank.visuals.get(index));
       continue;
     }
-    if (selection?.bankStimulusId) continue;
     try {
-      const sourced = await sourceVisual({ selection, excludeClusters: usedClusters, judge });
+      // An image lost from the bank on a later run is planned afresh.
+      const { bankStimulusId: _lostFromBank, ...plannedVisual } = selection || {};
+      const sourced = await sourceVisual({ selection: plannedVisual, excludeClusters: usedClusters, judge });
       if (sourced?.ok && sourced.image) {
         usedClusters.add(sourced.cluster);
         visuals.push(sourced);
@@ -2697,6 +2699,8 @@ async function runGenerationPipelineLogged(job, deps) {
   if (!passageSourcing.used) resourceEvent(job, "stage.skipped", { stageId: "sourcing.passage", reason: passageSourcing.warning ? "source_unavailable" : "not_required" });
   if (!stimulusSourcing.used) resourceEvent(job, "stage.skipped", { stageId: "sourcing.stimulus", reason: stimulusSourcing.warning ? "source_unavailable" : "not_required" });
   const sourceState = sourceStateFromSourcing({ passageSourcing, stimulusSourcing });
+  // RES-78. The bank's text pick isn't part of the planner's usage.
+  addUsage(usageByProvider, sourceState.stimulusBankUsage?.aiUsage?.provider, sourceState.stimulusBankUsage?.aiUsage?.usage);
   if (sourceState.sourcePlanner?.usageByProvider) {
     for (const [provider, usage] of Object.entries(
       sourceState.sourcePlanner.usageByProvider

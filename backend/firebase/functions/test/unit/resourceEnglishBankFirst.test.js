@@ -308,6 +308,47 @@ describe("the sourcing step with the bank (RES-78)", () => {
   });
 });
 
+describe("carrying a job on after the bank has been used (RES-78)", () => {
+  const png = () => sharp({ create: { width: 900, height: 600, channels: 3, background: "#888" } }).png().toBuffer();
+  const stored = prose("v", { medium: "visual", type: "poster", text: null, pageCrops: [{ pageNumber: 1, storagePath: "crops/v.png" }] });
+  const selection = { purpose: "visual-literacy", searchTerms: "war poster", task: "Analyse.", bankStimulusId: "v" };
+  const usage = { used: [{ kind: "image", slot: 1, stimulusId: "v" }], fallbacks: [] };
+
+  it("retries a brief storage error rather than losing the image", async () => {
+    const bucket = fakeBucket({ "crops/v.png": await png() });
+    const file = bucket.file;
+    let failures = 1;
+    bucket.file = (name) => {
+      const real = file(name);
+      return name === "crops/v.png" && failures-- > 0 ? { ...real, download: async () => { throw new Error("storage hiccup"); } } : real;
+    };
+    const result = await sourceSetFromBank({ job: job({ stimulusBankUsage: usage }), plannedVisuals: [selection], persisted: true, bank: { db: fakeDb({ stimuli: [stored] }), bucket, embed }, callAi: picksAll() });
+    assert.equal(result.visuals.get(0).bankStimulusId, "v");
+    assert.deepEqual(result.usage, usage);
+  });
+
+  it("sources a new image and corrects the record when the crop has really gone", async () => {
+    const seen = [];
+    const result = await maybeSourceStimulusSet({
+      job: job({ stimulusBankUsage: usage, sourceVisuals: [selection] }),
+      apiKey: "k",
+      sourceText: async () => ({ ok: false }),
+      sourceVisual: async ({ selection: planned }) => { seen.push(planned); return { ok: true, image: { buffer: Buffer.from("x") }, selection: planned, cluster: "c" }; },
+      callAi: picksAll(),
+      bank: { db: fakeDb({ stimuli: [] }), bucket: fakeBucket(), embed },
+    });
+    assert.equal(seen[0].searchTerms, "war poster");
+    assert.equal(seen[0].bankStimulusId, undefined);
+    assert.equal(result.visuals.length, 1);
+    assert.deepEqual(result.bankUsage, { used: [], fallbacks: [{ kind: "image", slot: 1, reason: "bank_unavailable" }] });
+  });
+
+  it("keeps the pick's tokens on the record", async () => {
+    const { usage: record } = await run({ callAi: async (request) => ({ ...(await picksAll()(request)), provider: "anthropic", usage: { inputTokens: 900, outputTokens: 40 } }) });
+    assert.deepEqual(record.aiUsage, { provider: "anthropic", usage: { inputTokens: 900, outputTokens: 40 } });
+  });
+});
+
 describe("bank images (RES-78)", () => {
   const png = () => sharp({ create: { width: 900, height: 600, channels: 3, background: "#888" } }).png().toBuffer();
   const visual = { purpose: "visual-literacy", searchTerms: "war poster", task: "Analyse the poster." };
