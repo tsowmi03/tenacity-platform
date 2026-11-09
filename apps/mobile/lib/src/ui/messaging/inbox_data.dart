@@ -47,6 +47,8 @@ const attachmentPlaceholder = '[Attachment]';
 /// from those (MOB-54).
 ///
 /// [query] filters on the other party's name, matching the existing behaviour.
+/// A group also matches on the full name of anyone else in it, so naming a
+/// group does not stop it being found by who is in it (MOB-70).
 List<InboxThread> buildInboxThreads({
   required List<Chat> chats,
   required Map<String, String> namesByChatId,
@@ -73,7 +75,15 @@ List<InboxThread> buildInboxThreads({
     final name =
         chat.isGroup ? chat.groupLabel(currentUserId) : namesByChatId[chat.id];
     if (name == null) continue;
-    if (trimmedQuery.isNotEmpty && !name.toLowerCase().contains(trimmedQuery)) {
+    if (trimmedQuery.isNotEmpty &&
+        !name.toLowerCase().contains(trimmedQuery) &&
+        !(chat.isGroup &&
+            chat.otherParticipants(currentUserId).any(
+                  (uid) => chat
+                      .memberFullName(uid)
+                      .toLowerCase()
+                      .contains(trimmedQuery),
+                ))) {
       continue;
     }
 

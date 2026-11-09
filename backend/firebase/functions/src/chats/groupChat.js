@@ -6,9 +6,9 @@ const { createHash } = require("crypto");
  * Group chats (MOB-54): the rules every group path shares, kept pure so they
  * are testable without Firestore and defined in one place.
  *
- * A group is a chat document with `isGroup: true`. It has no name of its own;
- * it is labelled by its members, from the viewer's side, the way iMessage
- * labels an unnamed group. Members' names live on the chat as
+ * A group is a chat document with `isGroup: true`. Staff can name it (MOB-70);
+ * until they do it is labelled by its members, from the viewer's side, the way
+ * iMessage labels an unnamed group. Members' names live on the chat as
  * `participantNames`, because a parent cannot read another parent's user
  * document and would otherwise have no way to say who is in the group.
  *
@@ -28,12 +28,58 @@ const GROUP_CREATOR_ROLES = new Set(["admin", "tutor"]);
 
 const MEMBER_ROLES = new Set(["admin", "tutor", "parent"]);
 
+/** Longest name a group can be given. */
+const MAX_GROUP_NAME_LENGTH = 60;
+
+/**
+ * The `type` of a thread line recording a rename or a change of members.
+ * Only the server writes these: `sendChatMessage` refuses this type.
+ */
+const GROUP_ACTIVITY_MESSAGE_TYPE = "system";
+
 function canCreateGroupChat(role) {
   return typeof role === "string" && GROUP_CREATOR_ROLES.has(role);
 }
 
 function isGroupMemberRole(role) {
   return typeof role === "string" && MEMBER_ROLES.has(role);
+}
+
+/** Who may name a group: the same people who may start one. */
+function canRenameGroupChat(role) {
+  return canCreateGroupChat(role);
+}
+
+/**
+ * Who may add or remove members (MOB-70): admins only when the group has an
+ * admin in it, otherwise any staff member.
+ *
+ * Takes current roles, because who holds control changes as admins come and go.
+ */
+function canManageGroupMembers({ actorRole, memberRoles }) {
+  if ((memberRoles || []).includes("admin")) return actorRole === "admin";
+  return canCreateGroupChat(actorRole);
+}
+
+/**
+ * A group name as stored: trimmed, with runs of whitespace collapsed. An empty
+ * result clears the name, returning the group to its member-based label.
+ */
+function normaliseGroupName(raw) {
+  if (typeof raw !== "string") throw new TypeError("name must be text");
+  const name = raw.trim().replace(/\s+/g, " ");
+  if (name.length > MAX_GROUP_NAME_LENGTH) {
+    throw new RangeError(
+      `A group name can be at most ${MAX_GROUP_NAME_LENGTH} characters`
+    );
+  }
+  return name;
+}
+
+/** `Sarah`, `Sarah and Tom`, `Sarah, Tom and Ana`. */
+function joinNames(names) {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 /**
@@ -103,14 +149,17 @@ function memberFirstName(participantNames, uid) {
 }
 
 /**
- * The group's label as [viewerId] sees it: everyone but them, by first name.
+ * What a group is called for [viewerId]: its name if it has one, otherwise
+ * everyone but them, by first name.
  *
  *   one other     `Sarah`
  *   two others    `Sarah & Tom`
  *   three others  `Sarah, Tom & Ana`
  *   four or more  `Sarah, Tom & 2 others`
  */
-function groupLabel({ participants, participantNames, viewerId }) {
+function groupLabel({ name, participants, participantNames, viewerId }) {
+  if (typeof name === "string" && name.trim() !== "") return name.trim();
+
   const others = (Array.isArray(participants) ? participants : [])
     .filter((uid) => typeof uid === "string" && uid !== viewerId)
     .map((uid) => memberFirstName(participantNames, uid));
@@ -127,14 +176,20 @@ function isGroupChat(chatData) {
 }
 
 module.exports = {
+  GROUP_ACTIVITY_MESSAGE_TYPE,
   MAX_GROUP_MEMBERS,
+  MAX_GROUP_NAME_LENGTH,
   MIN_GROUP_MEMBERS,
   canCreateGroupChat,
+  canManageGroupMembers,
+  canRenameGroupChat,
   groupLabel,
   groupMemberKey,
   groupMembersFor,
   isGroupChat,
   isGroupMemberRole,
+  joinNames,
   memberFirstName,
   memberNameFrom,
+  normaliseGroupName,
 };

@@ -27,6 +27,10 @@ class Message {
     this.fileSize,
   });
 
+  /// A line recording a rename or a change of members (MOB-70). Written only
+  /// by the server, and shown in the thread rather than as a bubble.
+  bool get isActivity => type == 'system';
+
   // Convert Firestore document into Message object
   factory Message.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;

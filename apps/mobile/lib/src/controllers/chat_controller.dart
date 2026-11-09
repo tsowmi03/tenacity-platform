@@ -292,6 +292,21 @@ class ChatController with ChangeNotifier {
     return chatId;
   }
 
+  Future<GroupChatAccess> fetchGroupChatAccess(String chatId) =>
+      _chatService.fetchGroupChatAccess(chatId);
+
+  Future<void> renameGroupChat(String chatId, String name) =>
+      _chatService.renameGroupChat(chatId, name);
+
+  Future<void> addGroupChatMembers(String chatId, List<String> userIds) =>
+      _chatService.addGroupChatMembers(chatId, userIds);
+
+  Future<void> removeGroupChatMember(String chatId, String userId) =>
+      _chatService.removeGroupChatMember(chatId, userId);
+
+  Future<void> leaveGroupChat(String chatId) =>
+      _chatService.leaveGroupChat(chatId);
+
   /// Everyone other than this user who is typing in [chat] as at [now].
   List<String> typingParticipants(Chat? chat, DateTime now) =>
       chat?.typingParticipants(userId, now) ?? const [];

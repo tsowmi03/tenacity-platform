@@ -6,12 +6,16 @@ const assert = require("node:assert/strict");
 const {
   MAX_GROUP_MEMBERS,
   canCreateGroupChat,
+  canManageGroupMembers,
+  canRenameGroupChat,
   groupLabel,
   groupMemberKey,
   groupMembersFor,
   isGroupChat,
+  joinNames,
   memberFirstName,
   memberNameFrom,
+  normaliseGroupName,
 } = require("../../src/chats/groupChat");
 
 const names = {
@@ -134,5 +138,46 @@ describe("isGroupChat", () => {
     assert.equal(isGroupChat({ isGroup: true }), true);
     assert.equal(isGroupChat({ participants: ["a", "b", "c"] }), false);
     assert.equal(isGroupChat(undefined), false);
+  });
+});
+
+describe("group management (MOB-70)", () => {
+  it("lets staff rename, and nobody else", () => {
+    assert.equal(canRenameGroupChat("admin"), true);
+    assert.equal(canRenameGroupChat("tutor"), true);
+    assert.equal(canRenameGroupChat("parent"), false);
+  });
+
+  it("gives admins sole control of members when the group has one", () => {
+    const memberRoles = ["admin", "tutor", "parent"];
+    assert.equal(canManageGroupMembers({ actorRole: "admin", memberRoles }), true);
+    assert.equal(canManageGroupMembers({ actorRole: "tutor", memberRoles }), false);
+    assert.equal(canManageGroupMembers({ actorRole: "parent", memberRoles }), false);
+  });
+
+  it("gives any staff member control when the group has no admin", () => {
+    const memberRoles = ["tutor", "parent", "parent"];
+    assert.equal(canManageGroupMembers({ actorRole: "tutor", memberRoles }), true);
+    assert.equal(canManageGroupMembers({ actorRole: "parent", memberRoles }), false);
+  });
+
+  it("tidies a name, and treats blank as clearing it", () => {
+    assert.equal(normaliseGroupName("  Year 7   Maths "), "Year 7 Maths");
+    assert.equal(normaliseGroupName("   "), "");
+    assert.throws(() => normaliseGroupName("x".repeat(61)), RangeError);
+    assert.throws(() => normaliseGroupName(5), TypeError);
+  });
+
+  it("uses a group's name in place of its member label", () => {
+    const base = { participants: ["me", "a", "b"], participantNames: names };
+    assert.equal(groupLabel({ ...base, viewerId: "me", name: "Year 7" }), "Year 7");
+    assert.equal(groupLabel({ ...base, viewerId: "a", name: "Year 7" }), "Year 7");
+    assert.equal(groupLabel({ ...base, viewerId: "me", name: "  " }), "Sarah & Priya");
+  });
+
+  it("joins names for a thread line", () => {
+    assert.equal(joinNames(["Sarah"]), "Sarah");
+    assert.equal(joinNames(["Sarah", "Tom"]), "Sarah and Tom");
+    assert.equal(joinNames(["Sarah", "Tom", "Ana"]), "Sarah, Tom and Ana");
   });
 });

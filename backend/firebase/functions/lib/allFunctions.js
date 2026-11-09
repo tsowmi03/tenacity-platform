@@ -46,6 +46,7 @@ const { adminDeleteStudent } = require("../src/students/deleteStudent");
 const { adminAcceptEnrolment } = require("../src/enrolments/acceptEnrolment");
 const { getReferralLink } = require("../src/referrals/getReferralLink");
 const { createGroupChat } = require("../src/chats/createGroupChat");
+const { getGroupChatAccess, updateGroupChat } = require("../src/chats/updateGroupChat");
 const { adminUpdateReferral } = require("../src/referrals/updateReferral");
 const {
   adminArchiveEnrolment,
@@ -169,6 +170,8 @@ module.exports = Object.assign(
     reconcileOneOffPayments,
     getReferralLink,
     createGroupChat,
+    getGroupChatAccess,
+    updateGroupChat,
     adminUpdateReferral,
     onAuditLogAnalytics,
     onInvoicePaidAnalytics,

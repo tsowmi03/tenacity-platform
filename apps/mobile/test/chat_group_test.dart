@@ -11,7 +11,10 @@ import 'package:tenacity/src/controllers/connectivity_controller.dart';
 import 'package:tenacity/src/models/chat_model.dart';
 import 'package:tenacity/src/models/message_model.dart';
 import 'package:tenacity/src/services/chat_outbox.dart';
+import 'package:tenacity/src/services/chat_service.dart';
 import 'package:tenacity/src/ui/chat_screen.dart';
+import 'package:tenacity/src/ui/group_details_screen.dart';
+import 'package:tenacity/src/ui/messaging/group_details_data.dart';
 import 'package:tenacity/src/ui/messaging/inbox_data.dart';
 import 'package:tenacity/src/ui/messaging/new_chat_data.dart';
 import 'package:tenacity/src/ui/theme/app_theme.dart';
@@ -44,6 +47,75 @@ void main() {
     test('falls back rather than showing a blank', () {
       expect(_group(['me', 'x', 'a']).groupLabel('me'), 'Unknown & Sarah');
       expect(_group(['me']).groupLabel('me'), 'Just you');
+    });
+  });
+
+  group('named groups (MOB-70)', () {
+    test('a name replaces the member label for everyone', () {
+      final named = _group(['me', 'a', 'b'], name: 'Year 7');
+      expect(named.groupLabel('me'), 'Year 7');
+      expect(named.groupLabel('a'), 'Year 7');
+    });
+
+    test('a blank or malformed name counts as no name', () {
+      expect(parseGroupName('  '), isNull);
+      expect(parseGroupName(7), isNull);
+      expect(parseGroupName(' Year 7 '), 'Year 7');
+    });
+
+    test('inbox search finds a named group by name or member', () {
+      List<InboxThread> search(String query) => buildInboxThreads(
+            chats: [
+              _group(['me', 'a', 'b'], name: 'Year 7')
+            ],
+            namesByChatId: const {},
+            currentUserId: 'me',
+            now: DateTime(2026, 11, 9),
+            query: query,
+          );
+
+      expect(search('year').single.name, 'Year 7');
+      expect(search('jones').single.name, 'Year 7');
+      expect(search('sowmi'), isEmpty);
+    });
+  });
+
+  group('buildGroupMemberRows', () {
+    test('lists full names with the viewer first', () {
+      final rows = buildGroupMemberRows(
+        chat: _group(['b', 'a', 'me']),
+        viewerId: 'me',
+        canManageMembers: false,
+      );
+
+      expect(rows.map((row) => row.name), [
+        'Tom Sowmi',
+        'Priya Shah',
+        'Sarah Jones',
+      ]);
+      expect(rows.first.isYou, isTrue);
+      expect(rows.any((row) => row.canRemove), isFalse);
+    });
+
+    test('offers removing others only, and never below two people', () {
+      final rows = buildGroupMemberRows(
+        chat: _group(['me', 'a', 'b']),
+        viewerId: 'me',
+        canManageMembers: true,
+      );
+      expect(rows.where((row) => row.canRemove).map((row) => row.uid),
+          unorderedEquals(['a', 'b']));
+
+      final pair = buildGroupMemberRows(
+        chat: _group(['me', 'a']),
+        viewerId: 'me',
+        canManageMembers: true,
+      );
+      expect(pair.any((row) => row.canRemove), isFalse);
+    });
+
+    test('counts the places left', () {
+      expect(remainingGroupPlaces(_group(['me', 'a', 'b'])), 29);
     });
   });
 
@@ -136,6 +208,112 @@ void main() {
     });
   });
 
+  group('group details', () {
+    testWidgets('a parent sees the members and can only leave', (tester) async {
+      final controller = _FakeChatController()
+        ..emitChat(_group(['me', 'a', 'b']));
+      await _pumpDetails(tester, controller);
+
+      expect(find.text('Priya Shah'), findsOneWidget);
+      expect(find.byKey(const Key('group-rename')), findsNothing);
+      expect(find.byKey(const Key('group-add-members')), findsNothing);
+      expect(find.byKey(const Key('group-remove-a')), findsNothing);
+      expect(find.byKey(const Key('group-leave')), findsOneWidget);
+    });
+
+    testWidgets('a tutor in a group with an admin can rename but not manage',
+        (tester) async {
+      final controller = _FakeChatController()
+        ..access = const GroupChatAccess(
+          canRename: true,
+          canManageMembers: false,
+        )
+        ..emitChat(_group(['me', 'a', 'b']));
+      await _pumpDetails(tester, controller);
+
+      expect(find.byKey(const Key('group-rename')), findsOneWidget);
+      expect(find.byKey(const Key('group-add-members')), findsNothing);
+      expect(find.byKey(const Key('group-remove-a')), findsNothing);
+    });
+
+    testWidgets('renaming sends the typed name', (tester) async {
+      final controller = _FakeChatController()
+        ..access = const GroupChatAccess(
+          canRename: true,
+          canManageMembers: true,
+        )
+        ..emitChat(_group(['me', 'a', 'b']));
+      await _pumpDetails(tester, controller);
+
+      await tester.tap(find.byKey(const Key('group-rename')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('group-name-field')),
+        'Year 7',
+      );
+      await tester.tap(find.byKey(const Key('sheet-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(controller.renamedTo, 'Year 7');
+    });
+
+    testWidgets('removing asks first, then removes', (tester) async {
+      final controller = _FakeChatController()
+        ..access = const GroupChatAccess(
+          canRename: true,
+          canManageMembers: true,
+        )
+        ..emitChat(_group(['me', 'a', 'b']));
+      await _pumpDetails(tester, controller);
+
+      await tester.tap(find.byKey(const Key('group-remove-a')));
+      await tester.pumpAndSettle();
+      expect(controller.removed, isNull);
+
+      await tester.tap(find.byKey(const Key('app-confirmation-confirm')));
+      await tester.pumpAndSettle();
+      expect(controller.removed, 'a');
+    });
+
+    testWidgets('leaving closes the screen with a result', (tester) async {
+      final controller = _FakeChatController()
+        ..emitChat(_group(['me', 'a', 'b']));
+      bool? result;
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChatController>.value(
+          value: controller,
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  result = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const GroupDetailsScreen(chatId: 'group-1'),
+                    ),
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.byKey(const Key('group-leave')));
+      await tester.tap(find.byKey(const Key('group-leave')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('app-confirmation-confirm')));
+      await tester.pumpAndSettle();
+
+      expect(controller.left, isTrue);
+      expect(result, isTrue);
+    });
+  });
+
   group('group thread', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -182,6 +360,37 @@ void main() {
       expect(find.textContaining('Read'), findsNothing);
     });
 
+    testWidgets('shows activity as a line, not a bubble with a sender',
+        (tester) async {
+      final now = DateTime.now();
+      final controller = _FakeChatController()
+        ..emitChat(_group(['me', 'a', 'b'], lastMessage: 'Hi'))
+        ..messages = [
+          _message('m1', 'a', 'Sarah renamed the group to Year 7', now,
+              type: 'system'),
+        ];
+      await _pump(tester, controller);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('group-activity-m1')), findsOneWidget);
+      expect(find.text('Sarah'), findsNothing);
+    });
+
+    testWidgets('the header opens the group details', (tester) async {
+      final controller = _FakeChatController()
+        ..emitChat(_group(['me', 'a', 'b'], lastMessage: 'Hi'));
+      await _pump(tester, controller);
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('chat-group-header')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GroupDetailsScreen), findsOneWidget);
+      expect(find.text('Sarah Jones'), findsOneWidget);
+      expect(find.text('Tom Sowmi (you)'), findsOneWidget);
+    });
+
     testWidgets('names who is typing', (tester) async {
       final now = DateTime.now();
       final controller = _FakeChatController()
@@ -219,6 +428,7 @@ Chat _group(
   String createdBy = 'me',
   Map<String, DateTime> typing = const {},
   Map<String, DateTime> readAt = const {},
+  String? name,
 }) {
   Map<String, Timestamp?> stamps(Map<String, DateTime> times) =>
       times.map((key, value) => MapEntry(key, Timestamp.fromDate(value)));
@@ -236,15 +446,39 @@ Chat _group(
     isGroup: true,
     participantNames: _names,
     createdBy: createdBy,
+    name: name,
   );
 }
 
-Message _message(String id, String senderId, String text, DateTime at) {
+Future<void> _pumpDetails(
+  WidgetTester tester,
+  _FakeChatController controller,
+) async {
+  await tester.pumpWidget(
+    ChangeNotifierProvider<ChatController>.value(
+      value: controller,
+      child: MaterialApp(
+        theme: AppTheme.light,
+        home: const GroupDetailsScreen(chatId: 'group-1'),
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+}
+
+Message _message(
+  String id,
+  String senderId,
+  String text,
+  DateTime at, {
+  String type = 'text',
+}) {
   return Message(
     id: id,
     senderId: senderId,
     text: text,
-    type: 'text',
+    type: type,
     timestamp: Timestamp.fromDate(at),
     readBy: const {},
   );
@@ -289,6 +523,29 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   final StreamController<Chat?> _chats = StreamController<Chat?>.broadcast();
   Chat? _latest;
   List<Message> messages = const [];
+
+  GroupChatAccess access = GroupChatAccess.none;
+  String? renamedTo;
+  String? removed;
+  bool left = false;
+
+  @override
+  Future<GroupChatAccess> fetchGroupChatAccess(String chatId) async => access;
+
+  @override
+  Future<void> renameGroupChat(String chatId, String name) async {
+    renamedTo = name;
+  }
+
+  @override
+  Future<void> removeGroupChatMember(String chatId, String userId) async {
+    removed = userId;
+  }
+
+  @override
+  Future<void> leaveGroupChat(String chatId) async {
+    left = true;
+  }
 
   void emitChat(Chat chat) {
     _latest = chat;

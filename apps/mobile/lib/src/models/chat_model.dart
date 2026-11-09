@@ -92,6 +92,10 @@ class Chat {
   /// Who started the group. Null for one-to-one threads.
   final String? createdBy;
 
+  /// What staff have named the group (MOB-70). Null when it has no name and
+  /// goes by its members.
+  final String? name;
+
   Chat({
     required this.id,
     required this.participants,
@@ -106,6 +110,7 @@ class Chat {
     this.isGroup = false,
     this.participantNames = const {},
     this.createdBy,
+    this.name,
   });
 
   /// Whether [userId] has read everything up to [messageTime].
@@ -147,7 +152,8 @@ class Chat {
   String memberFullName(String uid) =>
       participantNames[uid]?.fullName ?? 'Unknown';
 
-  /// The group's label as [viewerId] sees it: everyone else, by first name.
+  /// What the group is called for [viewerId]: its name if it has one,
+  /// otherwise everyone else, by first name.
   ///
   ///   one other     `Sarah`
   ///   two others    `Sarah & Tom`
@@ -157,7 +163,9 @@ class Chat {
   /// Mirrors `groupLabel` in the functions package (src/chats/groupChat.js),
   /// which titles the push. The two must agree, or a notification and the
   /// thread it opens name the same group differently.
-  String groupLabel(String viewerId) => formatGroupLabel(
+  String groupLabel(String viewerId) =>
+      name ??
+      formatGroupLabel(
         otherParticipants(viewerId).map(memberFirstName).toList(),
       );
 
@@ -219,6 +227,7 @@ class Chat {
       participantNames: parseParticipantNames(data['participantNames']),
       createdBy:
           data['createdBy'] is String ? data['createdBy'] as String : null,
+      name: parseGroupName(data['name']),
     );
   }
 
@@ -244,9 +253,17 @@ class Chat {
             entry.key: entry.value.toFirestore(),
         },
         if (createdBy != null) 'createdBy': createdBy,
+        if (name != null) 'name': name,
       },
     };
   }
+}
+
+/// A group's stored name, or null when it has none.
+String? parseGroupName(Object? raw) {
+  if (raw is! String) return null;
+  final name = raw.trim();
+  return name.isEmpty ? null : name;
 }
 
 /// A group label from the first names of everyone but the viewer, in order.

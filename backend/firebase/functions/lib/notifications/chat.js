@@ -74,6 +74,7 @@ async function sendGroupMessageNotifications(params) {
     const body = (0, chat_action_1.truncateChatMessagePreview)(`${senderName}: ${msgPreview}`);
     await Promise.all(recipients.map((recipient) => {
         const label = (0, groupChat_1.groupLabel)({
+            name: chatData.name,
             participants: chatData.participants,
             participantNames: chatData.participantNames,
             viewerId: recipient.uid,
@@ -168,6 +169,11 @@ exports.sendChatMessage = (0, https_1.onCall)({ memory: "512MiB" }, async (reque
     const mediaUrl = optionalString(requestData, "mediaUrl");
     const thumbnailUrl = optionalString(requestData, "thumbnailUrl");
     const messageType = (_c = optionalString(requestData, "messageType")) !== null && _c !== void 0 ? _c : "text";
+    // Activity lines record what staff did, so a client must not be able to
+    // write one (MOB-70).
+    if (messageType === groupChat_1.GROUP_ACTIVITY_MESSAGE_TYPE) {
+        throw new https_1.HttpsError("invalid-argument", "Missing or invalid messageType");
+    }
     const fileName = optionalString(requestData, "fileName");
     const fileSize = optionalNumber(requestData, "fileSize");
     // Optional: builds released before MOB-31 do not send one, and must keep
@@ -316,6 +322,9 @@ exports.onMessageReceived = (0, firestore_1.onDocumentCreated)({
         return;
     }
     if ((0, chat_action_1.shouldSuppressChatMessageNotification)(messageData.notificationAction))
+        return;
+    // A rename or change of members appears in the thread but sends no push.
+    if (messageData.type === groupChat_1.GROUP_ACTIVITY_MESSAGE_TYPE)
         return;
     const chatId = event.params.chatId;
     const msgId = event.params.messageId;

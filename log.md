@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-09 | [Group chats can be named and their members changed (MOB-70)](#2026-11-09--group-chats-can-be-named-and-their-members-changed-mob-70) |
 | 2026-11-09 | [TETAL marking is for analytical tasks only](#2026-11-09--tetal-marking-is-for-analytical-tasks-only) |
 | 2026-11-09 | [English texts and images come from the bank first (RES-78)](#2026-11-09--english-texts-and-images-come-from-the-bank-first-res-78) |
 | 2026-11-09 | [Warnings stay out of the document; papers are repaired to fit the sitting; better English ETA (RES-95, RES-89, RES-93)](#2026-11-09--warnings-stay-out-of-the-document-papers-are-repaired-to-fit-the-sitting-better-english-eta-res-95-res-89-res-93) |
@@ -238,6 +239,21 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-09 — Group chats can be named and their members changed (MOB-70)
+
+**What changed**
+- Tapping a group's thread header opens group details, where every member can see who is in the group by full name and can leave it.
+- Staff can name a group. The name replaces the member-based label in the thread, the inbox and notifications, and inbox search still finds the group by member name.
+- Members can be added and removed. If the group has an admin, only admins can do this. If it has none, any tutor in the group can.
+- A removal can take a group down to two people but not one. An add or remove that would duplicate another active group's members is refused. Leaving is never refused, and a group left with one person is retired.
+- Renames and member changes appear as a line in the thread and do not send a push. Older app versions show the line as a normal message from the person who made the change.
+
+**Why:** Groups had no name, no way to see who was in them, and fixed members once created.
+
+**Status:** Live. The `updateGroupChat` and `getGroupChatAccess` functions are deployed, and the screens reach users with the next mobile release.
 
 ---
 

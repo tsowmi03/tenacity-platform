@@ -39,6 +39,16 @@ class NewChatView extends StatelessWidget {
   final VoidCallback? onStartGroup;
   final VoidCallback? onCreateGroup;
 
+  /// Header title while picking.
+  final String pickingTitle;
+
+  /// Fewest people that can be submitted while picking.
+  final int minPicks;
+
+  /// The foot button once enough people are ticked, and before.
+  final String submitLabel;
+  final String needMorePicksLabel;
+
   const NewChatView({
     super.key,
     required this.sections,
@@ -55,6 +65,10 @@ class NewChatView extends StatelessWidget {
     this.isCreatingGroup = false,
     this.onStartGroup,
     this.onCreateGroup,
+    this.pickingTitle = 'New group',
+    this.minPicks = minGroupPicks,
+    this.submitLabel = 'Create group',
+    this.needMorePicksLabel = 'Pick at least 2 people',
   });
 
   @override
@@ -69,6 +83,7 @@ class NewChatView extends StatelessWidget {
               contactCount: contactCount(sections),
               isLoading: isLoading,
               isPickingGroup: isPickingGroup,
+              pickingTitle: pickingTitle,
               selectedCount: selectedIds.length,
               onBack: onBack,
               onSearchChanged: onSearchChanged,
@@ -89,6 +104,9 @@ class NewChatView extends StatelessWidget {
                         selectedCount: selectedIds.length,
                         isBusy: isCreatingGroup,
                         onCreate: onCreateGroup,
+                        minPicks: minPicks,
+                        submitLabel: submitLabel,
+                        needMorePicksLabel: needMorePicksLabel,
                       ),
                   ],
                 ),
@@ -245,16 +263,22 @@ class _CreateGroupBar extends StatelessWidget {
   final int selectedCount;
   final bool isBusy;
   final VoidCallback? onCreate;
+  final int minPicks;
+  final String submitLabel;
+  final String needMorePicksLabel;
 
   const _CreateGroupBar({
     required this.selectedCount,
     required this.isBusy,
     required this.onCreate,
+    required this.minPicks,
+    required this.submitLabel,
+    required this.needMorePicksLabel,
   });
 
   @override
   Widget build(BuildContext context) {
-    final ready = selectedCount >= minGroupPicks;
+    final ready = selectedCount >= minPicks;
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
     return Container(
@@ -282,7 +306,7 @@ class _CreateGroupBar extends StatelessWidget {
                     strokeWidth: 2,
                   ),
                 )
-              : Text(ready ? 'Create group' : 'Pick at least 2 people'),
+              : Text(ready ? submitLabel : needMorePicksLabel),
         ),
       ),
     );
@@ -293,6 +317,7 @@ class _Header extends StatelessWidget {
   final int contactCount;
   final bool isLoading;
   final bool isPickingGroup;
+  final String pickingTitle;
   final int selectedCount;
   final VoidCallback onBack;
   final ValueChanged<String> onSearchChanged;
@@ -301,6 +326,7 @@ class _Header extends StatelessWidget {
     required this.contactCount,
     required this.isLoading,
     required this.isPickingGroup,
+    required this.pickingTitle,
     required this.selectedCount,
     required this.onBack,
     required this.onSearchChanged,
@@ -321,7 +347,7 @@ class _Header extends StatelessWidget {
         // DetailHeader carries its own padding — the back button needs to sit
         // further left than the screen gutter to line its glyph up with it.
         DetailHeader(
-          title: isPickingGroup ? 'New group' : 'New message',
+          title: isPickingGroup ? pickingTitle : 'New message',
           subtitle: subtitle,
           onBack: onBack,
         ),
