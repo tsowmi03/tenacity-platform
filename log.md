@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-09 | [Functions deploys ship only what changed (TP-44)](#2026-11-09--functions-deploys-ship-only-what-changed-tp-44) |
 | 2026-11-09 | [Group chats can be named and their members changed (MOB-70)](#2026-11-09--group-chats-can-be-named-and-their-members-changed-mob-70) |
 | 2026-11-09 | [TETAL marking is for analytical tasks only](#2026-11-09--tetal-marking-is-for-analytical-tasks-only) |
 | 2026-11-09 | [English texts and images come from the bank first (RES-78)](#2026-11-09--english-texts-and-images-come-from-the-bank-first-res-78) |
@@ -239,6 +240,33 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-09 — Functions deploys ship only what changed (TP-44)
+
+**What changed**
+- A production Functions deploy now covers only the Functions changed since the
+  last successful deploy, instead of all of them every time.
+- Fixed the bug that had made the earlier scoping work (TP-17) select everything:
+  each Function was credited to the file that re-exports it, `allFunctions.js`,
+  so every Function appeared to depend on every file. It is now credited to the
+  file that defines it.
+- The comparison is against the last deploy that succeeded, read from GitHub's
+  job history, so a failed deploy or several commits between deploys cannot
+  leave a Function stale.
+- Added a `deploy_all` option for changes a diff cannot see, such as a new
+  Secret Manager version. `surfaces: all` on the orchestrator also deploys all.
+- Anything the scoping cannot account for, including its own failure or an
+  earlier deploy that may have shipped partway, falls back to deploying every
+  Function.
+
+**Why:** Every deploy took about 25 minutes however small the change. Replaying
+14 recent deploys through the fix selected 10 of about 103 Functions each, which
+is one batch and an estimated 5 minutes.
+
+**Status:** Live. Scoped selection was exercised on every fallback path, and a
+five-Function deploy to staging changed only those five.
 
 ---
 

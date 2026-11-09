@@ -6,6 +6,8 @@ import { describe, it } from "node:test";
 
 import {
   buildFunctionGraph,
+  chooseComparisonBase,
+  definingModules,
   deployedSourceFiles,
   globalTriggerPaths,
   isGlobalTrigger,
@@ -15,6 +17,7 @@ import {
   selectorsFor,
   staticRequireEdges,
   verifyRequireGraph,
+  widenForPendingAdditions,
 } from "../resolve-function-deploys.mjs";
 
 const policy = JSON.parse(
@@ -201,6 +204,36 @@ describe("buildFunctionGraph", () => {
     assert.deepEqual([...built.get("gamma")], ["gamma.cjs"]);
   });
 
+  // TP-44. The barrel loads first and holds every Function, so crediting the
+  // first holder made each Function depend on every file behind the barrel.
+  it("sees through a barrel to the module that defines each Function", () => {
+    const { dir, entryPoint } = fixture();
+    writeFileSync(
+      join(dir, "barrel.cjs"),
+      [
+        'const alpha = require("./alpha.cjs");',
+        'const gamma = require("./gamma.cjs");',
+        "module.exports = { ...alpha, ...gamma };",
+      ].join("\n")
+    );
+    writeFileSync(entryPoint, 'module.exports = require("./barrel.cjs");');
+    const built = buildFunctionGraph({
+      managedNames: ["alpha", "gamma"],
+      entryPoint,
+      root: dir,
+    });
+    assert.deepEqual([...built.get("alpha")].sort(), ["alpha.cjs", "shared.cjs"]);
+    assert.deepEqual([...built.get("gamma")], ["gamma.cjs"]);
+  });
+
+  it("attributes a module whose whole export is the Function", () => {
+    const { dir, entryPoint } = fixture();
+    writeFileSync(join(dir, "solo.cjs"), "module.exports = () => 1;");
+    writeFileSync(entryPoint, 'module.exports = { solo: require("./solo.cjs") };');
+    const built = buildFunctionGraph({ managedNames: ["solo"], entryPoint, root: dir });
+    assert.deepEqual([...built.get("solo")], ["solo.cjs"]);
+  });
+
   it("refuses to guess when an export cannot be attributed", () => {
     const { dir, entryPoint } = fixture();
     assert.throws(
@@ -231,6 +264,62 @@ describe("buildFunctionGraph", () => {
     for (const [name, files] of real) {
       assert.ok(files.size > 0, `${name} resolved to no source files`);
     }
+  });
+});
+
+describe("definingModules", () => {
+  const reach = { barrel: ["barrel", "definer"], definer: ["definer"], other: ["other"] };
+  const closure = (file) => new Set(reach[file]);
+
+  it("drops a holder that only re-exports another holder", () => {
+    assert.deepEqual(definingModules(["barrel", "definer"], closure), ["definer"]);
+  });
+
+  it("keeps unrelated holders rather than choosing between them", () => {
+    assert.deepEqual(definingModules(["definer", "other"], closure), ["definer", "other"]);
+  });
+
+  it("keeps every holder when a require cycle leaves no definer", () => {
+    const cycle = () => new Set(["a", "b"]);
+    assert.deepEqual(definingModules(["a", "b"], cycle), ["a", "b"]);
+  });
+});
+
+describe("chooseComparisonBase", () => {
+  const sha = "a".repeat(40);
+  const choose = (lastDeployed, ancestor = true) =>
+    chooseComparisonBase({ lastDeployed, head: "HEAD", ancestorCheck: () => ancestor });
+
+  it("compares against the last deployed commit", () => {
+    assert.deepEqual(choose(sha), { base: sha });
+  });
+
+  it("forces a full deploy with no usable record", () => {
+    for (const value of ["none", "", null, undefined, "abc123"]) {
+      assert.match(choose(value).fullDeployReason, /No usable Functions deploy record/);
+    }
+  });
+
+  it("forces a full deploy when history has diverged", () => {
+    assert.match(choose(sha, false).fullDeployReason, /not an ancestor/);
+  });
+});
+
+describe("widenForPendingAdditions", () => {
+  const scoped = { mode: "scoped", names: ["alpha"], reason: "1 of 3." };
+  const widen = (pendingAdditions) =>
+    widenForPendingAdditions({ resolution: scoped, pendingAdditions, managedNames });
+
+  it("leaves the scope alone when every new Function is covered", () => {
+    assert.equal(widen([]), scoped);
+    assert.equal(widen(["alpha"]), scoped);
+  });
+
+  it("deploys everything when a Function not yet live would be skipped", () => {
+    const result = widen(["beta"]);
+    assert.equal(result.mode, "all");
+    assert.deepEqual(result.names, managedNames);
+    assert.match(result.reason, /beta/);
   });
 });
 

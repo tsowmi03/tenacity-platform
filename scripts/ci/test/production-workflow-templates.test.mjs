@@ -65,7 +65,8 @@ describe("the Functions minimum-bill opt-in", () => {
       /\n      allow_minimum_bill_increase:\n(?:        .*\n)+?        default: false\n/g
     ) ?? [];
     assert.equal(declarations.length, 2);
-    assert.equal((source.match(/type: boolean/g) ?? []).length, 2);
+    // Two opt-ins, this one and deploy_all, each declared on both entry points.
+    assert.equal((source.match(/type: boolean/g) ?? []).length, 4);
   });
 
   it("forces only a batch whose dry run refused for the minimum bill", () => {
@@ -295,7 +296,7 @@ describe("active Firebase production workflows", () => {
   });
 });
 
-describe("the Functions deploy batches the whole inventory", () => {
+describe("the Functions deploy batches its scoped plan", () => {
   const { source } = templates.functions;
 
   // A literal batch count held for exactly as long as the inventory sat on a
@@ -303,18 +304,39 @@ describe("the Functions deploy batches the whole inventory", () => {
   // against a hard-coded 9, and the deploy died on that assertion after the
   // environment gate had been cleared — a production window spent on a number
   // nobody had a reason to remember. The count must be derived.
-  it("derives the batch count from the inventory rather than hard-coding it", () => {
+  it("derives the batch count from the plan rather than hard-coding it", () => {
     assert.doesNotMatch(source, /\$\{#selectors\[@\]\}" -eq \d+/);
     assert.match(source, /expected_batches="\$\(node -e/);
-    assert.match(
-      source,
-      /Math\.ceil\(p\.managed\.names\.length \/ 10\)/
-    );
+    assert.match(source, /Math\.ceil\(require\(process\.argv\[1\]\)\.deployCount \/ 10\)/);
     assert.match(source, /\$\{#selectors\[@\]\}" -eq "\$expected_batches"/);
   });
 
-  it("checks that every managed Function is selected exactly once", () => {
-    assert.match(source, /diff "\$raw_dir\/policy-names\.txt" "\$raw_dir\/selected-names\.txt"/);
+  it("ships exactly the plan and accounts for every managed Function", () => {
+    assert.match(source, /diff "\$raw_dir\/planned-names\.txt" "\$raw_dir\/selected-names\.txt"/);
+    assert.match(source, /diff "\$raw_dir\/policy-names\.txt" "\$raw_dir\/accounted-names\.txt"/);
+  });
+
+  // Comparing to the parent commit would leave a Function stale whenever a
+  // deploy failed or several commits landed between deploys.
+  it("compares against the last successful deploy, never the parent", () => {
+    assert.match(source, /--last-deployed "\$\{last_deployed:-none\}"/);
+    assert.doesNotMatch(source, /--base HEAD\^/);
+    assert.match(source, /fetch-depth: 0/);
+  });
+
+  it("widens to a full deploy when scoping fails", () => {
+    assert.match(source, /\|\| "\$\{resolver\[@\]\}" --all --reason/);
+    assert.match(source, /find-last-function-deploy\.mjs\)" \|\| last_deployed=""/);
+  });
+
+  it("can read job history on both routes into production", () => {
+    assert.match(source, /\n    environment: tenacity-production\n    permissions:\n(.*\n)?      actions: read\n/);
+    const orchestrator = readFileSync(`${templateDirectory}/production-deploy.yml`, "utf8");
+    assert.match(
+      orchestrator,
+      /\n  functions:\n(.*\n)+?      actions: read\n(.*\n)+?    uses: \.\/\.github\/workflows\/firebase-functions-production\.yml/
+    );
+    assert.match(orchestrator, /deploy_all: \$\{\{ inputs\.surfaces == 'all' \}\}/);
   });
 });
 
