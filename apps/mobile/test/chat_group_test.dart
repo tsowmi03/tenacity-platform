@@ -236,6 +236,34 @@ void main() {
       expect(find.byKey(const Key('group-remove-a')), findsNothing);
     });
 
+    testWidgets('refreshes what is offered when the members change',
+        (tester) async {
+      final controller = _FakeChatController()
+        ..emitChat(_group(['me', 'a', 'b']));
+      await _pumpDetails(tester, controller);
+      expect(find.byKey(const Key('group-add-members')), findsNothing);
+      expect(controller.accessFetches, 1);
+
+      // Somebody else's change, such as the last admin leaving.
+      controller
+        ..access = const GroupChatAccess(
+          canRename: true,
+          canManageMembers: true,
+        )
+        ..emitChat(_group(['me', 'b']));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const Key('group-add-members')), findsOneWidget);
+      expect(controller.accessFetches, 2);
+
+      // A rename is not a change of members.
+      controller.emitChat(_group(['me', 'b'], name: 'Year 7'));
+      await tester.pump();
+      await tester.pump();
+      expect(controller.accessFetches, 2);
+    });
+
     testWidgets('renaming sends the typed name', (tester) async {
       final controller = _FakeChatController()
         ..access = const GroupChatAccess(
@@ -525,12 +553,16 @@ class _FakeChatController extends ChangeNotifier implements ChatController {
   List<Message> messages = const [];
 
   GroupChatAccess access = GroupChatAccess.none;
+  int accessFetches = 0;
   String? renamedTo;
   String? removed;
   bool left = false;
 
   @override
-  Future<GroupChatAccess> fetchGroupChatAccess(String chatId) async => access;
+  Future<GroupChatAccess> fetchGroupChatAccess(String chatId) async {
+    accessFetches++;
+    return access;
+  }
 
   @override
   Future<void> renameGroupChat(String chatId, String name) async {

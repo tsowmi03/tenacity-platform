@@ -30,23 +30,37 @@ class GroupDetailsScreen extends StatefulWidget {
 
 class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
   late final ChatController _controller = context.read<ChatController>();
-  late final Stream<Chat?> _chat = _controller.watchChat(widget.chatId);
+  late final Stream<Chat?> _chat =
+      _controller.watchChat(widget.chatId).map((chat) {
+    _refreshAccessIfMembersChanged(chat);
+    return chat;
+  });
 
   GroupChatAccess _access = GroupChatAccess.none;
   bool _isBusy = false;
+  String? _seenMembers;
+  int _accessRequest = 0;
 
-  @override
-  void initState() {
-    super.initState();
+  /// What someone can do depends on who is in the group, and anyone's change
+  /// can alter that: the last admin leaving hands control to the tutors.
+  void _refreshAccessIfMembersChanged(Chat? chat) {
+    if (chat == null) return;
+    final members = (List.of(chat.participants)..sort()).join(',');
+    if (members == _seenMembers) return;
+    _seenMembers = members;
     unawaited(_loadAccess());
   }
 
   /// Without an answer the controls stay hidden and the member list still
   /// works, so a failure here is not worth interrupting anyone over.
   Future<void> _loadAccess() async {
+    final request = ++_accessRequest;
     try {
       final access = await _controller.fetchGroupChatAccess(widget.chatId);
-      if (mounted) setState(() => _access = access);
+      // Only the latest request reflects the current members.
+      if (mounted && request == _accessRequest) {
+        setState(() => _access = access);
+      }
     } catch (error, stackTrace) {
       logHandledError(
         error,
@@ -96,12 +110,10 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
       MaterialPageRoute(builder: (_) => AddGroupMembersScreen(chat: chat)),
     );
     if (picked == null || picked.isEmpty || !mounted) return;
-    final added = await _run(
+    await _run(
       'add people to this group',
       () => _controller.addGroupChatMembers(widget.chatId, picked),
     );
-    // Adding an admin hands control of the members to admins.
-    if (added) unawaited(_loadAccess());
   }
 
   Future<void> _remove(GroupMemberRowData member) async {
@@ -113,12 +125,10 @@ class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
       tone: AppConfirmationTone.destructive,
     );
     if (!confirmed || !mounted) return;
-    final removed = await _run(
+    await _run(
       'remove this person',
       () => _controller.removeGroupChatMember(widget.chatId, member.uid),
     );
-    // Removing the last admin hands control back to the tutors.
-    if (removed) unawaited(_loadAccess());
   }
 
   Future<void> _leave() async {
