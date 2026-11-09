@@ -46,6 +46,7 @@ const {
 const { diagramOwnerLabel, repairDiagrams } = require("./diagramRepair");
 const { QUESTION_BANK_MODES, applyQuestionBank, questionBankModeFor } = require("./questionBankFill");
 const { cloneWithSourceImages, loadSourceImages, withoutSourceImageBytes } = require("./sourceImages");
+const { sourcePassageFromBank, sourceSetFromBank } = require("./englishBankSourcing");
 const {
   buildDiagramFillPrompt,
   buildSystemPrompt,
@@ -561,6 +562,7 @@ function buildResourceJobDoc({
     includeWorking: payload.answerMode === "worked",
     questionBank: questionBankModeFor({ subject: payload.subject }),
     questionBankUsage: null,
+    stimulusBankUsage: null,
     customPrompt: payload.customPrompt,
     uploadedFiles: payload.uploadedFiles,
     uploadedFilePath: payload.uploadedFilePath,
@@ -728,6 +730,7 @@ function sanitizedSourceSelection(selection) {
     themes: Array.isArray(selection.themes)
       ? selection.themes.map(String).slice(0, 8)
       : [],
+    ...(selection.bankStimulusId ? { bankStimulusId: String(selection.bankStimulusId) } : {}),
   };
 }
 
@@ -740,6 +743,7 @@ function sanitizedVisualSelection(selection) {
     searchTerms,
     region: selection.region ? String(selection.region) : null,
     task: String(selection.task || ""),
+    ...(selection.bankStimulusId ? { bankStimulusId: String(selection.bankStimulusId) } : {}),
   };
 }
 
@@ -753,8 +757,10 @@ function sourceStateFromSourcing({ passageSourcing, stimulusSourcing }) {
     ? stimulusSourcing.visuals
     : [];
   const sourcePlanner = passageSourcing?.planner || stimulusSourcing?.planner || null;
+  const stimulusBankUsage = passageSourcing?.bankUsage || stimulusSourcing?.bankUsage || null;
   return {
     ...(sourcePlanner ? { sourcePlanner } : {}),
+    ...(stimulusBankUsage ? { stimulusBankUsage } : {}),
     sourceSelections: sourced
       .map((item) => sanitizedSourceSelection(item?.selection))
       .filter(Boolean),
@@ -1730,7 +1736,12 @@ function shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent }) 
  * so generation falls back to the model writing its own passage.
  */
 async function maybeSourcePassage(args) {
-  return resourceStage(args.job, "sourcing.passage", () => maybeSourcePassageLogged(args));
+  return resourceStage(args.job, "sourcing.passage", async () => {
+    // RES-78. The bank first; a passage it can't supply is sourced as before.
+    const fromBank = await sourcePassageFromBank(args);
+    if (fromBank.sourced) return { used: true, sourced: fromBank.sourced, planner: null, bankUsage: fromBank.usage };
+    return { ...(await maybeSourcePassageLogged(args)), bankUsage: fromBank.usage };
+  });
 }
 
 async function maybeSourcePassageLogged({
@@ -1939,6 +1950,7 @@ async function maybeSourceStimulusSetLogged({
   selectAlternative = selectAlternativePublicDomainText,
   sourceVisual = sourceVisualStimulus,
   judgeImages = judgeStimulusImages,
+  bank = null,
 }) {
   let plan;
   const persistedSelections = Array.isArray(job.sourceSelections)
@@ -1947,7 +1959,8 @@ async function maybeSourceStimulusSetLogged({
   const persistedVisuals = Array.isArray(job.sourceVisuals)
     ? job.sourceVisuals.filter((selection) => selection?.searchTerms)
     : [];
-  if (persistedSelections.length || persistedVisuals.length) {
+  const persisted = Boolean(persistedSelections.length || persistedVisuals.length);
+  if (persisted) {
     plan = {
       needed: true,
       texts: persistedSelections,
@@ -1993,7 +2006,23 @@ async function maybeSourceStimulusSetLogged({
   // RES-89. A paper's prose is cut to what the sitting can hold.
   const maxWords = textWordLimit(paperReadingBudget(job), plannedTexts.length);
   let planner = plan.planner || null;
-  for (const selection of plannedTexts) {
+  // RES-97. Candidate images are judged for this student and task before one
+  // is printed (imageJudge.js).
+  const judge = anthropicApiKey && judgeImages
+    ? ({ images, purpose, task }) => judgeImages({ images, purpose, task, year: job.year, anthropicApiKey, callAi, signal })
+    : null;
+  const plannedVisuals = Array.isArray(plan.visuals) ? plan.visuals : [];
+  // RES-78. The bank is tried first for every planned text and image.
+  const fromBank = await sourceSetFromBank({
+    job, plannedTexts, plannedVisuals, persisted, maxWords, bank, callAi, anthropicApiKey, openaiApiKey, signal, judge,
+  });
+  for (const [index, selection] of plannedTexts.entries()) {
+    if (fromBank.texts.has(index)) {
+      texts.push(fromBank.texts.get(index));
+      continue;
+    }
+    // Chosen from the bank on an earlier run and since hidden: nothing to fetch.
+    if (selection?.bankStimulusId) continue;
     try {
       let sourced = await sourceText({
         anthropicApiKey,
@@ -2047,14 +2076,13 @@ async function maybeSourceStimulusSetLogged({
   // its near-duplicate key to `usedClusters`, so a second visual cannot come
   // from the same scanned series as the first.
   const visuals = [];
-  const plannedVisuals = Array.isArray(plan.visuals) ? plan.visuals : [];
   const usedClusters = new Set();
-  // RES-97. Candidate images are judged for this student and task before one
-  // is printed (imageJudge.js).
-  const judge = anthropicApiKey && judgeImages
-    ? ({ images, purpose, task }) => judgeImages({ images, purpose, task, year: job.year, anthropicApiKey, callAi, signal })
-    : null;
-  for (const selection of plannedVisuals) {
+  for (const [index, selection] of plannedVisuals.entries()) {
+    if (fromBank.visuals.has(index)) {
+      visuals.push(fromBank.visuals.get(index));
+      continue;
+    }
+    if (selection?.bankStimulusId) continue;
     try {
       const sourced = await sourceVisual({ selection, excludeClusters: usedClusters, judge });
       if (sourced?.ok && sourced.image) {
@@ -2084,6 +2112,7 @@ async function maybeSourceStimulusSetLogged({
       texts,
       visuals,
       planner,
+      bankUsage: fromBank.usage,
       // RES-96. The resource needs reading texts and none could be verified.
       // Withholding the stimulus field did not stop the generator writing
       // them: it put the passage inside Question 1's stem, where later stages
@@ -2098,6 +2127,7 @@ async function maybeSourceStimulusSetLogged({
     texts: [],
     visuals: [],
     planner,
+    bankUsage: fromBank.usage,
     originalTextsAllowed: plannedTexts.length > 0,
     warning: "Planned stimulus texts could not be verified, so the reading texts are original (labelled Tenacity Original).",
   };
@@ -2145,11 +2175,13 @@ function applySourcedStimulus(parsed, texts, visuals = []) {
     title: stimulusDisplayTitle(item),
     author: item.author || item.selection?.author || "",
     source: sourcedTextSource(item),
-    licence: PUBLIC_DOMAIN,
+    // RES-78. A bank text is used with permission, not public domain.
+    licence: item.bankStimulusId ? null : PUBLIC_DOMAIN,
     body: item.passage,
     // Verified source bytes keep their original punctuation when rendered
     // (exempt from the de-AI backstop). Model-written extras below do not.
     verbatim: true,
+    ...(item.bankStimulusId ? { bankStimulusId: item.bankStimulusId } : {}),
   }));
   const existing = Array.isArray(parsed.stimulus) ? parsed.stimulus : [];
   const extras = existing.slice(sourced.length).map((entry, index) => ({
@@ -2601,6 +2633,9 @@ async function runGenerationPipelineLogged(job, deps) {
   // booklet type (practice paper) sources a set of texts.
   let passageSourcing = { used: false, sourced: null };
   let stimulusSourcing = { used: false, texts: [] };
+  // RES-78. As for the question bank: the replay runner keeps the job in
+  // memory and reads the real bank through a separate database.
+  const stimulusBank = { db: deps.questionBankDb || deps.db, bucket: storage?.bucket?.(), embed: deps.embedStimulus };
   if (shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent })) {
     passageSourcing = await maybeSourcePassage({
       job,
@@ -2610,6 +2645,7 @@ async function runGenerationPipelineLogged(job, deps) {
       sourceText,
       callAi: sourcingCallAi,
       selectAlternative: deps.selectAlternative,
+      bank: stimulusBank,
     });
     if (passageSourcing.used) {
       logger.info("[resource] sourced public-domain passage", {
@@ -2636,6 +2672,7 @@ async function runGenerationPipelineLogged(job, deps) {
       planStimulus,
       callAi: sourcingCallAi,
       selectAlternative: deps.selectAlternative,
+      bank: stimulusBank,
     });
     if (stimulusSourcing.used) {
       logger.info("[resource] sourced public-domain stimulus", {

@@ -48,6 +48,7 @@ function judgeSystemPrompt() {
 An image is suitable only if ALL of these hold:
 - It is one clear picture: a photograph, painting, illustration, poster or advertisement. Not a multi-panel sheet, a contact sheet, both sides of a document, a page of a book or newspaper, or a collage of small images.
 - It is not a map, chart, graph, table, diagram, form or text-heavy document.
+- It has no handwriting, pen marks or student annotations on it, and is not a blank box.
 - Any words in it are in English and large enough to read when the image is printed about 16 cm wide.
 - It suits a student of the stated year level: nothing graphic, sexual or demeaning.
 - It clearly serves the stated purpose and task. For a writing prompt, it must evoke a scene, a moment or an issue a student can write about. For visual analysis, it must have composition, symbolism or persuasive design worth analysing.

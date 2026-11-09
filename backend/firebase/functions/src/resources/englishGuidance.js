@@ -11,7 +11,7 @@
 // The content was agreed with Tenacity on 2026-10-07 and is recorded on RES-37.
 // Change the agreed version first, then this file.
 
-const ENGLISH_GUIDANCE = `HOW TENACITY TEACHES ENGLISH. Everything English in this resource (explanations, model analysis, exemplar paragraphs, scaffolds, marks, marking criteria and model answers) must teach and assess this approach. Use its terms (thesis, ETA, TETAL) wherever the resource teaches structure.
+const ENGLISH_GUIDANCE = `HOW TENACITY TEACHES ENGLISH. Everything English in this resource (explanations, model analysis, exemplar paragraphs, scaffolds, marks, marking criteria and model answers) must teach and assess this approach. Use its terms (thesis, ETA, TETAL) wherever the resource teaches analysis. Thesis, ETAs and TETAL belong to analytical tasks only (essays, comprehension, analysis of a text or image). A student's own narrative, creative or discursive writing is never planned or marked with them.
 
 QUESTIONS STATE THE TASK ONLY
 - A question, short-answer or extended, gives only the task: what the student must do, and the audience or form when the task needs one.
@@ -39,7 +39,7 @@ ANALYTICAL ESSAYS: TETAL
 - Default shape: 3 body paragraphs with 3 ETAs each. Use another shape (such as 2 paragraphs of 4 ETAs, or 4 of 2) only when the tutor asks for it.
 - Comparative essays: a paragraph may pair ETAs from both texts, or be built around one point of comparison. Either is acceptable.
 
-SHORT-ANSWER QUESTIONS (6 marks or fewer)
+SHORT-ANSWER QUESTIONS (6 marks or fewer, analytical tasks only)
 Set each question's marks, its marking criteria and its model answer from this table:
 - 1 to 2 marks: technique and analysis only, with no thesis. Go straight into the technique and its effect.
 - 3 marks: a thesis plus one strong ETA, or two brief ETAs.
@@ -48,7 +48,7 @@ Set each question's marks, its marking criteria and its model answer from this t
 - 6 marks: a thesis plus three ETAs.
 The thesis is worth about 1 mark and must answer the question in the question's own words. Each ETA is worth 1 to 2 marks, depending on how developed it is.
 
-EXTENDED RESPONSES (more than 6 marks)
+EXTENDED RESPONSES (more than 6 marks, analytical tasks only)
 Mark against Tenacity's criteria, shown out of 20. For any other total, scale them in proportion and round to whole marks that still add up to the total (out of 15: 3, 3, 7 and 2).
 - Thesis answers the question in its words, with a narrowed scope: 4 marks.
 - Paragraph theses each narrow the main thesis, with clear logical flow: 4 marks.
@@ -65,18 +65,20 @@ Students usually write a short story in about 40 minutes. Teach and reward:
 6. Few characters. All dialogue and information must earn its place.
 7. A purposeful ending: no "it was all a dream".
 8. Specific sensory detail rather than general description.
+Mark creative writing on these points alone: its criteria and model answer use no thesis, paragraph theses, ETAs, TETAL or links. Share the question's marks across the points that matter for the task, in whole marks that add up to its total.
 
 DISCURSIVE WRITING
 1. Explores one idea from several angles. It does not need a firm conclusion.
 2. A personal, reflective voice, with anecdotes as evidence.
 3. Each section shifts perspective deliberately. Logical flow still applies.
+Mark discursive writing on these points alone, as for creative writing: no thesis, paragraph theses, ETAs, TETAL or links.
 
 REFLECTION STATEMENTS
 - The thesis states the purpose of the student's own text and its audience.
 - Then paired ETAs: an ETA on a technique in the prescribed text and what it achieves, followed by an ETA on how the student used the same technique in their own text, with evidence from it.
 
 YEAR LEVELS
-Every year level learns the same structure (thesis, TETAL, ETAs). For younger students, phrase questions more simply and ask for less depth. Never drop the structure from the marking criteria and model answers.
+Every year level learns the same analytical structure (thesis, TETAL, ETAs). For younger students, phrase questions more simply and ask for less depth. Never drop the structure from the marking criteria and model answers of an analytical task.
 
 Persuasive writing (speeches, opinion pieces) is not part of what students write. Do not set it unless the tutor asks for it.`;
 
@@ -84,7 +86,7 @@ Persuasive writing (speeches, opinion pieces) is not part of what students write
 // from, and describe how marks are earned rather than restating the answer
 // (RES-48): the answer itself belongs in the model answer, when one is asked for. Shared by "Marking guide" and "Model answers" so the two modes cannot
 // mark the same question differently.
-const ENGLISH_CRITERIA_RULE = `Write each question's marking criteria from HOW TENACITY TEACHES ENGLISH. A short-answer question gets one criterion for the thesis (when its marks call for one) and one per ETA, each starting with its marks (for example "1 mark: a thesis that answers the question in its own words"). An extended response gets Tenacity's extended-response criteria, scaled to its marks in whole marks. Never award half or fractional marks. The criteria for a question must add up to its marks.
+const ENGLISH_CRITERIA_RULE = `Write each question's marking criteria from HOW TENACITY TEACHES ENGLISH. A short-answer question gets one criterion for the thesis (when its marks call for one) and one per ETA, each starting with its marks (for example "1 mark: a thesis that answers the question in its own words"). An analytical extended response gets Tenacity's extended-response criteria, scaled to its marks in whole marks. A creative or discursive writing task gets criteria written from those sections instead, with no criterion for a thesis, paragraph theses, ETAs, TETAL or links. Never award half or fractional marks. The criteria for a question must add up to its marks.
 
 Criteria say what earns each mark, never what the answer is. Do not name the correct option, quote the text, name the technique, or state the point a response should make. A multiple-choice question gets exactly one criterion: "1 mark: selects the correct answer" (with its marks if it is worth more). A short answer is "1 mark: identifies a relevant technique", not "1 mark: identifies the metaphor in line 4".`;
 

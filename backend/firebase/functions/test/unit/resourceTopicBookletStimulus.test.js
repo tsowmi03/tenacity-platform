@@ -61,7 +61,7 @@ describe("topic booklet source units", () => {
       null,
       { texts: [SOURCED_POEM] }
     );
-    assert.match(message, /VERIFIED PUBLIC-DOMAIN SOURCE LIBRARY/);
+    assert.match(message, /VERIFIED SOURCE LIBRARY/);
     assert.match(message, /frontStimulusSourceNumbers/);
     assert.match(message, /\[Line 2\] Second line/);
     assert.match(message, /Never copy a source body into the JSON/);

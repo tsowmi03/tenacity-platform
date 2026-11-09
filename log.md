@@ -20,6 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-09 | [TETAL marking is for analytical tasks only](#2026-11-09--tetal-marking-is-for-analytical-tasks-only) |
+| 2026-11-09 | [English texts and images come from the bank first (RES-78)](#2026-11-09--english-texts-and-images-come-from-the-bank-first-res-78) |
 | 2026-11-09 | [Warnings stay out of the document; papers are repaired to fit the sitting; better English ETA (RES-95, RES-89, RES-93)](#2026-11-09--warnings-stay-out-of-the-document-papers-are-repaired-to-fit-the-sitting-better-english-eta-res-95-res-89-res-93) |
 | 2026-11-08 | [English images are checked before printing, and print full width (RES-97)](#2026-11-08--english-images-are-checked-before-printing-and-print-full-width-res-97) |
 | 2026-11-08 | [English DOCX: no stranded booklet page, readable long marking-guide rows (RES-92, RES-99)](#2026-11-08--english-docx-no-stranded-booklet-page-readable-long-marking-guide-rows-res-92-res-99) |
@@ -236,6 +238,70 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-09 — TETAL marking is for analytical tasks only
+
+**What changed**
+- A narrative, creative or discursive task is no longer planned or marked with
+  a thesis, paragraph theses, ETAs, TETAL or links. Those stay on essays,
+  comprehension and analysis of a text or image.
+- A model answer for a story worth more than 6 marks is now a plan: central
+  idea, the scenes in order with their details, and the ending. At 6 marks or
+  fewer the model writes the piece itself.
+- Criteria for a story come from Tenacity's creative-writing points (one clear
+  idea, show don't tell, start late, a purposeful ending and so on).
+- The content review now reports TETAL marking on a narrative as a defect.
+
+**Why:** A Year 9 short story's model answer came out as an essay plan with
+"Thesis" and "ETA" lines, because the rule for extended responses had no
+exception for creative writing.
+
+**Status:** Live. Merged and Functions deployed to production on 9 Nov 2026.
+
+---
+
+## 2026-11-09 — English texts and images come from the bank first (RES-78)
+
+**What changed**
+- For each text or image an English resource needs, the generator now searches
+  the English bank first (`englishBankSourcing.js`) and a model picks from up
+  to four candidates, or none. A slot the bank can't fill goes to Gutenberg,
+  Wikisource and Commons as before, and a Tenacity Original stays the last
+  resort. Annotation tasks and the booklet types are both covered.
+- Candidates follow the RES-77 year rule, and two of the four are held for
+  stimuli within two years of the student where they exist. Passages over the
+  RES-89 word limit are rejected rather than cut. Workbook lessons, lists of
+  set texts and texts pointing at a page or graph that isn't included are left
+  out.
+- A text the tutor names skips the bank and is sourced as before.
+- A bank text is reprinted as stored, without the paper's own label ("Text 5 –
+  Prose fiction extract") or a headline that repeats its title. It prints its
+  author, title and publication, or the school or tidied file name when those
+  are missing, and never says "Public domain". The sources are used with
+  permission.
+- Bank images go through the RES-97 image check, which now also rejects
+  handwriting and blank boxes.
+- The writer is shown the bank's own questions and marking guide for a text as
+  examples to restate or adapt.
+- The job records each stimulus used and why any slot fell back, shown as
+  "English bank" in the resource's details.
+- The two English vector indexes were listed in
+  `pending-index-deployment-exceptions.json` and deployed. Without that entry
+  their RES-77 deploy never happened, so the RES-77 note below was corrected.
+  The two maths entries, live since RES-59, were closed.
+
+**Why:** Tutors asked for real exam-style passages instead of only old
+public-domain works, and the bank holds 2,788 of them.
+
+**Verification:** Real generations against the real bank, with a Year 5 and a
+Year 7 worksheet, Year 9 and Year 10 papers, an annotation task and a named-text
+request. Every bank text matched the stored version word for word, the Year 5
+resource stayed within the year rule, and documents were rendered and read.
+
+**Status:** Live. Merged, indexes and Functions deployed to production on 9 Nov
+2026.
 
 ---
 
@@ -920,8 +986,8 @@ and Functions deployed.
 **Why:** The English bank needs to be searchable before the generator or
 tutors can use it.
 
-**Status:** Live. The embeddings are in production and the indexes are
-deployed. Nothing calls the search yet (RES-78 and RES-68).
+**Status:** Live. The embeddings are in production. The indexes did not deploy
+at the time; they went live with RES-78 on 9 Nov 2026.
 
 ---
 

@@ -146,10 +146,11 @@ function answerRule(subject, answerMode) {
 
 MODEL ANSWER RULES (strictly enforced):
 1. "suggestedResponse" is the answer itself, written as a top-band student would write it. It is never a description of an answer. BANNED: "The response should…", "Students should…", "A paragraph that…", "An introduction with…", "A direct judgement about…", "Evidence should show…", or any other wording that says what an answer would contain instead of giving it.
-2. Questions or parts worth 6 marks or fewer: write the complete answer in full prose, built exactly as the SHORT-ANSWER QUESTIONS table in HOW TENACITY TEACHES ENGLISH sets out for its marks: the thesis first (from 3 marks), then the ETAs those marks call for, quoting the text as evidence. A thesis question gets the thesis sentence; an introduction question gets the whole introduction; a paragraph question gets the whole TETAL paragraph. For multiple choice, give the correct option and one sentence on why.
-3. Questions or parts worth more than 6 marks (extended responses): do NOT write full prose. Give a TETAL plan as dot points, each on its own line beginning "- ": first "- Thesis: …", then for each body paragraph "- Paragraph 1 thesis: …", one "- ETA: "quotation" · technique · analysis" line per ETA, and "- Link: …".
-4. Match length to the marks, as the table sets out. A 1–2 mark answer is a technique and its analysis in one or two sentences; a 6 mark answer is a thesis and three ETAs.
-5. Be concise and focused. No filler, no restating the question, no hedging, no preamble.
+2. Analytical questions or parts worth 6 marks or fewer: write the complete answer in full prose, built exactly as the SHORT-ANSWER QUESTIONS table in HOW TENACITY TEACHES ENGLISH sets out for its marks: the thesis first (from 3 marks), then the ETAs those marks call for, quoting the text as evidence. A thesis question gets the thesis sentence; an introduction question gets the whole introduction; a paragraph question gets the whole TETAL paragraph. For multiple choice, give the correct option and one sentence on why.
+3. Analytical questions or parts worth more than 6 marks (extended responses): do NOT write full prose. Give a TETAL plan as dot points, each on its own line beginning "- ": first "- Thesis: …", then for each body paragraph "- Paragraph 1 thesis: …", one "- ETA: "quotation" · technique · analysis" line per ETA, and "- Link: …".
+4. A student's own narrative, creative or discursive writing is never planned with a thesis, paragraph theses, ETAs, TETAL or links. Worth 6 marks or fewer: write the piece itself. Worth more than 6 marks: give a plan as dot points, each on its own line beginning "- ": first "- Central idea: …", then "- Scene 1: …", "- Scene 2: …" and so on in order ("- Section 1: …" for discursive writing), each naming what happens and the specific details used, then "- Ending: …".
+5. Match the length of an analytical answer to the marks, as the table sets out. A 1–2 mark answer is a technique and its analysis in one or two sentences; a 6 mark answer is a thesis and three ETAs.
+6. Be concise and focused. No filler, no restating the question, no hedging, no preamble.
 
 ${ENGLISH_CRITERIA_RULE}`;
     }
@@ -275,7 +276,7 @@ function standardAnswerSchema(subject, answerMode) {
 function bookletContentLine(subject) {
   const sectionFormatting = `Within each sub-topic's "explanation", choose the structure that teaches the content most clearly. You may use multiple paragraphs separated by \\n\\n, dot points on separate lines beginning "- ", numbered lists, **bold** for key terms, and *italics* for emphasis. Do not force every explanation into the same format.`;
   if (isEnglishSubject(subject)) {
-    return `Include explanations, key terms and techniques, model analysis written as ETAs (in each "modelAnalysis" entry, "quote" is the evidence, "technique" the device it uses, and "effect" the analysis drawn from that technique), an optional short exemplar paragraph written in TETAL, tips, common mistakes, practice questions, and an end-of-topic quiz. ${sectionFormatting} Do NOT include maths-style worked examples or step-by-step "working".`;
+    return `Include explanations, key terms and techniques, model analysis written as ETAs (in each "modelAnalysis" entry, "quote" is the evidence, "technique" the device it uses, and "effect" the analysis drawn from that technique), an optional short exemplar paragraph written in TETAL for an analytical topic (for a creative writing topic, a short passage of the writing itself), tips, common mistakes, practice questions, and an end-of-topic quiz. ${sectionFormatting} Do NOT include maths-style worked examples or step-by-step "working".`;
   }
   return `Include explanations, definitions, worked examples, tips, common mistakes, practice questions, and an end-of-topic quiz. ${sectionFormatting}`;
 }
@@ -858,6 +859,18 @@ function sourcedTextHeader(sourced) {
   return `Title: ${title}\nAuthor: ${author}\nSource: ${source}`;
 }
 
+// RES-78. A bank text arrives with the questions and marking guide from the
+// paper it came from, as examples to restate or adapt (RES-76).
+function bankExamplesBlock(sourced) {
+  const examples = Array.isArray(sourced?.bankExamples) ? sourced.bankExamples : [];
+  if (!examples.length) return "";
+  const lines = examples.map((example) => {
+    const marks = example.marks ? ` (${example.marks} mark${example.marks === 1 ? "" : "s"})` : "";
+    return `- ${example.text}${marks}${example.guide ? `\n  Marking: ${example.guide}` : ""}`;
+  });
+  return `\n\nEXAMPLES: questions set on this text in the paper it came from, written for that paper's students. Restate or adapt any that suit this student's year and the task, and write your own for the rest. Pitch every question at this student. Never mention these examples or where they came from. Answers and marking still follow the format this resource requires.\n${lines.join("\n")}`;
+}
+
 function buildUserMessage(job, uploadedContent, sourcedText = null) {
   const parts = [];
 
@@ -884,17 +897,17 @@ function buildUserMessage(job, uploadedContent, sourcedText = null) {
         const body = job.resourceType === "topic-booklet"
           ? numberedStimulusBody(text)
           : text.passage;
-        return `Text ${index + 1}:\n${sourcedTextHeader(text)}\n\n${body}`;
+        return `Text ${index + 1}:\n${sourcedTextHeader(text)}\n\n${body}${bankExamplesBlock(text)}`;
       })
       .join("\n\n---\n\n");
     const instruction = job.resourceType === "topic-booklet"
-      ? `VERIFIED PUBLIC-DOMAIN SOURCE LIBRARY — build the topic booklet around these EXACT texts. The numbered Line/Paragraph markers are selectors, not part of the works. Choose front and per-topic placement using "frontStimulusSourceNumbers" and each sub-topic's "sourceUses". Never copy a source body into the JSON; the application inserts the verified text after generation.`
-      : `VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS — build the stimulus booklet around these EXACT texts. Do not rewrite, summarise, modernise or replace them. In the "stimulus" array include one entry per text below, FIRST and in this order, using the given title/author/source and the body copied verbatim. Refer to them in questions as "Text 1", "Text 2", etc. Only if the tutor's request clearly needs a further text of a kind not provided here (for example a contemporary prose extract alongside a provided poem) may you write that text yourself: leave its "author" null and add it to the "stimulus" array AFTER the provided texts, continuing the numbering.`;
+      ? `VERIFIED SOURCE LIBRARY — build the topic booklet around these EXACT texts. The numbered Line/Paragraph markers are selectors, not part of the works. Choose front and per-topic placement using "frontStimulusSourceNumbers" and each sub-topic's "sourceUses". Never copy a source body into the JSON; the application inserts the verified text after generation.`
+      : `VERIFIED STIMULUS TEXTS — build the stimulus booklet around these EXACT texts. Do not rewrite, summarise, modernise or replace them. In the "stimulus" array include one entry per text below, FIRST and in this order, using the given title/author/source and the body copied verbatim. Refer to them in questions as "Text 1", "Text 2", etc. Only if the tutor's request clearly needs a further text of a kind not provided here (for example a contemporary prose extract alongside a provided poem) may you write that text yourself: leave its "author" null and add it to the "stimulus" array AFTER the provided texts, continuing the numbering.`;
     parts.push(`${instruction}\n\n${blocks}`);
   } else if (sourcedText && sourcedText.passage) {
     parts.push(
-      `VERIFIED PUBLIC-DOMAIN SOURCE TEXT — use this EXACT passage as the resource's passage. Do not rewrite, summarise, modernise, or substitute a different text. Build every task, question and quote around it. Set "passageTitle", "passageAuthor" and "passageSource" to the values given here.\n\n` +
-        `${sourcedTextHeader(sourcedText)}\n\nPASSAGE:\n${sourcedText.passage}`
+      `VERIFIED SOURCE TEXT — use this EXACT passage as the resource's passage. Do not rewrite, summarise, modernise, or substitute a different text. Build every task, question and quote around it. Set "passageTitle", "passageAuthor" and "passageSource" to the values given here.\n\n` +
+        `${sourcedTextHeader(sourcedText)}\n\nPASSAGE:\n${sourcedText.passage}${bankExamplesBlock(sourcedText)}`
     );
   }
 

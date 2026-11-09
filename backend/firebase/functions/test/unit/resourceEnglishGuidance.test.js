@@ -93,6 +93,17 @@ describe("English marking follows the guidance", () => {
     assert.match(text, /"- ETA: "quotation" · technique · analysis"/);
   });
 
+  it("keeps TETAL to analytical tasks and plans narrative writing by scene", () => {
+    const text = prompt("practice-paper", "english", { answerMode: "worked" });
+    assert.match(text, /Thesis, ETAs and TETAL belong to analytical tasks only/);
+    assert.match(text, /narrative, creative or discursive writing is never planned with a thesis/);
+    assert.match(text, /"- Central idea: …", then "- Scene 1: …"/);
+    assert.match(text, /Mark creative writing on these points alone/);
+    assert.match(ENGLISH_CRITERIA_RULE, /creative or discursive writing task gets criteria written from those sections instead/);
+    const criteriaOnly = prompt("practice-paper", "english", { answerMode: "answers" });
+    assert.match(criteriaOnly, /no criterion for a thesis, paragraph theses, ETAs, TETAL or links/);
+  });
+
   it("teaches booklet analysis and essay scaffolds in the house structure", () => {
     assert.match(prompt("topic-booklet", "english"), /model analysis written as ETAs/);
     assert.match(prompt("topic-booklet", "english"), /exemplar paragraph written in TETAL/);

@@ -60,7 +60,8 @@ function normaliseStimulusAttribution(stimulus) {
   for (const entry of Array.isArray(stimulus) ? stimulus : []) {
     if (!entry || typeof entry !== "object" || isImage(entry)) continue;
     if (entry.verbatim === true) {
-      if (!clean(entry.licence)) entry.licence = PUBLIC_DOMAIN;
+      // RES-78. A bank text is used with permission, so it is not public domain.
+      if (!clean(entry.licence) && !entry.bankStimulusId) entry.licence = PUBLIC_DOMAIN;
       continue;
     }
     entry.author = null;

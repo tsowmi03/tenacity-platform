@@ -702,7 +702,7 @@ describe("stimulus-set injection and overwrite", () => {
         { passage: "story body", selection: { title: "The Story", author: "Writer" }, sourceName: "Gutenberg", sourceUrl: "https://g" },
       ],
     });
-    assert.match(msg, /VERIFIED PUBLIC-DOMAIN STIMULUS TEXTS/);
+    assert.match(msg, /VERIFIED STIMULUS TEXTS/);
     assert.match(msg, /Text 1:/);
     assert.match(msg, /The Poem/);
     assert.match(msg, /Text 2:/);
@@ -817,7 +817,7 @@ describe("passage injection and overwrite", () => {
       sourceUrl: "https://en.wikisource.org/wiki/x",
     };
     const msg = buildUserMessage(job, null, sourced);
-    assert.match(msg, /VERIFIED PUBLIC-DOMAIN SOURCE TEXT/);
+    assert.match(msg, /VERIFIED SOURCE TEXT/);
     assert.match(msg, /Two roads diverged/);
     assert.match(msg, /The Road Not Taken/);
   });

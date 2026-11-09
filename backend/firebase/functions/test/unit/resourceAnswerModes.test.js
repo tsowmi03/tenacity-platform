@@ -64,7 +64,7 @@ describe("English Model answers mode", () => {
     assert.match(text, /6 marks or fewer: write the complete answer in full prose/);
     assert.match(text, /more than 6 marks \(extended responses\): do NOT write full prose/);
     assert.match(text, /beginning "- "/);
-    assert.match(text, /Match length to the marks/);
+    assert.match(text, /Match the length of an analytical answer to the marks/);
     assert.match(text, /No filler/);
   });
 });

@@ -3,6 +3,7 @@ import Button from "../Button";
 import Icon from "../Icon";
 import Modal from "../Modal";
 import BankQuestionsSection from "./BankQuestionsSection";
+import StimulusBankSection from "./StimulusBankSection";
 import { answerModeLabel, resourceLabel } from "./resourceTypes";
 
 function capitalise(value) {
@@ -178,6 +179,11 @@ export default function ResourceJobDetailsModal({ job, open, onClose, onDownload
         {job.questionBankUsage?.used?.length || job.questionBankUsage?.skipped?.length ? (
           <DetailRow label="Textbook diagrams">
             <BankQuestionsSection job={job} />
+          </DetailRow>
+        ) : null}
+        {job.stimulusBankUsage?.used?.length || job.stimulusBankUsage?.fallbacks?.length ? (
+          <DetailRow label="English bank">
+            <StimulusBankSection job={job} />
           </DetailRow>
         ) : null}
         <DetailRow label="Prompt">

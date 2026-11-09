@@ -2,8 +2,8 @@
 
 // Real-provider replay with an in-memory queue and a local filesystem journal.
 // Production access is limited to optional read-only Secret Manager lookups
-// and, with --question-bank, read-only question bank searches and diagram
-// downloads. With --pd-sourcing, English stimulus texts and images are fetched
+// and, with --question-bank, read-only maths and English bank searches and
+// image downloads. With --pd-sourcing, English stimulus texts and images are fetched
 // from Project Gutenberg, Wikisource and Wikimedia Commons, as in production.
 // Inputs/references must already be local; every write stays local.
 process.env.POSTHOG_PROJECT_TOKEN = "";
@@ -46,7 +46,7 @@ function localStorage(root, remoteBucket = null) {
   return { bucket: () => ({
     file: (name) => ({
       download: async () => {
-        if (remoteBucket && name.startsWith("questionBank/")) return remoteBucket.file(name).download();
+        if (remoteBucket && (name.startsWith("questionBank/") || name.startsWith("englishBank/"))) return remoteBucket.file(name).download();
         try { return [await fs.promises.readFile(resolve(name))]; }
         catch (err) { if (err.code === "ENOENT") err.code = 404; throw err; } },
       save: async (bytes) => { const target = resolve(name); await fs.promises.mkdir(path.dirname(target), { recursive: true, mode: 0o700 }); await fs.promises.writeFile(target, bytes, { mode: 0o600 }); },
@@ -117,6 +117,7 @@ async function runReplay(options) {
   const summary = { status: final.status, errorCode: final.errorCode || null, error: final.error || null,
     warnings: final.warnings || [], sourceSelections: (final.sourceSelections || []).map((s) => s.title),
     questionBankUsage: final.questionBankUsage || null,
+    stimulusBankUsage: final.stimulusBankUsage || null,
     jobId, providerCalls: calls, elapsedMs: Date.now() - started, progress: final.progress,
     contentVerification: events.filter((e) => e.event === "content.verified"),
     terminal: events.filter((e) => ["job.completed", "job.failed", "job.cancelled"].includes(e.event)),
