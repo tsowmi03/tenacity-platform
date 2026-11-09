@@ -3738,7 +3738,11 @@ async function queueResourceFallback({ db, storage, job, err, clock }) {
       safeReason: failure.message,
       failedAt: queuedAt,
     };
+    // RES-78. These tokens are in the failed attempt's usage merged below, so
+    // the next attempt must not count them again.
+    const { aiUsage: _countedBankUsage, ...bankUsage } = current.stimulusBankUsage || {};
     tx.update(jobRef, {
+      ...(current.stimulusBankUsage ? { stimulusBankUsage: bankUsage } : {}),
       status: "fallback_pending",
       activeElapsedMs: (current.activeElapsedMs || 0) + Math.max(0, (clock ? clock().getTime() : Date.now()) - (current.startedAt?.toMillis?.() || Date.now())),
       activeModel: targetModel,

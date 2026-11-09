@@ -691,6 +691,15 @@ describe("resource provider failover", () => {
     assert.equal(db.jobs[0].status, "pending");
   });
 
+  it("doesn't let the next attempt count the bank pick's tokens again (RES-78)", async () => {
+    const stimulusBankUsage = { used: [{ kind: "text", slot: 1, stimulusId: "a" }], fallbacks: [], aiUsage: { provider: "anthropic", usage: { inputTokens: 900 } } };
+    const job = { id: "job-1", jobId: "job-1", createdBy: "tutor-1", status: "processing", attemptId: "attempt-1", activeModel: "claude-opus-5-5", attemptedModels: ["claude-opus-5-5"], stimulusBankUsage };
+    const db = fakeQueueDb([{ ...job }]);
+    const queued = await queueResourceFallback({ db, storage: fakeStorage(), clock, job, err: modelFailure() });
+    assert.equal(queued, true);
+    assert.deepEqual(db.jobs[0].stimulusBankUsage, { used: stimulusBankUsage.used, fallbacks: [] });
+  });
+
   it("does not delete attempt output when the failing worker no longer owns the lease", async () => {
     const db = fakeQueueDb([{
       id: "job-1",
