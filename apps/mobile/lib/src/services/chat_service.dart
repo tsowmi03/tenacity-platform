@@ -3,6 +3,31 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import '../models/chat_model.dart';
 import '../models/message_model.dart';
+import '../utils/error_presenter.dart';
+
+/// What the signed-in user can do in a group. The server enforces both.
+@immutable
+class GroupChatAccess {
+  final bool canRename;
+  final bool canManageMembers;
+
+  const GroupChatAccess({
+    required this.canRename,
+    required this.canManageMembers,
+  });
+
+  /// Offers nothing until the server has said otherwise.
+  static const none =
+      GroupChatAccess(canRename: false, canManageMembers: false);
+}
+
+/// A group change the server refused for a reason the user can act on.
+class GroupChatFailure implements Exception, UserFacingFailure {
+  @override
+  final String userMessage;
+
+  const GroupChatFailure(this.userMessage);
+}
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -351,6 +376,51 @@ class ChatService {
       throw StateError('createGroupChat returned no chat id');
     }
     return chatId;
+  }
+
+  /// Names a group, or clears its name when [name] is blank.
+  Future<void> renameGroupChat(String chatId, String name) =>
+      _updateGroupChat({'chatId': chatId, 'action': 'rename', 'name': name});
+
+  Future<void> addGroupChatMembers(String chatId, List<String> userIds) =>
+      _updateGroupChat({'chatId': chatId, 'action': 'add', 'userIds': userIds});
+
+  Future<void> removeGroupChatMember(String chatId, String userId) =>
+      _updateGroupChat(
+          {'chatId': chatId, 'action': 'remove', 'userId': userId});
+
+  Future<void> leaveGroupChat(String chatId) =>
+      _updateGroupChat({'chatId': chatId, 'action': 'leave'});
+
+  Future<void> _updateGroupChat(Map<String, dynamic> data) async {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('updateGroupChat')
+          .call<Map<String, dynamic>>(data);
+    } on FirebaseFunctionsException catch (error) {
+      // These two carry a sentence written for the person who hit them, such
+      // as why a change would duplicate another group.
+      final message = error.message;
+      if ((error.code == 'failed-precondition' ||
+              error.code == 'invalid-argument') &&
+          message != null &&
+          message.isNotEmpty) {
+        throw GroupChatFailure(message);
+      }
+      rethrow;
+    }
+  }
+
+  /// Asks the server what the signed-in user can do in [chatId], because that
+  /// depends on the current role of everyone in the group.
+  Future<GroupChatAccess> fetchGroupChatAccess(String chatId) async {
+    final result = await FirebaseFunctions.instance
+        .httpsCallable('getGroupChatAccess')
+        .call<Map<String, dynamic>>({'chatId': chatId});
+    return GroupChatAccess(
+      canRename: result.data['canRename'] == true,
+      canManageMembers: result.data['canManageMembers'] == true,
+    );
   }
 
   Future<int> fetchUnreadMessagesCount(String userId) async {

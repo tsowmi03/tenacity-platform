@@ -15,6 +15,7 @@
       "enrollStudentOneOff",
       "enrollStudentPermanent",
       "enrollStudentPermanentForParent",
+      "getGroupChatAccess",
       "getReferralLink",
       "joinWaitlist",
       "notifyStudentAbsence",
@@ -24,6 +25,7 @@
       "sendChatMessage",
       "sendCustomPasswordResetEmail",
       "unenrollStudentPermanent",
+      "updateGroupChat",
       "updateWaitlistEntryStatus",
       "verifyPaymentStatus"
     ],

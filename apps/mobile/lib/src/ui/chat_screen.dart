@@ -24,6 +24,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:tenacity/src/ui/components/components.dart';
+import 'package:tenacity/src/ui/group_details_screen.dart';
 import 'package:tenacity/src/ui/messaging/inbox_data.dart';
 import 'package:tenacity/src/ui/messaging/typing_reporter.dart';
 import 'package:tenacity/src/ui/theme/design_tokens.dart';
@@ -836,6 +837,12 @@ class _ChatScreenState extends State<ChatScreen>
         itemCount: items.length,
         itemBuilder: (context, index) {
           final item = items[index];
+          if (item is Message && item.isActivity) {
+            return _GroupActivityLine(
+              key: Key('group-activity-${item.id}'),
+              text: item.text,
+            );
+          }
           if (item is Message) {
             final myUserId = chatController.userId;
             final otherUserId = _otherUserId(chatController);
@@ -918,7 +925,31 @@ class _ChatScreenState extends State<ChatScreen>
   static bool _sameSender(List<dynamic> items, int index, String senderId) {
     if (index < 0 || index >= items.length) return false;
     final item = items[index];
-    return item is Message && item.senderId == senderId;
+    return item is Message && !item.isActivity && item.senderId == senderId;
+  }
+
+  /// Makes a group's header open its details. Leaves any other header alone,
+  /// as does a thread that has not been created yet.
+  Widget _groupDetailsLink(Widget header) {
+    final chatId = _activeChatId;
+    if (!_isGroup || chatId == null) return header;
+    return Semantics(
+      button: true,
+      label: 'Group details',
+      child: InkWell(
+        key: const Key('chat-group-header'),
+        onTap: () => unawaited(_openGroupDetails(chatId)),
+        child: header,
+      ),
+    );
+  }
+
+  Future<void> _openGroupDetails(String chatId) async {
+    final left = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => GroupDetailsScreen(chatId: chatId)),
+    );
+    // Someone who has just left a group has no thread to come back to.
+    if (left == true && mounted) Navigator.of(context).pop();
   }
 
   @override
@@ -932,7 +963,7 @@ class _ChatScreenState extends State<ChatScreen>
         foregroundColor: Colors.white,
         elevation: 0,
         titleSpacing: 0,
-        title: Row(
+        title: _groupDetailsLink(Row(
           children: [
             // The same squircle identity the inbox row uses, so the thread
             // reads as a continuation of the row that opened it.
@@ -966,7 +997,7 @@ class _ChatScreenState extends State<ChatScreen>
               ),
             ),
           ],
-        ),
+        )),
       ),
       backgroundColor: AppColors.paper,
       body: Column(
@@ -1689,6 +1720,28 @@ String groupTypingLabel(List<String> firstNames) => switch (firstNames.length) {
 ///
 /// Bubbles in the middle of a run keep the avatar's width as a gap, so a run
 /// reads as one column rather than shuffling sideways under its own avatar.
+/// A rename or a change of members, centred in the thread.
+class _GroupActivityLine extends StatelessWidget {
+  final String text;
+
+  const _GroupActivityLine({super.key, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        vertical: AppSpacing.sm,
+        horizontal: AppSpacing.xl,
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: AppText.body(fontSize: 12.5, color: AppColors.muted),
+      ),
+    );
+  }
+}
+
 class _GroupMessageFrame extends StatelessWidget {
   final bool startsRun;
   final bool endsRun;

@@ -219,6 +219,10 @@
     "../src/resources/index",
     "generateResourcePreviewOnComplete"
   ],
+  "getGroupChatAccess": [
+    "../src/chats/updateGroupChat",
+    "getGroupChatAccess"
+  ],
   "getInvoicePdf": [
     "./xero_functions",
     "getInvoicePdf"
@@ -406,6 +410,10 @@
   "unenrollStudentPermanent": [
     "./notifications/classes",
     "unenrollStudentPermanent"
+  ],
+  "updateGroupChat": [
+    "../src/chats/updateGroupChat",
+    "updateGroupChat"
   ],
   "updateWaitlistEntryStatus": [
     "./notifications/waitlist",
