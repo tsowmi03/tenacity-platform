@@ -9,6 +9,7 @@ import {
   chooseComparisonBase,
   definingModules,
   deployedSourceFiles,
+  filesNoFunctionLoads,
   globalTriggerPaths,
   isGlobalTrigger,
   isIgnoredPath,
@@ -118,6 +119,67 @@ describe("resolveChangedFunctions", () => {
       `${functionsRoot}src/brand/new/module.js`,
     ]);
     assert.equal(result.mode, "all");
+  });
+
+  describe("files no Function loads", () => {
+    const scriptHelper = `${functionsRoot}src/a/scriptHelper.js`;
+    const withUnloaded = (changedPaths) =>
+      resolveChangedFunctions({
+        changedPaths,
+        graph,
+        managedNames,
+        unloadedFiles: [scriptHelper],
+      });
+
+    it("deploys nothing for a change only to such a file", () => {
+      const result = withUnloaded([scriptHelper]);
+      assert.equal(result.mode, "scoped");
+      assert.deepEqual(result.names, []);
+    });
+
+    it("keeps the deploy scoped to the Functions that did change", () => {
+      const result = withUnloaded([scriptHelper, `${functionsRoot}src/c/gamma.js`]);
+      assert.equal(result.mode, "scoped");
+      assert.deepEqual(result.names, ["gamma"]);
+    });
+
+    // A deleted module, a data file: anything not proven unreachable.
+    it("still deploys everything for any other unattributable path", () => {
+      const result = withUnloaded([scriptHelper, `${functionsRoot}src/a/data.json`]);
+      assert.equal(result.mode, "all");
+      assert.match(result.reason, /src\/a\/data\.json/);
+      assert.doesNotMatch(result.reason, /scriptHelper/);
+    });
+  });
+});
+
+describe("filesNoFunctionLoads", () => {
+  const staticEdges = new Map([
+    ["loaded.js", new Set()],
+    ["orphan.js", new Set()],
+  ]);
+  const runtimeEdges = new Map([["loaded.js", new Set()]]);
+
+  it("lists source files the entry point never loaded", () => {
+    assert.deepEqual(filesNoFunctionLoads({ staticEdges, dynamic: [], runtimeEdges }), [
+      "orphan.js",
+    ]);
+  });
+
+  it("trusts nothing when a computed require leaves a gap in the graph", () => {
+    const dynamic = [{ file: "loaded.js", text: "name" }];
+    assert.deepEqual(filesNoFunctionLoads({ staticEdges, dynamic, runtimeEdges }), []);
+  });
+
+  it("trusts nothing when a deferred require leaves a gap in the graph", () => {
+    const deferred = new Map([
+      ["loaded.js", new Set(["orphan.js"])],
+      ["orphan.js", new Set()],
+    ]);
+    assert.deepEqual(
+      filesNoFunctionLoads({ staticEdges: deferred, dynamic: [], runtimeEdges }),
+      []
+    );
   });
 });
 
