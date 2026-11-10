@@ -359,7 +359,7 @@ describe("diagram repair: the faithfulness gate", () => {
     assert.equal(result.summary.repaired, 0);
     assert.equal(result.summary.omitted, 1);
     assert.equal(calls.filter((call) => call.kind === "judge").length, 3);
-    assert.match(result.warnings[0].message, /did not match the question/);
+    assert.match(result.warnings[0].detail, /did not match the question/);
   });
 
   it("tells the next attempt why the last one was rejected", async () => {

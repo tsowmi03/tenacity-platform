@@ -92,7 +92,8 @@ export default function ResourceJobDetailsModal({ job, open, onClose, onDownload
     >
       <dl className="rg-details">
         {job.reviewStatus ? <DetailRow label="Review status">{job.reviewStatus === "draft" ? "Draft available - tutor review required" : job.reviewStatus === "passed" ? "Review completed" : "Review recommended"}</DetailRow> : null}
-        {job.warnings?.length ? <DetailRow label="Review notes"><ul>{job.warnings.map((warning, index) => <li key={`${warning.code || "warning"}-${index}`}>{warning.message || "Tutor review recommended."}</li>)}</ul></DetailRow> : null}
+        {job.warnings?.length ? <DetailRow label="Review notes"><ul>{job.warnings.map((warning, index) => <li key={`${warning.code || "warning"}-${index}`}>{warning.message || "Check this resource before printing."}</li>)}</ul></DetailRow> : null}
+        {job.omittedDiagrams?.length ? <DetailRow label="Diagrams left out"><ul>{job.omittedDiagrams.map((item, index) => <li key={`${item.label}-${index}`}>{item.label}: {item.note}</li>)}</ul></DetailRow> : null}
         <DetailRow label="Type">{resourceLabel(job.resourceType)}</DetailRow>
         <DetailRow label="Subject">{capitalise(job.subject) || "—"}</DetailRow>
         <DetailRow label="Year">{job.year || "—"}</DetailRow>

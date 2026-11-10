@@ -122,7 +122,7 @@ describe("maths diagram fill pass", () => {
     assert.deepEqual(calls.map((c) => [c.type, c.bestEffort]).sort(), [["cone", true], ["rectangle", false]]);
     // A stalled fill fails at a ceiling sized to the group, not the 32k verify one.
     assert.deepEqual(calls.map((c) => c.maxTokens), [2300, 2300]);
-    assert.deepEqual(result.omitted, [{ label: "Question 2", diagramType: "cone", detail: "the diagram could not be generated" }]);
+    assert.deepEqual(result.omitted.map(({ owner, ...rest }) => rest), [{ label: "Question 2", diagramType: "cone", detail: "the diagram could not be generated" }]);
     assert.equal(parsed.questions[1].diagramRequired, false);
   });
 
@@ -136,7 +136,7 @@ describe("maths diagram fill pass", () => {
     assert.deepEqual(result, {
       requested: 1,
       filled: 0,
-      omitted: [{ label: "Question 1", diagramType: "rectangle", detail: "the model did not return it" }],
+      omitted: [{ label: "Question 1", diagramType: "rectangle", detail: "the model did not return it", owner: parsed.questions[0] }],
     });
     assert.equal(parsed.questions[0].diagramRequired, false);
   });

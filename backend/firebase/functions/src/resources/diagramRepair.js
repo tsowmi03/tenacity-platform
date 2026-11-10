@@ -446,9 +446,10 @@ async function repairDiagrams({
     attempts: [],
   };
   const warnings = [];
+  const omissions = [];
   let changed = false;
 
-  if (!owners.length) return { changed, warnings, summary };
+  if (!owners.length) return { changed, warnings, omissions, summary };
 
   const budget = createCallBudget(maxRepairCalls);
 
@@ -524,7 +525,7 @@ async function repairDiagrams({
 
       let outcome;
       try {
-        outcome = applyRepairOutcome({ entry, diagramType, result, warnings, summary });
+        outcome = applyRepairOutcome({ entry, diagramType, result, warnings, omissions, summary });
       } catch (fatal) {
         if (fatal?.resourceControl) throw fatal;
         // A required diagram is about to take the resource down. Carry the
@@ -560,7 +561,7 @@ async function repairDiagrams({
     });
   }
 
-  return { changed, warnings, summary };
+  return { changed, warnings, omissions, summary };
 }
 
 /**
@@ -569,7 +570,7 @@ async function repairDiagrams({
  * warning, a required one takes the resource down — and reached only once the
  * repair attempts are spent.
  */
-function applyRepairOutcome({ entry, diagramType, result, warnings, summary }) {
+function applyRepairOutcome({ entry, diagramType, result, warnings, omissions, summary }) {
   const { owner, label, required } = entry;
 
   if (result.spec) {
@@ -584,6 +585,7 @@ function applyRepairOutcome({ entry, diagramType, result, warnings, summary }) {
     warnings.push(
       optionalDiagramOmittedWarning({ label, diagramType, detail: result.reason })
     );
+    omissions.push({ label, diagramType, detail: result.reason, owner });
     summary.omitted += 1;
     return { outcome: OUTCOME.OMITTED, changed: true };
   }
