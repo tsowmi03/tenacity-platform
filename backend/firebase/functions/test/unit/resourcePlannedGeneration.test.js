@@ -670,7 +670,7 @@ describe("omitted diagrams and review reports (RES-106)", () => {
 
   it("stays quiet when the question works without its diagram", async () => {
     const q = { number: 1, stem: "Sketch y = x." };
-    const out = await run([{ label: "Question 1", owner: q, detail: "x" }], { questions: [q] }, [{ index: 1, outcome: "fine", questionStem: "", text: "" }]);
+    const out = await run([{ label: "Question 1", owner: q, detail: "x" }], { questions: [q] }, [{ index: 1, outcome: "fine", stem: "", parts: [] }]);
     assert.deepEqual(out.warnings, []);
     assert.equal(out.notes.length, 1);
     assert.equal(q.stem, "Sketch y = x.");
@@ -678,7 +678,7 @@ describe("omitted diagrams and review reports (RES-106)", () => {
 
   it("rewords a question that refers to a missing diagram", async () => {
     const q = { number: 14, stem: "The diagram shows triangle HBS with HB = 18 km.", parts: [] };
-    const out = await run([{ label: "Question 14", owner: q }], { questions: [q] }, [{ index: 1, outcome: "reworded", questionStem: "", text: "Triangle HBS has HB = 18 km." }]);
+    const out = await run([{ label: "Question 14", owner: q }], { questions: [q] }, [{ index: 1, outcome: "reworded", stem: "Triangle HBS has HB = 18 km.", parts: [] }]);
     assert.deepEqual(out.warnings, []);
     assert.equal(q.stem, "Triangle HBS has HB = 18 km.");
   });
@@ -686,7 +686,7 @@ describe("omitted diagrams and review reports (RES-106)", () => {
   it("rewords the stem as well as the part", async () => {
     const part = { label: "a", stem: "Use the diagram to find the gradient." };
     const q = { number: 5, stem: "The diagram shows a line through (0, 1) and (2, 5).", parts: [part] };
-    const out = await run([{ label: "Question 5 part a", owner: part }], { questions: [q] }, [{ index: 1, outcome: "reworded", questionStem: "A line passes through (0, 1) and (2, 5).", text: "Find the gradient." }]);
+    const out = await run([{ label: "Question 5 part a", owner: part }], { questions: [q] }, [{ index: 1, outcome: "reworded", stem: "A line passes through (0, 1) and (2, 5).", parts: [{ label: "(a)", stem: "Find the gradient." }] }]);
     assert.deepEqual(out.warnings, []);
     assert.equal(q.stem, "A line passes through (0, 1) and (2, 5).");
     assert.equal(part.stem, "Find the gradient.");
@@ -694,7 +694,7 @@ describe("omitted diagrams and review reports (RES-106)", () => {
 
   it("warns, and leaves the question alone, when a rewording is unsafe", async () => {
     const q = { number: 2, stem: "The diagram shows a 12 km leg." };
-    const out = await run([{ label: "Question 2", owner: q, diagramType: "t", detail: "layout failed" }], { questions: [q] }, [{ index: 1, outcome: "reworded", questionStem: "", text: "A boat sails a leg." }]);
+    const out = await run([{ label: "Question 2", owner: q, diagramType: "t", detail: "layout failed" }], { questions: [q] }, [{ index: 1, outcome: "reworded", stem: "A boat sails a leg.", parts: [] }]);
     assert.equal(out.warnings[0].message, "Question 2 needs a diagram that couldn't be made. Add one by hand or use Revise.");
     assert.equal(q.stem, "The diagram shows a 12 km leg.");
     assert.equal(safeRewording("a 12 km leg", "the diagram has a 12 km leg"), false);
@@ -702,8 +702,28 @@ describe("omitted diagrams and review reports (RES-106)", () => {
 
   it("warns when a question needs the picture or the check fails", async () => {
     const q = { number: 3, stem: "Find the shaded angle." };
-    assert.equal((await run([{ label: "Question 3", owner: q }], { questions: [q] }, [{ index: 1, outcome: "needs_diagram", questionStem: "", text: "" }])).warnings.length, 1);
+    assert.equal((await run([{ label: "Question 3", owner: q }], { questions: [q] }, [{ index: 1, outcome: "needs_diagram", stem: "", parts: [] }])).warnings.length, 1);
     assert.equal((await run([{ label: "Question 3", owner: q }], { questions: [q] }, async () => { throw new Error("provider down"); })).warnings.length, 1);
+  });
+
+  it("shows the checker every part and asks once per question", async () => {
+    const a = { label: "a", stem: "Find x.", options: null };
+    const b = { label: "b", stem: "Read the shaded angle." };
+    const q = { number: 7, stem: "A triangle has sides 3 and 4.", parts: [a, b] };
+    let message;
+    const out = await run([{ label: "Question 7 part a", owner: a }, { label: "Question 7 part b", owner: b }], { questions: [q] }, async (req) => { message = req.userMessage; return { parsed: { items: [{ index: 1, outcome: "needs_diagram", stem: "", parts: [] }] } }; });
+    assert.equal(message.split("\n").length, 1);
+    assert.match(message, /Read the shaded angle/);
+    assert.match(message, /part a/);
+    assert.equal(out.warnings.length, 2);
+  });
+
+  it("warns when a rewording leaves another part pointing at the missing diagram", async () => {
+    const part = { label: "b", stem: "Use the diagram to find y." };
+    const q = { number: 8, stem: "The diagram shows a line.", parts: [part] };
+    const out = await run([{ label: "Question 8", owner: q }], { questions: [q] }, [{ index: 1, outcome: "reworded", stem: "A line is given.", parts: [] }]);
+    assert.equal(out.warnings.length, 1);
+    assert.equal(q.stem, "The diagram shows a line.");
   });
 
   it("makes no model call when nothing was left out", async () => {
