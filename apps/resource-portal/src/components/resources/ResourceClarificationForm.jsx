@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import Button from "../Button";
+import { MAX_CUSTOM_PROMPT, clarifiedResourcePrompt } from "./clarifiedPrompt";
 
 const MAX_NOTE = 500;
 
@@ -11,7 +12,8 @@ export default function ResourceClarificationForm({ busy, job, onEdit, onSubmit 
   const [note, setNote] = useState("");
   const options = Array.isArray(job.clarificationOptions) ? job.clarificationOptions : [];
   const noteId = `rg-clarify-note-${job.jobId || job.id}`;
-  const canSubmit = !busy && (topics.length > 0 || note.trim().length > 0);
+  const tooLong = clarifiedResourcePrompt(job.customPrompt, { topics, note }).length > MAX_CUSTOM_PROMPT;
+  const canSubmit = !busy && !tooLong && (topics.length > 0 || note.trim().length > 0);
 
   function toggle(option) {
     setTopics((current) =>
@@ -59,6 +61,11 @@ export default function ResourceClarificationForm({ busy, job, onEdit, onSubmit 
           value={note}
         />
       </div>
+      {tooLong ? (
+        <p className="rg-warning-note" role="alert">
+          This answer makes the request too long. Shorten it or edit the whole request.
+        </p>
+      ) : null}
       <div className="rg-clarify-actions">
         <Button disabled={!canSubmit} size="sm" type="submit" variant="primary">
           {busy ? "Sending…" : "Continue"}

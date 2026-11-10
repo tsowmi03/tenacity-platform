@@ -77,6 +77,15 @@ describe("Needs your input", () => {
     expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
   });
 
+  it("blocks an answer that would take the request past the limit", () => {
+    show([{ ...job, customPrompt: "x".repeat(4990) }]);
+    fireEvent.click(screen.getByLabelText("Parabolas"));
+    expect(screen.getByRole("alert")).toHaveTextContent("too long");
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("Parabolas"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("stops asking once a new version exists", () => {
     show([job], [{ ...job, id: "job-2", jobId: "job-2", status: "pending", errorCode: null, derivedFromJobId: "job-1" }]);
     expect(screen.getByText("Answered")).toBeInTheDocument();
