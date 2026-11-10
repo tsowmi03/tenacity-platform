@@ -4056,6 +4056,9 @@ async function runQueueForTutor(createdBy, deps) {
           : friendlyError,
         errorCode: err?.code || null,
         errorDetail: detail,
+        // Always written: a later failure of another kind must not inherit the
+        // suggestions from an earlier clarification.
+        clarificationOptions: err?.clarificationOptions || [],
         cancelRequested: false,
         completedAt: now(clock),
         usageByProvider: err?.usageByProvider || {},
