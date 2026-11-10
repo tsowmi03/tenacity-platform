@@ -258,13 +258,16 @@ function isoOf(value) {
 }
 
 async function historyOf(db, name, recordId) {
-  const snapshot = await db.collection(AUDIT_COLLECTION).where("recordId", "==", recordId).where("bank", "==", name).limit(HISTORY_LIMIT).get();
+  // Read in full and sorted here: a limit before sorting could drop the newest
+  // entries, and one record only ever gathers a handful.
+  const snapshot = await db.collection(AUDIT_COLLECTION).where("recordId", "==", recordId).where("bank", "==", name).get();
   return snapshot.docs
     .map((doc) => {
       const entry = doc.data();
       return { id: doc.id, action: entry.action, fields: entry.fields || [], cascade: entry.cascade || 0, actorName: entry.actorName || null, at: isoOf(entry.at) };
     })
-    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .slice(0, HISTORY_LIMIT);
 }
 
 async function openFlagsOf(db, questionId) {
@@ -357,7 +360,9 @@ async function restoreLinked(db, writes, { stimulusId, actor, at }) {
   const hiddenAlong = questions.docs.filter((doc) => doc.get("status") === "hidden" && doc.get("hiddenWith"));
   const stamp = { status: "live", hiddenBy: null, hiddenAt: null, hiddenWith: null, restoredBy: actor.uid, restoredAt: at };
   for (const doc of hiddenAlong) writes.update(doc.ref, stamp);
-  const guides = (await guidesFor(db, hiddenAlong.map((doc) => doc.id))).filter((doc) => doc.get("status") === "hidden" && doc.get("hiddenWith"));
+  // Includes questions already restored on their own, whose guides are still hidden.
+  const inUse = [...hiddenAlong, ...questions.docs.filter((doc) => doc.get("status") === "live")];
+  const guides = (await guidesFor(db, inUse.map((doc) => doc.id))).filter((doc) => doc.get("status") === "hidden" && doc.get("hiddenWith"));
   for (const doc of guides) writes.update(doc.ref, stamp);
   return hiddenAlong.length + guides.length;
 }

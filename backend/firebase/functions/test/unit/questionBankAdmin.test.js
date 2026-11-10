@@ -244,6 +244,43 @@ describe("hiding and restoring (RES-104)", () => {
   });
 });
 
+describe("review findings (RES-104)", () => {
+  it("restores the guide of a question that was restored on its own first", async () => {
+    const db = fakeDb({
+      "englishStimuli/s1": stimulus(),
+      "englishQuestions/q1": { status: "live", stimulusIds: ["s1"], label: "1", text: "a" },
+      "englishGuides/g1": { status: "live", questionId: "q1", criteria: "x" },
+    });
+    await call(db, { action: "hideRecord", bank: "stimuli", id: "s1" });
+    await call(db, { action: "restoreRecord", bank: "englishQuestions", id: "q1" });
+    assert.equal(db.store.get("englishGuides/g1").status, "hidden");
+    await call(db, { action: "restoreRecord", bank: "stimuli", id: "s1" });
+    assert.equal(db.store.get("englishGuides/g1").status, "live");
+  });
+
+  it("leaves a guide an admin hid on its own", async () => {
+    const db = fakeDb({
+      "englishStimuli/s1": stimulus({ status: "hidden" }),
+      "englishQuestions/q1": { status: "live", stimulusIds: ["s1"], label: "1", text: "a" },
+      "englishGuides/g1": { status: "hidden", questionId: "q1", criteria: "x", hiddenWith: null },
+    });
+    await call(db, { action: "restoreRecord", bank: "stimuli", id: "s1" });
+    assert.equal(db.store.get("englishGuides/g1").status, "hidden");
+  });
+
+  it("shows the newest history however many entries a record has", async () => {
+    const seed = { "questionBank/a": question() };
+    for (let i = 0; i < 30; i += 1) {
+      const day = String(i + 1).padStart(2, "0");
+      // Document IDs run opposite to time, so the newest sort last by ID.
+      seed[`questionBankAudit/${String(99 - i)}`] = { bank: "maths", recordId: "a", action: "edit", at: `2026-11-${day}T00:00:00Z` };
+    }
+    const { history } = await call(fakeDb(seed), { action: "bankRecord", bank: "maths", id: "a" });
+    assert.equal(history.length, 20);
+    assert.equal(history[0].at, "2026-11-30T00:00:00Z");
+  });
+});
+
 describe("correcting a record (RES-104)", () => {
   it("edits a maths question, updates its years and records the fields", async () => {
     const db = fakeDb({ "questionBank/a": question(), "questionBankFlags/f1": { questionId: "a", status: "open" } });
