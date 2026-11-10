@@ -29,6 +29,7 @@ const { versionOf } = require("../src/questionBank/sourceStore");
 const { readMessage } = require("../src/questionBank/prompts");
 const { buildAnthropicSystemParam, normaliseAnthropicUsage } = require("../src/resources/apiClient");
 const { SET_TEXTS_COLLECTION, SET_TEXT_SCHEMA, chooseLitChartFiles, setTextPrompt, toSetTextDoc } = require("../src/englishBank/setTexts");
+const { withAdminChanges } = require("../src/questionBank/adminChanges");
 const { loadFirebaseSecrets, loadLocalSecrets } = require("./liveResourceSmoke");
 
 const MODEL = "claude-haiku-5-5";
@@ -105,7 +106,11 @@ async function main() {
       spent += ((usage.inputTokens || 0) * PRICE.input + (usage.outputTokens || 0) * PRICE.output) / 1e6;
       const doc = toSetTextDoc({ source: { ...guide, version: versionOf(guide) }, parsed, guideText, runId, model: MODEL });
       fs.writeFileSync(path.join(options.out, `${doc.id}.json`), JSON.stringify(doc, null, 2));
-      if (db) await db.collection(SET_TEXTS_COLLECTION).doc(doc.id).set({ ...doc.data, extractedAt: admin.firestore.FieldValue.serverTimestamp() });
+      if (db) {
+        // RES-104: a re-extracted set text keeps an admin's hide and corrections.
+        const [record] = await withAdminChanges(db, [{ collection: SET_TEXTS_COLLECTION, id: doc.id, data: doc.data }]);
+        await db.collection(SET_TEXTS_COLLECTION).doc(doc.id).set({ ...record.data, extractedAt: admin.firestore.FieldValue.serverTimestamp() });
+      }
       written.push(doc.id);
       console.log(`${written.length}/${guides.length} ${doc.data.title}: ${doc.data.themes.length} themes, ${doc.data.characters.length} characters, ${doc.data.quotes.length} quotes (${doc.droppedQuotes} dropped) — $${spent.toFixed(3)} so far`);
     } catch (err) {

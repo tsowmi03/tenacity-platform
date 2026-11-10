@@ -87,7 +87,8 @@ function sourceEntry(question) {
 
 /**
  * Groups of copies, each with the copy to keep. A copy an admin has hidden is
- * always the one kept, so hiding it hides every copy.
+ * always the one kept, so hiding it hides every copy. After that, a copy an
+ * admin corrected or restored is kept, so a newer edition can't displace it.
  */
 function findDuplicateGroups(questions) {
   const blocks = new Map();
@@ -112,7 +113,7 @@ function findDuplicateGroups(questions) {
     }
     for (const group of formed) {
       if (group.length < 2) continue;
-      const keep = group.find((question) => question.status === "hidden") || group[0];
+      const keep = group.find((question) => question.status === "hidden") || group.find((question) => question.editedAt || question.restoredAt) || group[0];
       groups.push({ keep, copies: group.filter((question) => question !== keep) });
     }
   }

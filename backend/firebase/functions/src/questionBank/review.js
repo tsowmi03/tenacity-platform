@@ -9,6 +9,7 @@
 //   flag     (staff)  report one of them
 //   listFlags (admin) open flags, with each question and its crop
 //   resolve  (admin)  hide, update or dismiss; closes every open flag on that question
+// plus the admin "Question bank" page's actions, in admin.js (RES-104).
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
@@ -18,77 +19,15 @@ const admin = require("firebase-admin");
 // cold start (see lazyRequire.test.js).
 const QUESTIONS_COLLECTION = "questionBank";
 const { DIAGRAM_TYPES, skillsFor } = require("./taxonomy");
+const { yearsOf } = require("./search");
+const { ADMIN_ACTIONS, FLAGS_COLLECTION, audit, closeOpenFlags, editStamp } = require("./admin");
+const { validateUpdates } = require("./banks");
+const { id, invalid, oneOf, requireAdmin, requireStaff, text } = require("./validate");
 
-const FLAGS_COLLECTION = "questionBankFlags";
-const STAFF_ROLES = ["admin", "tutor"];
 const FLAG_REASONS = ["crop", "tags", "text", "answer", "other"];
 const RESOLUTIONS = ["hide", "update", "dismiss"];
 const MAX_NOTE = 1000;
 const LIST_LIMIT = 50;
-
-// What an admin may correct on a question. The source, crop and ids stay as extracted.
-const EDITABLE = {
-  stem: (v) => (v === null ? null : text(v, "stem", 4000)),
-  text: (v) => text(v, "text", 4000),
-  description: (v) => text(v, "description", 500),
-  topic: (v) => text(v, "topic", 200),
-  yearLevel: (v) => (v === null ? null : text(v, "yearLevel", 60)),
-  context: (v) => oneOf(v, "context", ["abstract", "real_world"]),
-  steps: (v) => oneOf(v, "steps", ["single", "multi"]),
-  difficulty: (v) => oneOf(v, "difficulty", ["easy", "medium", "hard"]),
-  kind: (v) => oneOf(v, "kind", ["question", "worked_example"]),
-  diagramType: (v) => oneOf(v, "diagramType", Object.keys(DIAGRAM_TYPES)),
-  skill: (v) => text(v, "skill", 80),
-};
-
-function invalid(message) {
-  return new HttpsError("invalid-argument", message);
-}
-
-function text(value, field, max) {
-  if (typeof value !== "string" || value.length > max) throw invalid(`${field} must be text of at most ${max} characters`);
-  return value.trim();
-}
-
-function oneOf(value, field, allowed) {
-  if (!allowed.includes(value)) throw invalid(`${field} must be one of: ${allowed.join(", ")}`);
-  return value;
-}
-
-function id(value, field) {
-  if (typeof value !== "string" || !value || value.length > 200 || value.includes("/")) throw invalid(`${field} is required`);
-  return value;
-}
-
-function requireStaff(request) {
-  const uid = request?.auth?.uid;
-  if (!uid) throw new HttpsError("unauthenticated", "Sign-in required");
-  const role = request.auth.token?.role || null;
-  if (!STAFF_ROLES.includes(role)) throw new HttpsError("permission-denied", "Admin or tutor role required");
-  return { uid, role, name: request.auth.token?.name || request.auth.token?.email || null };
-}
-
-function requireAdmin(actor) {
-  if (actor.role !== "admin") throw new HttpsError("permission-denied", "Admin role required");
-}
-
-/** Checks an admin's edits and returns the fields to write. */
-function validateUpdates(question, updates) {
-  if (!updates || typeof updates !== "object" || Array.isArray(updates)) throw invalid("updates are required");
-  const fields = {};
-  for (const [field, value] of Object.entries(updates)) {
-    if (!EDITABLE[field]) throw invalid(`${field} cannot be edited`);
-    fields[field] = EDITABLE[field](value);
-  }
-  if (!Object.keys(fields).length) throw invalid("updates are required");
-  const diagramType = fields.diagramType || question.diagramType;
-  if (fields.diagramType || fields.skill) {
-    const skill = fields.skill || question.skill;
-    if (!skillsFor(diagramType).includes(skill)) throw invalid(`${skill} is not a skill of ${diagramType}`);
-    if (fields.diagramType && !fields.skill) fields.skill = skill;
-  }
-  return fields;
-}
 
 function questionSummary(doc) {
   const q = doc.data() || {};
@@ -238,23 +177,25 @@ async function resolve({ db, actor, payload, now }) {
   if (!questionSnap.exists) throw new HttpsError("not-found", "Question not found");
   const action = oneOf(payload.action, "action", RESOLUTIONS);
 
-  const batch = db.batch();
+  const at = now();
+  const writes = db.batch();
+  const fields = action === "update" ? validateUpdates(questionSnap.data(), payload.updates) : null;
   if (action === "hide") {
-    batch.update(questionRef, { status: "hidden", hiddenBy: actor.uid, hiddenAt: now() });
+    writes.update(questionRef, { status: "hidden", hiddenBy: actor.uid, hiddenAt: at });
   } else if (action === "update") {
-    // A changed question is re-embedded by the next questionBankEmbed run,
-    // because its embeddingHash no longer matches its text.
-    batch.update(questionRef, { ...validateUpdates(questionSnap.data(), payload.updates), editedBy: actor.uid, editedAt: now() });
+    // Years follow the year level, because search filters on them. A changed
+    // question is re-embedded by the next questionBankEmbed run, because its
+    // embeddingHash no longer matches its text.
+    if (Object.hasOwn(fields, "yearLevel")) fields.years = yearsOf(fields.yearLevel, questionSnap.get("sourcePath"));
+    writes.update(questionRef, { ...fields, ...editStamp(questionSnap.data(), fields, actor, at) });
   }
-  const open = await db.collection(FLAGS_COLLECTION).where("questionId", "==", questionId).where("status", "==", "open").get();
-  for (const doc of open.docs) {
-    batch.update(doc.ref, { status: "resolved", resolution: action, resolvedBy: actor.uid, resolvedAt: now() });
-  }
-  await batch.commit();
-  return { questionId, action, closed: open.size };
+  const closed = await closeOpenFlags(db, writes, { questionId, resolution: action, actor, at });
+  audit(db, writes, { name: "maths", recordId: questionId, action: action === "update" ? "edit" : action, fields: fields ? Object.keys(fields) : [], actor, at });
+  await writes.commit();
+  return { questionId, action, closed };
 }
 
-const ACTIONS = { forJob, flag, listFlags, resolve };
+const ACTIONS = { forJob, flag, listFlags, resolve, ...ADMIN_ACTIONS };
 
 async function manageQuestionBankImpl({ request, deps }) {
   const actor = requireStaff(request);

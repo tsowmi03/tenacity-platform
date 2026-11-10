@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-10 | [Question bank admin page: browse, hide, restore and correct the whole bank (RES-104)](#2026-11-10--question-bank-admin-page-browse-hide-restore-and-correct-the-whole-bank-res-104) |
 | 2026-11-09 | [Functions deploys ship only what changed (TP-44)](#2026-11-09--functions-deploys-ship-only-what-changed-tp-44) |
 | 2026-11-09 | [Group chats can be named and their members changed (MOB-70)](#2026-11-09--group-chats-can-be-named-and-their-members-changed-mob-70) |
 | 2026-11-09 | [TETAL marking is for analytical tasks only](#2026-11-09--tetal-marking-is-for-analytical-tasks-only) |
@@ -240,6 +241,33 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-10 — Question bank admin page: browse, hide, restore and correct the whole bank (RES-104)
+
+**What changed**
+- Admins get a "Question bank" page in the resource portal, covering maths
+  questions and English stimuli, questions, marking guides and set texts.
+  Each has its own filters, with paged results and live, hidden and all views.
+- Opening a record shows its diagram or text, source, linked records and
+  history, with Edit, Hide and Restore. Hiding a stimulus also hides its
+  questions and guides, unless another stimulus still uses them; restoring it
+  brings back only what it took out.
+- The "Flagged questions" popup is gone. Flagged maths questions are now a view
+  on this page, and repeated flags on a question show once.
+- Every hide, restore and edit records who did it and when, in the new
+  `questionBankAudit` collection.
+- Re-extracting a changed file no longer brings back a hidden record or undoes
+  an admin's corrections, and duplicate merging keeps a corrected or restored
+  copy. Editing a question's year level now also updates the years that search
+  filters on.
+
+**Why:** Admins could only reach a question once a tutor had flagged it, English
+records had no admin tools, and a hide could not be undone.
+
+**Status:** Live. Portal and Functions deployed 2026-11-10. The extraction and
+dedupe scripts use the new rules on their next run.
 
 ---
 

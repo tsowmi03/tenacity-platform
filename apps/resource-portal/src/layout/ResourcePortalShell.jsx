@@ -1,10 +1,11 @@
 import React, { useEffect } from "react";
+import { NavLink } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import Button from "../components/Button";
 import logoIcon from "../assets/logo-icon.png";
 
 export default function ResourcePortalShell({ children }) {
-  const { user, role, logout } = useAuth();
+  const { user, role, isAdmin, logout } = useAuth();
   const identityInitial = (user?.email || "Staff").charAt(0).toUpperCase();
 
   useEffect(() => {
@@ -32,6 +33,13 @@ export default function ResourcePortalShell({ children }) {
               <span className="resource-portal-brand-product">Resource portal</span>
             </span>
           </a>
+
+          {isAdmin ? (
+            <nav aria-label="Portal" className="resource-portal-nav">
+              <NavLink end to="/">Resources</NavLink>
+              <NavLink to="/question-bank">Question bank</NavLink>
+            </nav>
+          ) : null}
 
           <div className="resource-portal-account">
             <div className="resource-portal-identity">

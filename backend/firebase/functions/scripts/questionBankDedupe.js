@@ -42,7 +42,7 @@ async function main() {
   const modified = new Map(sources.docs.map((doc) => [doc.id, doc.get("modifiedTime") || null]));
   const snapshot = await db
     .collection(QUESTIONS_COLLECTION)
-    .select("status", "sourceId", "sourcePath", "pageNumber", "label", "kind", "diagramType", "skill", "stem", "text", "figures", "duplicateOf", "sources")
+    .select("status", "sourceId", "sourcePath", "pageNumber", "label", "kind", "diagramType", "skill", "stem", "text", "figures", "duplicateOf", "sources", "editedAt", "restoredAt")
     .get();
   // A retired question belongs to a removed or replaced file (RES-62); it is
   // never a copy to keep.
