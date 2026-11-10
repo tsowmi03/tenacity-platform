@@ -38,6 +38,7 @@ const {
 } = require("./responseSchema");
 const { buildDiagramFillSchema, stripDiagramNulls } = require("./diagramSchema");
 const { DIAGRAM_REGISTRY } = require("./diagramRegistry");
+const { settleOmittedDiagrams } = require("./omittedDiagrams");
 const {
   ResourceCancelledError,
   isCancellationError,
@@ -595,6 +596,7 @@ function buildResourceJobDoc({
     extractedTopics: [],
     warnings: [],
     diagramRepairs: null,
+    omittedDiagrams: [],
     diagramRepairExhausted: false,
     error: null,
     errorCode: null,
@@ -1406,14 +1408,11 @@ function omitDiagramReference(value, target) {
 }
 
 function diagramWarning(err) {
-  const label = String(err?.diagramLabel || "diagram");
-  const detail = errorMessage(err).slice(0, 500);
-  return {
-    code: "OPTIONAL_DIAGRAM_OMITTED",
-    diagramLabel: label,
-    diagramType: String(err?.diagramType || "unknown"),
-    message: `Optional diagram for ${label} was omitted: ${detail}`,
-  };
+  return optionalDiagramOmittedWarning({
+    label: err?.diagramLabel || "A question",
+    diagramType: err?.diagramType,
+    detail: errorMessage(err),
+  });
 }
 
 /**
@@ -1566,7 +1565,7 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
   } catch (err) {
     if (usesPlannedGeneration(job) && canKeepDraftAfterReview(err)) {
       reviewStatus = "draft";
-      reviewWarnings.push(unavailableReviewWarning("Maths formatting review"));
+      reviewWarnings.push(unavailableReviewWarning());
       resourceEvent(job, "document.draft_retained", { outcome: "draft", errorCode: err?.code || "REVIEW_FAILED", recoveryDecision: "keep_draft" }, "warn");
       // No further model call. The normal builder still validates question and
       // answer structure; unresolved notation is shown with its fallback warning.
@@ -2531,7 +2530,7 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
       throw err;
     }
     if (!target.diagram && diagramType !== "none") {
-      omitted.push({ label: labels.get(target), diagramType, detail: omissionDetail.get(target) || "the model did not return it" });
+      omitted.push({ label: labels.get(target), diagramType, detail: omissionDetail.get(target) || "the model did not return it", owner: target });
     }
     if (!target.diagram) target.diagramRequired = false;
   }
@@ -2843,7 +2842,7 @@ async function runGenerationPipelineLogged(job, deps) {
   for (const used of questionBank.used || []) {
     if (used.answerSource !== "book_unconfirmed") continue;
     const place = `${used.section ? `${used.section}, ` : ""}Question ${used.questionNumber}${used.partLabel ? ` part ${used.partLabel}` : ""}`;
-    contentWarnings.push({ code: "BOOK_ANSWER_UNCONFIRMED", message: `${place}: the book's answer is shown, but two independent solves disagreed with it. Check it before use.` });
+    contentWarnings.push({ code: "BOOK_ANSWER_UNCONFIRMED", message: `${place}: the textbook's answer may be wrong. Check it before printing.` });
   }
   // Keyed by what the row answers rather than by object, so the set survives
   // the draft fallback below swapping in a copy of the document.
@@ -2869,13 +2868,10 @@ async function runGenerationPipelineLogged(job, deps) {
     if (!usePlan || !canKeepDraftAfterReview(err) || collectDiagramTargets(beforeDiagrams).some((t) => t.diagramType !== "none" && t.diagramRequired !== false)) throw err;
     parsed = beforeDiagrams;
     reviewStatus = "draft";
-    contentWarnings.push(unavailableReviewWarning("Diagram review"));
+    contentWarnings.push(unavailableReviewWarning());
     diagramFill = { requested: 0, filled: 0 };
     resourceEvent(job, "review.draft_retained", { stageId: "diagrams.fill", outcome: "draft", recoveryDecision: "keep_draft" }, "warn");
   }
-  // RES-70: every optional diagram the fill could not produce is named to the
-  // tutor, the same way a diagram dropped at render time is.
-  for (const omission of diagramFill.omitted || []) contentWarnings.push(optionalDiagramOmittedWarning(omission));
   if (diagramFill.requested) {
     logger.info("[resource] diagrams filled", {
       jobId: job.jobId,
@@ -2905,7 +2901,7 @@ async function runGenerationPipelineLogged(job, deps) {
   } catch (err) {
     if (usePlan && canKeepDraftAfterReview(err)) {
       reviewStatus = "draft";
-      contentWarnings.push(unavailableReviewWarning("Diagram review"));
+      contentWarnings.push(unavailableReviewWarning());
       diagramRepair = { changed: false, warnings: [] };
     } else {
       if (raw && !err.rawAiText) err.rawAiText = raw;
@@ -2913,6 +2909,19 @@ async function runGenerationPipelineLogged(job, deps) {
       throw err;
     }
   }
+  // RES-106. Before answers are checked, so they are checked against the final
+  // wording. Only a question that can't work without its diagram is a warning.
+  const settledDiagrams = await settleOmittedDiagrams({
+    job,
+    parsed,
+    omissions: [...(diagramFill.omitted || []), ...(diagramRepair.omissions || [])],
+    callAi: trackedCallAi,
+    model: generationModel,
+    effort: RESOURCE_VERIFY_EFFORT,
+    signal: deps.signal,
+  });
+  contentWarnings.push(...settledDiagrams.warnings);
+  throwIfCancelled(deps);
   // A repaired or omitted diagram changes the document, and `raw` is what a
   // retry or a revision re-reads — so it has to be the document that was built.
   if (diagramRepair.changed) raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
@@ -2982,7 +2991,7 @@ async function runGenerationPipelineLogged(job, deps) {
         if (!usePlan || !canKeepDraftAfterReview(err)) throw err;
         reviewStatus = "draft";
         if (!contentWarnings.some((w) => w.code === "RESOURCE_ANSWER_REVIEW_UNAVAILABLE")) contentWarnings.push({
-          code: "RESOURCE_ANSWER_REVIEW_UNAVAILABLE", message: "Answer checking could not finish. Original worked solutions are retained in this draft; tutor review is required." });
+          code: "RESOURCE_ANSWER_REVIEW_UNAVAILABLE", message: "We couldn't finish checking the answers. Check them before printing." });
         resourceEvent(job, "review.draft_retained", { stageId: "answers.verify", outcome: "draft", errorCode: err?.code || "REVIEW_FAILED", recoveryDecision: "keep_draft" }, "warn");
       }
       throwIfCancelled(deps);
@@ -3010,9 +3019,10 @@ async function runGenerationPipelineLogged(job, deps) {
       ...saved,
       warnings: [
         ...(saved.warnings || []),
-        ...diagramRepair.warnings,
+        ...diagramRepair.warnings.filter((w) => w.code !== "OPTIONAL_DIAGRAM_OMITTED"),
         ...sourceWarnings,
       ],
+      omittedDiagrams: settledDiagrams.notes,
       ...diagramRepairPatch(diagramRepair),
       ...(questionBank.mode !== "none"
         ? { questionBankUsage: { mode: questionBank.mode, slots: questionBank.slots || 0, used: questionBank.used || [], skipped: questionBank.skipped || [] } }
@@ -3771,6 +3781,7 @@ async function queueResourceFallback({ db, storage, job, err, clock }) {
       // Cleared with the generation they describe: the other provider starts
       // from nothing, and its diagrams get their own repair budget.
       diagramRepairs: null,
+      omittedDiagrams: [],
       diagramRepairExhausted: false,
       error: null,
       errorCode: null,
@@ -3934,6 +3945,7 @@ async function runQueueForTutor(createdBy, deps) {
           completedAt: now(clock),
           diagramRepairExhausted: false,
           diagramRepairs: result.diagramRepairs || null,
+          omittedDiagrams: result.omittedDiagrams || [],
           error: null,
           errorCode: null,
           errorDetail: null,

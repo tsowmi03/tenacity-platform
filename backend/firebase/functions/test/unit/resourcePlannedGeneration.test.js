@@ -1,5 +1,5 @@
 "use strict";
-const { it } = require("node:test");
+const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const { createDurableCaller, requestedQuestionCount } = require("../../src/resources/durableStages");
 const { clarificationMessage, clarificationOptions, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings } = require("../../src/resources/plannedGeneration");
@@ -274,15 +274,11 @@ it("tells the tutor what to add when a plan never validates (RES-70)", async () 
 
 // Joshua's Year 10 paper (Nov 2026) failed three plans in a row: the quotes were
 // real lines of the school's notification, retyped with plain apostrophes.
-it("matches topic evidence across curly quotes and dashes, and only warns when it cannot", () => {
+it("matches topic evidence across curly quotes and dashes", () => {
   const notification = "MA5-TRG-P-01 \u2013 applies Pythagoras\u2019 theorem and trigonometry to solve 3-dimensional\nproblems";
   const quoted = { ...plan(4), topics: [{ name: "Trigonometry", evidence: "MA5-TRG-P-01 - applies Pythagoras' theorem and trigonometry to solve 3-dimensional problems" }, { name: "Networks", evidence: "Chapter 12 - Geometry and networks" }] };
   assert.deepEqual(unmatchedEvidenceTopics(quoted, notification), ["Networks"]);
-  const [warning, ...rest] = evidenceWarnings(quoted, notification);
-  assert.equal(rest.length, 0);
-  assert.equal(warning.code, "RESOURCE_PLAN_EVIDENCE_WARNING");
-  assert.match(warning.message, /Topic "Networks" couldn't be matched/);
-  assert.deepEqual(evidenceWarnings({ ...quoted, topics: [quoted.topics[0]] }, notification), []);
+  assert.deepEqual(unmatchedEvidenceTopics({ ...quoted, topics: [quoted.topics[0]] }, notification), []);
 });
 
 it("reassigns a question labelled with an unlisted topic instead of failing the plan", () => {
@@ -303,7 +299,7 @@ it("reassigns to the most specific overlapping topic", () => {
   assert.deepEqual(fixed.questions.map((q) => q.topic), ["Non-linear equations", "Linear equations", "Linear equations"]);
 });
 
-it("delivers a paper whose topic quotes cannot be matched, with a review warning", async () => {
+it("delivers a paper whose topic quotes cannot be matched, with no warning", async () => {
   const h = harness({ resourceType: "practice-paper", year: "10", subject: "maths", answerMode: "worked", customPrompt: "Write a paper for a 90-minute sitting." });
   const unquoted = { ...plan(4), topics: [{ name: "Algebra", evidence: "Algebra chapter" }, { name: "Geometry", evidence: "Geometry" }] };
   let result;
@@ -314,7 +310,7 @@ it("delivers a paper whose topic quotes cannot be matched, with a review warning
       .catch((err) => { if (err.code === "RESOURCE_STAGE_YIELD") return null; throw err; });
   }
   assert.ok(result, "the paper was delivered");
-  assert.deepEqual(result.warnings.filter((w) => w.code === "RESOURCE_PLAN_EVIDENCE_WARNING").map((w) => w.message), ['Topic "Algebra" couldn\'t be matched to the request or uploaded files. Check it is in scope.']);
+  assert.deepEqual(result.warnings.filter((w) => w.code === "RESOURCE_PLAN_EVIDENCE_WARNING"), []);
 });
 
 it("prints one clean heading per section when the plan describes each question (RES-90)", async () => {
@@ -632,7 +628,7 @@ it("accepts subtopics expanded from a broad topic when they quote the tutor's wo
     topics: [{ name: "Parabolas", evidence: "non linear" }, { name: "Exponentials", evidence: "non linear" }],
     questions: [{ number: 1, topic: "Parabolas", section: "A", difficulty: "easy", marks: 2, sourceIds: [], estimatedMinutes: 3 }, { number: 2, topic: "Exponentials", section: "A", difficulty: "easy", marks: 2, sourceIds: [], estimatedMinutes: 3 }] };
   validatePlan({ parsed: expanded }, { resourceType: "worksheet", customPrompt: message }, message);
-  assert.deepEqual(evidenceWarnings(expanded, message), []);
+  assert.deepEqual(unmatchedEvidenceTopics(expanded, message), []);
 });
 
 it("tells the planner to expand broad topics and still ask when it cannot tell", async () => {
@@ -643,4 +639,97 @@ it("tells the planner to expand broad topics and still ask when it cannot tell",
   assert.match(seen.systemPrompt, /only when no topic can be identified/);
   assert.match(seen.systemPrompt, /never invent a textbook's contents list/);
   assert.ok(seen.responseSchema.required.includes("clarificationOptions"));
+});
+
+describe("omitted diagrams and review reports (RES-106)", () => {
+  const { reportsPlannedDiagramMissing } = require("../../src/resources/contentVerification");
+  const { settleOmittedDiagrams, safeRewording } = require("../../src/resources/omittedDiagrams");
+  const job = { jobId: "j" };
+  const issue = (problem, questions) => ({ problem, questions, fix: "x" });
+  const planned = [{ number: 1, diagramType: "triangle" }, { number: 2, diagramType: "none", parts: [{ diagramType: "function-plot" }] }, { number: 3, diagramType: "none" }];
+
+  it("drops a report that a planned diagram is missing, and keeps real ones", () => {
+    for (const problem of ["The referenced line graph is missing, so the question changes.", "These questions refer to supplied grids, but no grids are included.", "These questions refer to diagrams, but none are supplied.", "The questions refer to diagrams that are not supplied."]) {
+      assert.equal(reportsPlannedDiagramMissing(issue(problem, [1, 2]), planned), true, problem);
+    }
+    assert.equal(reportsPlannedDiagramMissing(issue("The diagram is missing.", [3]), planned), false);
+    assert.equal(reportsPlannedDiagramMissing(issue("The diagrams are missing.", [1, 3]), planned), false);
+    assert.equal(reportsPlannedDiagramMissing(issue("Question 1 returns to routine work.", [1]), planned), false);
+  });
+
+  it("tells the maths review that diagrams arrive later", async () => {
+    const seen = [];
+    const callAi = async (req) => { seen.push(req); throw Object.assign(new Error("stop"), { code: "RESOURCE_SIZE_LIMIT", resourceControl: true }); };
+    const { verifyPlannedContent } = require("../../src/resources/contentVerification");
+    await assert.rejects(verifyPlannedContent({ job: { jobId: "j", subject: "maths", resourceType: "worksheet" }, request: { userMessage: "x" }, callAi, plan: {}, parsed: { questions: [] }, scope: {} }));
+    assert.match(seen[0].systemPrompt, /Diagrams are added after this check/);
+  });
+
+  const run = (omissions, parsed, items) => settleOmittedDiagrams({ job, parsed, omissions, model: "m", effort: "medium",
+    callAi: typeof items === "function" ? items : async () => ({ parsed: { items } }) });
+
+  it("stays quiet when the question works without its diagram", async () => {
+    const q = { number: 1, stem: "Sketch y = x." };
+    const out = await run([{ label: "Question 1", owner: q, detail: "x" }], { questions: [q] }, [{ index: 1, outcome: "fine", stem: "", parts: [] }]);
+    assert.deepEqual(out.warnings, []);
+    assert.equal(out.notes.length, 1);
+    assert.equal(q.stem, "Sketch y = x.");
+  });
+
+  it("rewords a question that refers to a missing diagram", async () => {
+    const q = { number: 14, stem: "The diagram shows triangle HBS with HB = 18 km.", parts: [] };
+    const out = await run([{ label: "Question 14", owner: q }], { questions: [q] }, [{ index: 1, outcome: "reworded", stem: "Triangle HBS has HB = 18 km.", parts: [] }]);
+    assert.deepEqual(out.warnings, []);
+    assert.equal(q.stem, "Triangle HBS has HB = 18 km.");
+  });
+
+  it("rewords the stem as well as the part", async () => {
+    const part = { label: "a", stem: "Use the diagram to find the gradient." };
+    const q = { number: 5, stem: "The diagram shows a line through (0, 1) and (2, 5).", parts: [part] };
+    const out = await run([{ label: "Question 5 part a", owner: part }], { questions: [q] }, [{ index: 1, outcome: "reworded", stem: "A line passes through (0, 1) and (2, 5).", parts: [{ label: "(a)", stem: "Find the gradient." }] }]);
+    assert.deepEqual(out.warnings, []);
+    assert.equal(q.stem, "A line passes through (0, 1) and (2, 5).");
+    assert.equal(part.stem, "Find the gradient.");
+  });
+
+  it("warns, and leaves the question alone, when a rewording is unsafe", async () => {
+    const q = { number: 2, stem: "The diagram shows a 12 km leg." };
+    const out = await run([{ label: "Question 2", owner: q, diagramType: "t", detail: "layout failed" }], { questions: [q] }, [{ index: 1, outcome: "reworded", stem: "A boat sails a leg.", parts: [] }]);
+    assert.equal(out.warnings[0].message, "Question 2 needs a diagram that couldn't be made. Add one by hand or use Revise.");
+    assert.equal(q.stem, "The diagram shows a 12 km leg.");
+    assert.equal(safeRewording("a 12 km leg", "the diagram has a 12 km leg"), false);
+  });
+
+  it("warns when a question needs the picture or the check fails", async () => {
+    const q = { number: 3, stem: "Find the shaded angle." };
+    assert.equal((await run([{ label: "Question 3", owner: q }], { questions: [q] }, [{ index: 1, outcome: "needs_diagram", stem: "", parts: [] }])).warnings.length, 1);
+    assert.equal((await run([{ label: "Question 3", owner: q }], { questions: [q] }, async () => { throw new Error("provider down"); })).warnings.length, 1);
+  });
+
+  it("shows the checker every part and asks once per question", async () => {
+    const a = { label: "a", stem: "Find x.", options: null };
+    const b = { label: "b", stem: "Read the shaded angle." };
+    const q = { number: 7, stem: "A triangle has sides 3 and 4.", parts: [a, b] };
+    let message;
+    const out = await run([{ label: "Question 7 part a", owner: a }, { label: "Question 7 part b", owner: b }], { questions: [q] }, async (req) => { message = req.userMessage; return { parsed: { items: [{ index: 1, outcome: "needs_diagram", stem: "", parts: [] }] } }; });
+    assert.equal(message.split("\n").length, 1);
+    assert.match(message, /Read the shaded angle/);
+    assert.match(message, /part a/);
+    assert.equal(out.warnings.length, 2);
+  });
+
+  it("warns when a rewording leaves another part pointing at the missing diagram", async () => {
+    const part = { label: "b", stem: "Use the diagram to find y." };
+    const q = { number: 8, stem: "The diagram shows a line.", parts: [part] };
+    const out = await run([{ label: "Question 8", owner: q }], { questions: [q] }, [{ index: 1, outcome: "reworded", stem: "A line is given.", parts: [] }]);
+    assert.equal(out.warnings.length, 1);
+    assert.equal(q.stem, "The diagram shows a line.");
+  });
+
+  it("makes no model call when nothing was left out", async () => {
+    let called = false;
+    const out = await run([], { questions: [] }, async () => { called = true; return { parsed: { items: [] } }; });
+    assert.equal(called, false);
+    assert.deepEqual(out, { warnings: [], notes: [] });
+  });
 });

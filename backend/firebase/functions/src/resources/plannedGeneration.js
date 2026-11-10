@@ -87,7 +87,7 @@ function validatePlan(result, job, _userMessage, scope = { eligible: [], exclude
   if (new Set(plan.topics.map((t) => t.name)).size !== plan.topics.length) invalid("topic_names_duplicated");
   if (plan.questions.some((q, i) => !q || q.number !== i + 1)) invalid("questions_not_numbered_1_to_n");
   // Topic evidence and question-topic labels are not checked here: an
-  // unmatched quote becomes a review warning and a stray label is reassigned
+  // unmatched quote is only logged and a stray label is reassigned
   // (reconcilePlanTopics), so neither can fail the resource.
   const reconciled = reconcilePlanTopics(plan).plan;
   const names = reconciled.topics.map((t) => t.name);
@@ -142,14 +142,6 @@ function unmatchedEvidenceTopics(plan, sourceText) {
   return (plan?.topics || [])
     .filter((t) => !evidenceFragments(t?.evidence).some((quote) => haystack.includes(quote)))
     .map((t) => t.name);
-}
-
-function evidenceWarnings(plan, sourceText) {
-  const unmatched = unmatchedEvidenceTopics(plan, sourceText);
-  if (!unmatched.length) return [];
-  const list = unmatched.map((name) => `"${name}"`).join(", ");
-  const subject = unmatched.length === 1 ? `Topic ${list} couldn't be matched to the request or uploaded files. Check it is` : `Topics ${list} couldn't be matched to the request or uploaded files. Check they are`;
-  return [{ code: "RESOURCE_PLAN_EVIDENCE_WARNING", message: `${subject} in scope.` }];
 }
 
 const topicWords = (text) => new Set(normaliseQuote(text).split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !["and", "the", "for", "with", "chapter", "unit", "topic"].includes(w)));
@@ -391,7 +383,6 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
   });
   validateStageResult({ parsed: modelPlan });
   const { plan, reassigned, added } = reconcilePlanTopics(modelPlan);
-  const planWarnings = evidenceWarnings(plan, planMessage);
   if (job.resourceType === "practice-paper") plan.timeAllowed = plannedTimeAllowed(plan);
   noteProgress(job, { questionCount: plan.questions.length });
   resourceEvent(job, "plan.resolved", { stageId: "plan.v2", questionCount: plan.questions.length, generationVersion: 1,
@@ -574,7 +565,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
   const planChecks = validatePlannedCoverage(plan, scope)
     .filter((w) => !(w.code === "RESOURCE_PLAN_TIMING_WARNING" && review.summary?.estimatedMinutes));
   return { ...assembled, raw: JSON.stringify(assembled.parsed), reviewStatus: review.status, contentReview: review.summary,
-    warnings: [...planWarnings, ...planChecks, ...review.warnings] };
+    warnings: [...planChecks, ...review.warnings] };
 }
 
-module.exports = { MAX_CONTENT_REPAIRS, validateRepair, PLAN_SCHEMA, stemHoldsPassage, clarificationMessage, clarificationOptions, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };
+module.exports = { MAX_CONTENT_REPAIRS, validateRepair, PLAN_SCHEMA, stemHoldsPassage, clarificationMessage, clarificationOptions, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, validateQuestions, validateAnswers };

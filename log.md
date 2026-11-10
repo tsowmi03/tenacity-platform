@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-11 | [Warnings only flag problems in the finished resource (RES-106)](#2026-11-11--warnings-only-flag-problems-in-the-finished-resource-res-106) |
 | 2026-11-10 | [Files no Function loads no longer force a full deploy (TP-46)](#2026-11-10--files-no-function-loads-no-longer-force-a-full-deploy-tp-46) |
 | 2026-11-10 | [Vague resource requests ask the tutor instead of failing (RES-105)](#2026-11-10--vague-resource-requests-ask-the-tutor-instead-of-failing-res-105) |
 | 2026-11-10 | [Question bank admin page: browse, hide, restore and correct the whole bank (RES-104)](#2026-11-10--question-bank-admin-page-browse-hide-restore-and-correct-the-whole-bank-res-104) |
@@ -243,6 +244,27 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-11 — Warnings only flag problems in the finished resource (RES-106)
+
+**What changed**
+- The content review now knows diagrams are added after it runs, so it stops
+  reporting them as missing. Those false reports also no longer trigger
+  automatic rewrites of good questions.
+- When a diagram can't be made, the question is reworded to stand alone if it
+  refers to one. The tutor is warned only if it can't work without the picture.
+  Other left-out diagrams are listed in the job's Details.
+- Remaining warnings say what's wrong with the resource and what to do, with no
+  technical detail. The "couldn't be matched to the request" topic warning is
+  gone, because the review already checks scope against the actual questions.
+
+**Why:** Most warnings were false or described the process, which told tutors
+to distrust resources that were fine.
+
+**Status:** Live. Functions deployed to production and the resource portal
+released on merge.
 
 ---
 

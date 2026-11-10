@@ -56,7 +56,9 @@ function optionalDiagramOmittedWarning({ label, diagramType, detail }) {
     code: OPTIONAL_DIAGRAM_OMITTED,
     diagramLabel: safeLabel,
     diagramType: String(diagramType || "unknown"),
-    message: `Optional diagram for ${safeLabel} was omitted: ${String(detail || "").slice(0, 500)}`,
+    // Kept for support. The tutor only needs what to do about it.
+    detail: String(detail || "").slice(0, 500),
+    message: `${safeLabel} needs a diagram that couldn't be made. Add one by hand or use Revise.`,
   };
 }
 

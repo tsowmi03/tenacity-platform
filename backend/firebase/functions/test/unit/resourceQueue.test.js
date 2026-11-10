@@ -873,7 +873,8 @@ describe("resource generation pipeline", () => {
         code: "OPTIONAL_DIAGRAM_OMITTED",
         diagramLabel: "Q1",
         diagramType: "rectangle",
-        message: "Optional diagram for Q1 was omitted: Rasterisation failed",
+        detail: "Rasterisation failed",
+        message: "Q1 needs a diagram that couldn't be made. Add one by hand or use Revise.",
       },
     ]);
     assert.equal(parsed.questions[0].diagram.type, "rectangle");
@@ -929,7 +930,7 @@ describe("resource generation pipeline", () => {
     assert.equal(result.warnings.length, 1);
     assert.equal(result.warnings[0].code, "OPTIONAL_DIAGRAM_OMITTED");
     assert.equal(result.warnings[0].diagramLabel, "Question 1");
-    assert.match(result.warnings[0].message, /width must be a finite number/);
+    assert.match(result.warnings[0].detail, /width must be a finite number/);
     // The caller's parsed JSON is untouched (the omission happens on a clone).
     assert.equal(parsed.questions[0].diagram.type, "rectangle");
   });

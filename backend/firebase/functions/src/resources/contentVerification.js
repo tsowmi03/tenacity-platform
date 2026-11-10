@@ -92,11 +92,11 @@ function coverageCounts(scope, ids) {
 function validatePlannedCoverage(plan, scope) {
   const warnings = [];
   const coverage = coverageCounts(scope, plan.questions.flatMap((q) => q.sourceIds || []));
-  if (coverage.missing || coverage.excluded) warnings.push({ code: "RESOURCE_PLAN_COVERAGE_WARNING", message: "The plan may not fully match the requested coverage or exclusions. Tutor review recommended." });
+  if (coverage.missing || coverage.excluded) warnings.push({ code: "RESOURCE_PLAN_COVERAGE_WARNING", message: "This resource may not match the topics you asked for. Check them before printing." });
   if (scope.minutes) {
     const minutes = plan.questions.reduce((n, q) => n + (Number(q.estimatedMinutes) || 0), 0);
     if (requestedMinutes(plan.timeAllowed || "") !== scope.minutes || !timingFits(minutes, scope.minutes)) {
-      warnings.push({ code: "RESOURCE_PLAN_TIMING_WARNING", message: `The plan may need a different workload for the requested ${scope.minutes}-minute sitting. Tutor review recommended.` });
+      warnings.push({ code: "RESOURCE_PLAN_TIMING_WARNING", message: `This paper may not fit the ${scope.minutes}-minute sitting. Check its length before printing.` });
     }
   }
   return warnings;
@@ -110,8 +110,8 @@ function canKeepDraftAfterReview(err) {
   return Boolean(err?.modelFailure || ["RESOURCE_REVIEW_UNAVAILABLE", "RESOURCE_STAGE_TIMEOUT", "RESOURCE_RECOVERY_EXHAUSTED", "RESOURCE_STAGE_LIMIT", "RESOURCE_BATCH_INVALID", "RESOURCE_MATH_UNRESOLVED", "RESOURCE_LOCAL_BUDGET"].includes(err?.code));
 }
 
-function unavailableReviewWarning(stage = "Content review") {
-  return { code: "RESOURCE_REVIEW_UNAVAILABLE", message: `${stage} could not finish. A downloadable draft is retained; tutor review is required before use.` };
+function unavailableReviewWarning() {
+  return { code: "RESOURCE_REVIEW_UNAVAILABLE", message: "We couldn't finish checking this resource. Read it through before printing." };
 }
 
 function validateReview(result, questions) {
@@ -145,6 +145,19 @@ function normaliseIssue(issue) {
   };
 }
 
+const hasPlannedDiagram = (q) => [q, ...(q?.parts || [])].some((node) => node?.diagramType && node.diagramType !== "none");
+const DIAGRAM_WORD = /\b(?:diagrams?|graphs?|grids?|figures?|images?|pictures?|charts?|histograms?)\b/i;
+const NOT_THERE = /\b(?:missing|absent|not (?:been )?(?:supplied|provided|included|shown|given|present)|(?:none|no \w+(?: \w+)?) (?:is|are) (?:supplied|provided|included))\b/i;
+
+// RES-106. Backstop for the instruction in reviewContext: diagrams are added
+// after the review, so this claim about a question due one is always false, and
+// acting on it would rewrite a good question.
+function reportsPlannedDiagramMissing(issue, questions) {
+  if (!DIAGRAM_WORD.test(issue.problem) || !NOT_THERE.test(issue.problem)) return false;
+  const named = issue.questions.length ? questions.filter((q) => issue.questions.includes(q.number)) : questions.filter(hasPlannedDiagram);
+  return named.length > 0 && named.every(hasPlannedDiagram);
+}
+
 function issueMessage({ questions, problem }) {
   const where = questions.length ? `${questions.length > 1 ? "Questions" : "Question"} ${questions.join(", ")}: ` : "";
   return `${where}${problem}`;
@@ -159,6 +172,9 @@ function reviewContext({ job, images = [], scope, trimmedForTime = false }) {
   const lines = [];
   if (trimmedForTime) {
     lines.push("This paper was too long for the sitting, so tasks in it were deliberately shortened. Do not report a task as too short or ask for it to be longer.");
+  }
+  if (job.subject !== "english") {
+    lines.push('Diagrams are added after this check, so you cannot see them. A question or part whose diagramType is not "none" will have its diagram, graph or grid when printed: never report one as missing or unsupplied. Do report a question that depends on a diagram when its diagramType is "none".');
   }
   if (job.subject === "english") {
     lines.push("Reading texts come from verified sources. Their exact wording, title, author and source are inserted after this check, so the copy you see may differ in punctuation or leave those details out: do not report that.");
@@ -183,7 +199,7 @@ async function verifyPlannedContentLogged({ job, request, callAi, plan, parsed, 
   });
   validateReview(result, questions);
   const review = result.parsed;
-  const issues = review.issues.map(normaliseIssue).filter((issue) => issue.problem);
+  const issues = review.issues.map(normaliseIssue).filter((issue) => issue.problem && !reportsPlannedDiagramMissing(issue, questions));
   const covered = review.questions.flatMap((q) => q.coveredSourceIds);
   const coverage = coverageCounts(scope, covered);
   const estimatedMinutes = review.questions.reduce((n, q) => n + q.estimatedMinutes, 0);
@@ -192,7 +208,7 @@ async function verifyPlannedContentLogged({ job, request, callAi, plan, parsed, 
   const longest = [...review.questions].sort((a, b) => b.estimatedMinutes - a.estimatedMinutes).slice(0, 3)
     .map((q) => `Question ${q.number} (${Math.round(q.estimatedMinutes)} min)`).join(", ");
   const warnings = [];
-  if (coverage.missing) warnings.push({ code: "RESOURCE_COVERAGE_WARNING", message: `Review confirmed ${coverage.covered} of ${coverage.required} requested ${scope.coverageMode === "chapter" ? "chapters" : "subsection topics"}. Tutor review recommended.` });
+  if (coverage.missing) warnings.push({ code: "RESOURCE_COVERAGE_WARNING", message: `This resource covers ${coverage.covered} of the ${coverage.required} requested ${scope.coverageMode === "chapter" ? "chapters" : "topics"}. Check it before printing.` });
   if (coverage.excluded) warnings.push({ code: "RESOURCE_EXCLUSIONS_WARNING", message: "The review identified content outside the requested scope. Check the exclusions before use." });
   if (!timingMatches) warnings.push({ code: "RESOURCE_TIMING_WARNING", message: overrun
     ? `This paper will take about ${Math.round(estimatedMinutes)} minutes for the requested ${scope.minutes}-minute sitting. The longest questions are ${longest}.`
@@ -216,5 +232,5 @@ async function verifyPlannedContentLogged({ job, request, callAi, plan, parsed, 
     ? { overrun, estimatedMinutes, requestedMinutes: scope.minutes || null, minutesByQuestion, issues: repairableIssues } : null };
 }
 
-module.exports = { TIMING_OVER_TOLERANCE, TIMING_UNDER_TOLERANCE, separateReadingMinutes, timingFits, sourceScope, requestedMinutes, validatePlannedCoverage, verifyPlannedContent, validateReview,
+module.exports = { reportsPlannedDiagramMissing, TIMING_OVER_TOLERANCE, TIMING_UNDER_TOLERANCE, separateReadingMinutes, timingFits, sourceScope, requestedMinutes, validatePlannedCoverage, verifyPlannedContent, validateReview,
   coverageCounts, canKeepDraftAfterReview, unavailableReviewWarning };
