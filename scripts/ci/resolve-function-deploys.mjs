@@ -357,13 +357,32 @@ export function verifyRequireGraph({ staticEdges, runtimeEdges }) {
 }
 
 /**
+ * The deployed-directory source files that no Function can load, such as a
+ * helper only a maintenance script requires. Changing one changes no Function.
+ *
+ * Only trustworthy when the require graph is complete. A deferred or computed
+ * require could reach a file the entry point did not load, so any gap in the
+ * graph returns nothing and such a change keeps forcing a full deploy.
+ */
+export function filesNoFunctionLoads({ staticEdges, dynamic, runtimeEdges }) {
+  const { missing, unloaded } = verifyRequireGraph({ staticEdges, runtimeEdges });
+  return missing.length > 0 || dynamic.length > 0 ? [] : unloaded;
+}
+
+/**
  * Given a set of changed repository paths and a Function graph, decides what to
  * deploy. Pure, so the decision table can be tested without loading Functions.
  *
  * Returns { mode, names, reason } where mode is "all" or "scoped".
  */
-export function resolveChangedFunctions({ changedPaths, graph, managedNames }) {
+export function resolveChangedFunctions({
+  changedPaths,
+  graph,
+  managedNames,
+  unloadedFiles = [],
+}) {
   const names = [...managedNames];
+  const unloaded = new Set(unloadedFiles);
   const functionPaths = changedPaths.filter(
     (path) => path.startsWith(functionsRoot) || globalTriggerPaths.includes(path)
   );
@@ -395,15 +414,16 @@ export function resolveChangedFunctions({ changedPaths, graph, managedNames }) {
     if (isIgnoredPath(path)) continue;
     const owners = affects.get(path);
     if (!owners) {
-      unmapped.push(path);
+      if (!unloaded.has(path)) unmapped.push(path);
       continue;
     }
     for (const name of owners) selected.add(name);
   }
 
-  // A file under functions/ that no Function claims is something this resolver
-  // does not understand: a new directory, a rename, a module reached by a
-  // require the graph did not see. Deploy everything rather than guess.
+  // A file under functions/ that no Function claims, and that is not a source
+  // file proven unreachable, is something this resolver does not understand: a
+  // deleted module, a data file, a module reached by a require the graph did
+  // not see. Deploy everything rather than guess.
   if (unmapped.length > 0) {
     return {
       mode: "all",
@@ -566,8 +586,8 @@ function main() {
     }
     for (const file of unloaded) {
       console.log(
-        `::warning file=${file}::not reached from the entry point; deploy scoping ` +
-          "cannot attribute it to any Function."
+        `::warning file=${file}::not reached from the entry point, so no Function ` +
+          "loads it and changing it deploys nothing."
       );
     }
     const checked = [...staticEdges.values()].reduce((total, set) => total + set.size, 0);
@@ -600,10 +620,18 @@ function main() {
         projectId: policy.projectId,
         entryPoint,
       });
+      const { edges: staticEdges, dynamic } = staticRequireEdges({
+        files: deployedSourceFiles(),
+      });
       resolution = resolveChangedFunctions({
         changedPaths: changedPathsBetween(choice.base, head),
         graph,
         managedNames,
+        unloadedFiles: filesNoFunctionLoads({
+          staticEdges,
+          dynamic,
+          runtimeEdges: runtimeRequireEdges({ entryPoint }),
+        }),
       });
     }
   }

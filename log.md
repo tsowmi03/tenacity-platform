@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-10 | [Files no Function loads no longer force a full deploy (TP-46)](#2026-11-10--files-no-function-loads-no-longer-force-a-full-deploy-tp-46) |
 | 2026-11-10 | [Vague resource requests ask the tutor instead of failing (RES-105)](#2026-11-10--vague-resource-requests-ask-the-tutor-instead-of-failing-res-105) |
 | 2026-11-10 | [Question bank admin page: browse, hide, restore and correct the whole bank (RES-104)](#2026-11-10--question-bank-admin-page-browse-hide-restore-and-correct-the-whole-bank-res-104) |
 | 2026-11-09 | [Functions deploys ship only what changed (TP-44)](#2026-11-09--functions-deploys-ship-only-what-changed-tp-44) |
@@ -242,6 +243,23 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-10 — Files no Function loads no longer force a full deploy (TP-46)
+
+**What changed**
+- A changed source file that no deployed Function loads, such as a helper only a
+  maintenance script uses, now adds nothing to a production Functions deploy.
+- This applies only when the require graph is complete. A deferred or computed
+  require keeps the full-deploy fallback, as do deleted files, data files and
+  anything else not proven unreachable.
+
+**Why:** The Question bank work (RES-104) changed three helpers used only by
+scripts, so the deploy shipped all 105 Functions in 11 batches and took about 25
+minutes. Replaying that deploy with this fix selects 11 Functions in 2 batches.
+
+**Status:** Live. Applies to every production Functions deploy from this commit on.
 
 ---
 
