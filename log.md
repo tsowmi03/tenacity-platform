@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-11-10 | [Files no Function loads no longer force a full deploy (TP-46)](#2026-11-10--files-no-function-loads-no-longer-force-a-full-deploy-tp-46) |
+| 2026-11-10 | [Vague resource requests ask the tutor instead of failing (RES-105)](#2026-11-10--vague-resource-requests-ask-the-tutor-instead-of-failing-res-105) |
 | 2026-11-10 | [Question bank admin page: browse, hide, restore and correct the whole bank (RES-104)](#2026-11-10--question-bank-admin-page-browse-hide-restore-and-correct-the-whole-bank-res-104) |
 | 2026-11-09 | [Functions deploys ship only what changed (TP-44)](#2026-11-09--functions-deploys-ship-only-what-changed-tp-44) |
 | 2026-11-09 | [Group chats can be named and their members changed (MOB-70)](#2026-11-09--group-chats-can-be-named-and-their-members-changed-mob-70) |
@@ -259,6 +260,27 @@ scripts, so the deploy shipped all 105 Functions in 11 batches and took about 25
 minutes. Replaying that deploy with this fix selects 11 Functions in 2 batches.
 
 **Status:** Live. Applies to every production Functions deploy from this commit on.
+
+---
+
+## 2026-11-10 — Vague resource requests ask the tutor instead of failing (RES-105)
+
+**What changed**
+- The planner now expands a broad topic, such as "non linear" or "measurement",
+  into the subtopics taught at the selected year under the NSW syllabus.
+- It still stops to ask when there is no topic, a textbook's contents weren't
+  supplied, a term can't be interpreted, the subject doesn't match, or
+  exclusions can't be worked out.
+- A job stopped that way now shows "Needs your input" instead of "Failed", with
+  the question, suggested topics to tick and a text box. Continue queues a new
+  version with the same settings and the answer added. Retry is hidden on these
+  jobs because it would only ask again.
+
+**Why:** A Year 10 worksheet asking for "non linear questions" failed outright,
+and the tutor had to start again.
+
+**Status:** Live. Functions deployed to production and the resource portal
+released on merge.
 
 ---
 

@@ -12,7 +12,7 @@ const str = { type: "string" };
 const int = { type: "integer" };
 const list = (items) => ({ type: "array", items });
 const PLAN_SCHEMA = obj({
-  title: str, timeAllowed: str, clarification: str,
+  title: str, timeAllowed: str, clarification: str, clarificationOptions: list(str),
   topics: list(obj({ name: str, evidence: str })),
   questions: list(obj({ number: int, topic: str, section: str, difficulty: str, marks: int, focus: str, sourceIds: list(str), estimatedMinutes: { type: "number" } })),
 });
@@ -49,13 +49,32 @@ function clarificationMessage(text) {
   const reason = String(text || "").replace(/\s+/g, " ").trim();
   if (reason.length < 12) return CLARIFICATION_FALLBACK;
   const clamped = reason.length > 300 ? `${reason.slice(0, 300).trim()}…` : reason;
-  return `${clamped}${/[.!?…]$/.test(clamped) ? "" : "."} Update the request, then submit again.`;
+  return `${clamped}${/[.!?…]$/.test(clamped) ? "" : "."}`;
+}
+
+const MAX_CLARIFICATION_OPTIONS = 8;
+const MAX_CLARIFICATION_OPTION_LENGTH = 80;
+
+// The topics offered as tick boxes on the "Needs your input" card. Model output,
+// so it is trimmed, de-duplicated and bounded before it reaches the job.
+function clarificationOptions(options) {
+  const seen = new Set();
+  return (Array.isArray(options) ? options : [])
+    .filter((option) => typeof option === "string")
+    .map((option) => option.replace(/\s+/g, " ").trim())
+    .filter((option) => {
+      const key = option.toLowerCase();
+      if (!option || option.length > MAX_CLARIFICATION_OPTION_LENGTH || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, MAX_CLARIFICATION_OPTIONS);
 }
 
 function validatePlan(result, job, _userMessage, scope = { eligible: [], excluded: [], minutes: null }) {
   const plan = result?.parsed;
   if (plan?.clarification === "SIZE_LIMIT") throw controlError("RESOURCE_SIZE_LIMIT", `The resolved request exceeds ${MAX_QUESTIONS} questions. Split it into smaller resources.`);
-  if (plan?.clarification) throw controlError("RESOURCE_SCOPE_CLARIFICATION", clarificationMessage(plan.clarification));
+  if (plan?.clarification) throw Object.assign(controlError("RESOURCE_SCOPE_CLARIFICATION", clarificationMessage(plan.clarification)), { clarificationOptions: clarificationOptions(plan.clarificationOptions) });
   // Each check has its own reason (RES-70). The reason is logged and also sent
   // back to the model as correction guidance, so a catch-all code left every
   // retry guessing at what to fix.
@@ -367,7 +386,7 @@ async function generatePlannedResource({ job, request, callAi, hasStimulus = fal
     maxTokens: 16000, responseSchema: PLAN_SCHEMA, validateStageResult,
     userMessage: planMessage,
     systemPrompt: `Plan an educational resource; do not write questions or solutions. Return the supplied JSON schema.
-Resolve the tutor's exact scope and exclusions using the supplied references. Topics must each quote exact evidence from the user's message or references. A textbook title alone does not establish its chapter contents. If the topic list or exclusions cannot be established, return a non-empty clarification and empty topics/questions; never invent a contents list. If the request clearly belongs to a different subject than the selected subject (for example, an English reading or writing paper with maths selected), return a clarification and empty topics/questions. Write any clarification other than "SIZE_LIMIT" as one or two plain sentences addressed to the tutor that name exactly what is unclear or mismatched and what to change, e.g. "The prompt describes an English paper, but the subject is set to Maths. Change the subject to English or rewrite the prompt for maths."
+Resolve the tutor's exact scope and exclusions using the supplied references. Topics must each quote exact evidence from the user's message or references. A textbook title alone does not establish its chapter contents. A broad subject area or syllabus topic does establish the scope: when the tutor names one (for example non-linear relationships, measurement, probability or persuasive writing), expand it into the subtopics normally taught at the selected year under the NSW syllabus, and give the tutor's own words, copied character for character, as the evidence for each subtopic. Return a non-empty clarification and empty topics/questions only when no topic can be identified, the request depends on a textbook or document whose contents were not supplied, a term cannot be interpreted, or the exclusions cannot be established; never invent a textbook's contents list. With a clarification about missing or unclear topics, set clarificationOptions to 3–6 short topic names the tutor could choose from for the selected subject and year; otherwise leave clarificationOptions empty. If the request clearly belongs to a different subject than the selected subject (for example, an English reading or writing paper with maths selected), return a clarification and empty topics/questions. Write any clarification other than "SIZE_LIMIT" as one or two plain sentences addressed to the tutor that name exactly what is unclear or mismatched and what to change, e.g. "The prompt describes an English paper, but the subject is set to Maths. Change the subject to English or rewrite the prompt for maths."
 For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwise obey any requested total. For timed papers, allocate sections, progressively harder questions and marks that reasonably fit the sitting time. Use a reasonable number of main questions with labelled parts to combine related skills. topics may group by chapter; sourceIds track detailed coverage independently of the primary topic label. Aim for the sitting time with representative chapter coverage. If the coverage is ambitious, produce a usable plan and let the review flag the trade-off; do not return a clarification solely for workload or coverage concerns. Do not silently reduce scope to fit a limit: if the resolved total exceeds ${MAX_QUESTIONS}, set clarification to "SIZE_LIMIT" and leave questions empty. Use consecutive global numbers from 1; assign each a topic, section, difficulty and marks. Give each question a "focus": one short phrase naming the specific skill it tests and, for a question on a reading text or image, which text or part of it (e.g. "inference about the narrator's feelings, Text 1 opening" or "effect of the speech's rhetorical questions"). No two questions may share a focus, and questions on the same text should draw on different parts of it. section is the student-facing heading a question is printed under, shared by every question in that section, e.g. "Section A: Reading" or "Section B: Writing"; never describe the parts, type or labels of its questions there. Give every question sourceIds from the eligible reference inventory (multiple IDs allowed when the actual multipart question tests those skills), and a realistic positive estimatedMinutes. For chapter coverageMode, sample across every eligible chapter; do not force every subsection into a timed paper. For section coverageMode, aim to cover every requested ID. Balance chapter marks fairly. Do not merely attach IDs to questions that do not test them. A question's estimatedMinutes covers all of its work: reading it, rereading for evidence, planning, writing and checking; count the first reading of a stimulus text once, in the first question that uses it. Sum the question minutes to 75–100% of the requested sitting time; preserve the exact requested timeAllowed. Never return a clarification because a reading text the request needs has not been supplied: the writing stage supplies any such text. Without coded references use an empty sourceIds array. Supply title and timeAllowed (empty for untimed worksheets). For a paper whose request names no sitting time, choose a realistic one for the year level and question count. clarification must be empty when the scope is resolved.`,
   });
   validateStageResult({ parsed: modelPlan });
@@ -558,4 +577,4 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     warnings: [...planWarnings, ...planChecks, ...review.warnings] };
 }
 
-module.exports = { MAX_CONTENT_REPAIRS, validateRepair, PLAN_SCHEMA, stemHoldsPassage, clarificationMessage, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };
+module.exports = { MAX_CONTENT_REPAIRS, validateRepair, PLAN_SCHEMA, stemHoldsPassage, clarificationMessage, clarificationOptions, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings, validateQuestions, validateAnswers };

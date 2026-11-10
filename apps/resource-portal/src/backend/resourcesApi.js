@@ -15,6 +15,7 @@ import {
 import { db, firebaseConfig, storage } from "../firebaseConfig";
 import { callFunction, BackendError } from "./callable";
 import { requestedModelForJob } from "../components/resources/modelOptions";
+import { clarifiedResourcePrompt } from "../components/resources/clarifiedPrompt";
 import { assertFirestoreConfigured, listDocuments, timestampToIso } from "./firestoreReads";
 import { EVENTS, createJobOutcomeTracker, track } from "../analytics";
 
@@ -238,6 +239,15 @@ export function buildResubmitPayload(job = {}) {
 // its original inputs verbatim.
 export function resubmitResourceJob(job) {
   return submitResourceJob(buildResubmitPayload(job));
+}
+
+// Answer a "Needs your input" job. A new job with the same settings, so the
+// stopped one stays in history as the earlier version.
+export function answerResourceClarification(job, answer) {
+  return resubmitResourceJob({
+    ...job,
+    customPrompt: clarifiedResourcePrompt(job.customPrompt, answer),
+  });
 }
 
 /**

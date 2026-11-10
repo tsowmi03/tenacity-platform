@@ -2,7 +2,7 @@
 const { it } = require("node:test");
 const assert = require("node:assert/strict");
 const { createDurableCaller, requestedQuestionCount } = require("../../src/resources/durableStages");
-const { clarificationMessage, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings } = require("../../src/resources/plannedGeneration");
+const { clarificationMessage, clarificationOptions, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings } = require("../../src/resources/plannedGeneration");
 const { resourceEvent, resourceStage } = require("../../src/resources/resourceLog");
 
 function harness(extra = {}) {
@@ -404,16 +404,16 @@ it("accepts answers about details a text leaves unstated (RES-91)", () => {
 it("shows the planner's clarification reason to the tutor", () => {
   const reason = "The prompt describes an English paper, but the subject is set to Maths. Change the subject to English";
   assert.throws(() => validatePlan({ parsed: { ...plan(), clarification: reason } }, {}, ""),
-    { code: "RESOURCE_SCOPE_CLARIFICATION", message: `${reason}. Update the request, then submit again.` });
+    { code: "RESOURCE_SCOPE_CLARIFICATION", message: `${reason}.` });
   assert.equal(clarificationMessage("  unclear\n "), "Clarify the requested topics or attach the relevant contents pages, then submit again.");
-  assert.match(clarificationMessage("x".repeat(500)), /^x{300}… Update the request/);
+  assert.match(clarificationMessage("x".repeat(500)), /^x{300}…\.?$/);
 });
 
 it("passes the selected subject to the planner and asks it to flag mismatches", async () => {
   let seen;
   const callAi = async (req) => { seen = req; return { parsed: { title: "", timeAllowed: "", clarification: "Subject mismatch: the prompt is for English but Maths is selected.", topics: [], questions: [] } }; };
   await assert.rejects(generatePlannedResource({ job: { jobId: "j", subject: "maths", year: 9, resourceType: "practice-paper", customPrompt: "English paper" }, request: { userMessage: "English paper" }, callAi }),
-    { code: "RESOURCE_SCOPE_CLARIFICATION", message: /Maths is selected\. Update the request/ });
+    { code: "RESOURCE_SCOPE_CLARIFICATION", message: /Maths is selected\.$/ });
   assert.match(seen.userMessage, /SELECTED SETTINGS: subject maths, Year 9, practice-paper/);
   assert.match(seen.systemPrompt, /different subject than the selected subject/);
 });
@@ -617,4 +617,30 @@ it("rejects an answer that says the text is needed instead of answering (RES-96)
   assert.equal(answerClaimsMissingContext({ response: "The speech's exact opening is needed to identify the addressee and explain the effect accurately." }), true);
   assert.equal(answerClaimsMissingContext({ response: "Evidence from the text is needed to support the inference." }), false);
   assert.equal(answerClaimsMissingContext({ response: "Close reading of the poem is needed for full marks." }), false);
+});
+
+it("carries the planner's suggested topics on a clarification", () => {
+  assert.throws(() => validatePlan({ parsed: { ...plan(), clarification: "Which non-linear topics should this cover?", clarificationOptions: ["Parabolas", " parabolas ", "Exponentials", 7, "x".repeat(81)] } }, {}, ""),
+    (err) => err.code === "RESOURCE_SCOPE_CLARIFICATION" && err.message === "Which non-linear topics should this cover?" && err.clarificationOptions.join() === "Parabolas,Exponentials");
+  assert.equal(clarificationOptions(Array.from({ length: 12 }, (_, i) => `Topic ${i}`)).length, 8);
+  assert.deepEqual(clarificationOptions(undefined), []);
+});
+
+it("accepts subtopics expanded from a broad topic when they quote the tutor's words", () => {
+  const message = "non linear questions for year 10 students";
+  const expanded = { title: "Non-linear", timeAllowed: "", clarification: "", clarificationOptions: [],
+    topics: [{ name: "Parabolas", evidence: "non linear" }, { name: "Exponentials", evidence: "non linear" }],
+    questions: [{ number: 1, topic: "Parabolas", section: "A", difficulty: "easy", marks: 2, sourceIds: [], estimatedMinutes: 3 }, { number: 2, topic: "Exponentials", section: "A", difficulty: "easy", marks: 2, sourceIds: [], estimatedMinutes: 3 }] };
+  validatePlan({ parsed: expanded }, { resourceType: "worksheet", customPrompt: message }, message);
+  assert.deepEqual(evidenceWarnings(expanded, message), []);
+});
+
+it("tells the planner to expand broad topics and still ask when it cannot tell", async () => {
+  let seen;
+  const callAi = async (req) => { seen = req; return { parsed: { title: "", timeAllowed: "", clarification: "Which topics?", clarificationOptions: [], topics: [], questions: [] } }; };
+  await assert.rejects(generatePlannedResource({ job: { jobId: "j", subject: "maths", year: 10, resourceType: "worksheet", customPrompt: "a worksheet" }, request: { userMessage: "a worksheet" }, callAi }), { code: "RESOURCE_SCOPE_CLARIFICATION" });
+  assert.match(seen.systemPrompt, /expand it into the subtopics normally taught at the selected year/);
+  assert.match(seen.systemPrompt, /only when no topic can be identified/);
+  assert.match(seen.systemPrompt, /never invent a textbook's contents list/);
+  assert.ok(seen.responseSchema.required.includes("clarificationOptions"));
 });

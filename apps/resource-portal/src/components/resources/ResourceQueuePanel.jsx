@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../AuthProvider";
 import {
+  answerResourceClarification,
   cancelResourceJob,
   deleteResourceJob,
   downloadResourceJob,
@@ -16,6 +17,7 @@ import ConfirmDialog from "../ConfirmDialog";
 import EmptyState from "../EmptyState";
 import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
+import ResourceClarificationForm from "./ResourceClarificationForm";
 import ResourceJobDetailsModal from "./ResourceJobDetailsModal";
 import ResourcePreviewModal from "./ResourcePreviewModal";
 import ResourceProgress from "./ResourceProgress";
@@ -60,8 +62,12 @@ const STATUS_BADGES = {
   fallback_pending: { tone: "info", label: "Retrying", icon: "refresh" },
   complete: { tone: "success", label: "Ready", icon: "check-circle" },
   failed: { tone: "danger", label: "Failed", icon: "x-circle" },
+  needsInput: { tone: "warn", label: "Needs your input", icon: "alert" },
+  answered: { tone: "neutral", label: "Answered", icon: "check-circle" },
   cancelled: { tone: "neutral", label: "Cancelled", icon: "x-circle" },
 };
+
+const CLARIFICATION_CODE = "RESOURCE_SCOPE_CLARIFICATION";
 
 const HISTORY_PAGE_SIZE = 10;
 
@@ -110,6 +116,7 @@ export default function ResourceQueuePanel({
   const [detailsTarget, setDetailsTarget] = useState(null);
   const [regenerateTarget, setRegenerateTarget] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [answeringId, setAnsweringId] = useState(null);
   const [reviseTarget, setReviseTarget] = useState(null);
   const [revising, setRevising] = useState(false);
   const [expandedStacks, setExpandedStacks] = useState(() => new Set());
@@ -120,6 +127,11 @@ export default function ResourceQueuePanel({
   const activeJobs = jobs.filter((job) => ["pending", "processing", "fallback_pending"].includes(job.status));
   const historyJobs = historySourceJobs.filter((job) =>
     ["complete", "failed", "cancelled"].includes(job.status)
+  );
+
+  // A job already built on has been answered, so it stops asking.
+  const answeredJobIds = new Set(
+    [...jobs, ...historySourceJobs].map((job) => job.derivedFromJobId).filter(Boolean)
   );
 
   const filteredHistory = useMemo(() => {
@@ -223,6 +235,22 @@ export default function ResourceQueuePanel({
       );
     } finally {
       setRegenerating(false);
+    }
+  }
+
+  async function answerClarification(job, answer) {
+    if (answeringId) return;
+    setAnsweringId(job.jobId || job.id);
+    try {
+      await answerResourceClarification(job, answer);
+      toast.success("Answer sent", "A new version is now in the live queue.");
+    } catch (answerError) {
+      toast.error(
+        "Couldn't send your answer",
+        answerError?.userMessage || answerError?.message || "Try again in a moment."
+      );
+    } finally {
+      setAnsweringId(null);
     }
   }
 
@@ -371,8 +399,11 @@ export default function ResourceQueuePanel({
               <ResourceJobRow
                 cancelling={cancellingId === (job.jobId || job.id)}
                 expanded={expandedErrors.has(job.jobId || job.id)}
+                answered={answeredJobIds.has(job.jobId || job.id)}
+                answering={answeringId === (job.jobId || job.id)}
                 job={job}
                 key={job.jobId || job.id}
+                onAnswer={isAdmin || job.createdBy === user?.uid ? answerClarification : undefined}
                 onCancel={isAdmin || job.createdBy === user?.uid ? requestCancel : undefined}
                 onDownload={download}
                 onPreview={preview.open}
@@ -448,8 +479,11 @@ export default function ResourceQueuePanel({
                         {shown.map(({ job, version, label }) => (
                           <ResourceJobRow
                             expanded={expandedErrors.has(job.jobId || job.id)}
+                            answered={answeredJobIds.has(job.jobId || job.id)}
+                            answering={answeringId === (job.jobId || job.id)}
                             job={job}
                             key={job.jobId || job.id}
+                            onAnswer={isAdmin || job.createdBy === user?.uid ? answerClarification : undefined}
                             onDownload={download}
                             onPreview={preview.open}
                             onDelete={isAdmin ? () => setDeleteTarget(job) : undefined}
@@ -612,6 +646,9 @@ export default function ResourceQueuePanel({
 }
 
 function ResourceJobRow({
+  answered = false,
+  answering = false,
+  onAnswer,
   cancelling,
   expanded,
   job,
@@ -628,7 +665,12 @@ function ResourceJobRow({
   versionLabel = "",
   versionNumber = null,
 }) {
-  const status = job.status === "complete" && job.reviewStatus === "draft"
+  // Asking a question rather than failing: Retry would only ask it again.
+  const awaitingInput = job.status === "failed" && job.errorCode === CLARIFICATION_CODE;
+  const needsInput = awaitingInput && !answered;
+  const status = awaitingInput
+    ? STATUS_BADGES[answered ? "answered" : "needsInput"]
+    : job.status === "complete" && job.reviewStatus === "draft"
     ? { tone: "warn", label: "Draft available", icon: "alert" }
     : job.status === "complete" && job.reviewStatus === "warnings"
     ? { tone: "warn", label: "Review recommended", icon: "alert" }
@@ -653,7 +695,7 @@ function ResourceJobRow({
   const showRegenerate = isComplete && Boolean(onRegenerate);
   const showRevise = isComplete && Boolean(onRevise);
   const showDelete = Boolean(onDelete) && isFinished;
-  const showRetry = ["failed", "cancelled"].includes(job.status) && Boolean(onRetry);
+  const showRetry = ["failed", "cancelled"].includes(job.status) && Boolean(onRetry) && !awaitingInput;
   const hasActions =
     Boolean(onViewDetails) ||
     showPreview ||
@@ -666,7 +708,7 @@ function ResourceJobRow({
     (isActive && Boolean(onCancel));
 
   return (
-    <li className={`rg-job rg-job-${generating && job.status === "pending" ? "processing" : job.status || "pending"}`}>
+    <li className={`rg-job rg-job-${awaitingInput ? "needs-input" : generating && job.status === "pending" ? "processing" : job.status || "pending"}`}>
       <div className="rg-job-status" aria-hidden="true">
         <Icon name={status.icon} size={16} />
       </div>
@@ -712,7 +754,14 @@ function ResourceJobRow({
           </div>
         </div>
         {isActive ? <ResourceProgress job={job} /> : null}
-        {job.status === "failed" && job.error ? (
+        {needsInput && onAnswer ? (
+          <ResourceClarificationForm
+            busy={answering}
+            job={job}
+            onEdit={onEdit}
+            onSubmit={(answer) => onAnswer(job, answer)}
+          />
+        ) : job.status === "failed" && job.error ? (
           job.errorDetail ? (
             <div className="rg-error">
               <button
