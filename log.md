@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-11 | [Mobile 3.5.0 (build 524)](#2026-11-11--mobile-350-build-524) |
 | 2026-11-11 | [Warnings only flag problems in the finished resource (RES-106)](#2026-11-11--warnings-only-flag-problems-in-the-finished-resource-res-106) |
 | 2026-11-10 | [Files no Function loads no longer force a full deploy (TP-46)](#2026-11-10--files-no-function-loads-no-longer-force-a-full-deploy-tp-46) |
 | 2026-11-10 | [Vague resource requests ask the tutor instead of failing (RES-105)](#2026-11-10--vague-resource-requests-ask-the-tutor-instead-of-failing-res-105) |
@@ -244,6 +245,20 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-11 — Mobile 3.5.0 (build 524)
+
+**What changed**
+- Bumped the mobile app from `3.4.0+523` to `3.5.0+524` with `scripts/release.sh bump 3.5.0`.
+- Ships group chat names, the participants list, adding and removing members, and leaving a group (MOB-70).
+- `scripts/release.sh ship` now fills the en-AU "What's new" and answers export compliance itself. Both had to be fixed by hand for 3.4.0.
+- "What's new" in both stores:
+  > • See who's in a group chat, and leave a group whenever you like.
+  > • Tutors and admins can name group chats and add or remove members.
+
+**Status:** Live. Submitted for review on the App Store (released automatically on approval) and sent to Google Play production (released once Google approves it).
 
 ---
 

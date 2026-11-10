@@ -103,7 +103,9 @@ def app_store_submit(version:, notes:, submit:, ipa: nil, build: nil)
     skip_binary_upload: ipa.nil?,
     build_number: build&.to_s,
     app_version: version,
-    release_notes: { "default" => notes },
+    # Keyed by the listing's own locale: "default" leaves en-AU "What's new"
+    # empty, and App Store Connect then refuses the submission.
+    release_notes: { "en-AU" => notes },
     skip_screenshots: true,
     skip_metadata: false,
     force: true,
@@ -112,7 +114,8 @@ def app_store_submit(version:, notes:, submit:, ipa: nil, build: nil)
     automatic_release: true,
     precheck_include_in_app_purchases: false,
     run_precheck_before_submit: false,
-    submission_information: { add_id_info_uses_idfa: false }
+    # Standard HTTPS only, and not distributed in France.
+    submission_information: { add_id_info_uses_idfa: false, export_compliance_uses_encryption: false }
   )
 end
 
