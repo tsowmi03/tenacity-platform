@@ -17,3 +17,10 @@ export function ResourceRoute({ children }) {
 
   return children;
 }
+
+// RES-104. The bank's admin page. A tutor who follows a link lands on the
+// resources page; the callable refuses non-admins regardless.
+export function AdminRoute({ children }) {
+  const { isAdmin } = useAuth();
+  return <ResourceRoute>{isAdmin ? children : <Navigate to="/" replace />}</ResourceRoute>;
+}

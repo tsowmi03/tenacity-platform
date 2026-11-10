@@ -423,10 +423,35 @@ export function flagBankQuestion({ jobId, questionId, reason, note }) {
 }
 
 // Admin only.
-export function listBankFlags() {
-  return callFunction("manageQuestionBank", { action: "listFlags" });
-}
-
 export function resolveBankFlag({ flagId, resolution, updates }) {
   return callFunction("manageQuestionBank", { action: "resolve", flagId, resolution, ...(updates ? { updates } : {}) });
+}
+
+// RES-104. The admin Question bank page. Every call below is admin only.
+export function getBankOptions() {
+  return callFunction("manageQuestionBank", { action: "bankOptions" });
+}
+
+export function browseBank({ bank, status, filters, cursor }) {
+  return callFunction("manageQuestionBank", { action: "browseBank", bank, status, filters, ...(cursor ? { cursor } : {}) });
+}
+
+export function getBankImages({ bank, ids }) {
+  return callFunction("manageQuestionBank", { action: "bankImages", bank, ids });
+}
+
+export function getBankRecord({ bank, id }) {
+  return callFunction("manageQuestionBank", { action: "bankRecord", bank, id });
+}
+
+export function hideBankRecord({ bank, id }) {
+  return callFunction("manageQuestionBank", { action: "hideRecord", bank, id });
+}
+
+export function restoreBankRecord({ bank, id }) {
+  return callFunction("manageQuestionBank", { action: "restoreRecord", bank, id });
+}
+
+export function editBankRecord({ bank, id, updates }) {
+  return callFunction("manageQuestionBank", { action: "editRecord", bank, id, updates });
 }

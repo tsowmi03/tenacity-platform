@@ -6,9 +6,9 @@
 // themes and quotes right. Kept apart from the stimulus bank: these are study
 // guides, not texts students respond to.
 
+const { SET_TEXTS_COLLECTION } = require("./collections");
 const { ALL_TECHNIQUES } = require("./taxonomy");
 
-const SET_TEXTS_COLLECTION = "englishSetTexts";
 const SET_TEXT_FORMS = Object.freeze(["novel", "play", "poem", "short_story", "nonfiction", "other"]);
 const MAX_SOURCE_CHARS = 300000;
 

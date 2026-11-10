@@ -43,6 +43,7 @@ const { adminAppOptions, loadApiKeys } = require("./lib/questionBankAuth");
 const { MAX_BATCH_BYTES, batchCostOf, collectResults, submitBatch, waitForBatch } = require("../src/questionBank/batches");
 const { createDriveClient, createImpersonatedTokenProvider } = require("../src/questionBank/driveSource");
 const { QUESTIONS_COLLECTION, majorityYearLevel, parseRequestId, requestId, toQuestionDocs } = require("../src/questionBank/extraction");
+const { withAdminChanges } = require("../src/questionBank/adminChanges");
 const { cropFigure, openPdf } = require("../src/questionBank/pages");
 const { EXTRACT_MAX_TOKENS, QUESTION_BANK_MODEL, SORT_MAX_TOKENS, buildExtractParams, buildSortParams, readMessage } = require("../src/questionBank/prompts");
 const { fetchSourcePdf } = require("../src/questionBank/sourceFiles");
@@ -247,7 +248,9 @@ async function writeSourceQuestions({ run, db, bucket, sourceId, entries }) {
       if (docs.length) {
         const hiRes = await pdf.renderHiResPage(page.pageNumber);
         const batch = db.batch();
-        for (const doc of docs) {
+        // RES-104: a re-extracted question keeps an admin's hide and corrections.
+        const merged = await withAdminChanges(db, docs.map((doc) => ({ collection: QUESTIONS_COLLECTION, ...doc })));
+        for (const doc of merged) {
           for (const figure of doc.data.figures) {
             if (figure.sharedFrom) continue; // its parent's crop, cut above
             const png = await cropFigure(hiRes, figure.box, page.width);

@@ -3,9 +3,7 @@ import { useAuth } from "../AuthProvider";
 import { subscribeResourceJobHistory, subscribeResourceJobs, submitResourceJob } from "../backend/resourcesApi";
 import { normalizeBackendError } from "../backend/callable";
 import { listStudents } from "../backend/studentsApi";
-import Button from "../components/Button";
 import PageHeader from "../components/PageHeader";
-import BankFlagsModal from "../components/resources/BankFlagsModal";
 import ResourceJobBuilder from "../components/resources/ResourceJobBuilder";
 import ResourceQueuePanel from "../components/resources/ResourceQueuePanel";
 import { useToast } from "../components/ToastProvider";
@@ -32,7 +30,6 @@ function jobPayload(row) {
 export default function ResourcesPage() {
   const { user, isAdmin } = useAuth();
   const toast = useToast();
-  const [flagsOpen, setFlagsOpen] = useState(false);
   const [students, setStudents] = useState([]);
   const [studentsLoading, setStudentsLoading] = useState(true);
   const [studentsError, setStudentsError] = useState("");
@@ -147,11 +144,7 @@ export default function ResourcesPage() {
         crumbs={[]}
         title="Teaching resources"
         subtitle="Generate branded teaching resources as ready-to-print DOCX files."
-        actions={isAdmin ? (
-          <Button icon="alert" onClick={() => setFlagsOpen(true)} variant="secondary">Flagged questions</Button>
-        ) : null}
       />
-      {isAdmin ? <BankFlagsModal onClose={() => setFlagsOpen(false)} open={flagsOpen} /> : null}
 
       {studentsError ? (
         <div className="banner banner-danger mb-5">

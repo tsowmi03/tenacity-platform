@@ -6,4 +6,5 @@ module.exports = Object.freeze({
   STIMULI_COLLECTION: "englishStimuli",
   QUESTIONS_COLLECTION: "englishQuestions",
   GUIDES_COLLECTION: "englishGuides",
+  SET_TEXTS_COLLECTION: "englishSetTexts",
 });

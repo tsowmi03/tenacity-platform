@@ -1,9 +1,10 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "./components/ToastProvider";
-import { ResourceRoute } from "./ProtectedRoute";
+import { AdminRoute, ResourceRoute } from "./ProtectedRoute";
 import ResourcePortalShell from "./layout/ResourcePortalShell";
 import LoginPage from "./pages/LoginPage";
+import QuestionBankPage from "./pages/QuestionBankPage";
 import ResourcesPage from "./pages/ResourcesPage";
 
 function ResourcePortalPage() {
@@ -16,6 +17,16 @@ function ResourcePortalPage() {
   );
 }
 
+function QuestionBankRoute() {
+  return (
+    <AdminRoute>
+      <ResourcePortalShell>
+        <QuestionBankPage />
+      </ResourcePortalShell>
+    </AdminRoute>
+  );
+}
+
 export default function App() {
   return (
     <ToastProvider>
@@ -23,6 +34,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<ResourcePortalPage />} />
+          <Route path="/question-bank" element={<QuestionBankRoute />} />
           {/* The resource surface lived at /resources while it was part of the
               admin bundle. Keep that path working on this origin so an old
               in-portal bookmark still lands somewhere useful. */}

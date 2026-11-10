@@ -44,6 +44,7 @@ const { openPdf } = require("../src/questionBank/pages");
 const { fetchSourcePdf } = require("../src/questionBank/sourceFiles");
 const { ENGLISH_BANK_MODEL, PAGE_MAX_TOKENS, buildPageParams, readMessage } = require("../src/englishBank/prompts");
 const { GUIDES_COLLECTION, QUESTIONS_COLLECTION, STIMULI_COLLECTION, toGuideDocs, toPaperDocs } = require("../src/englishBank/records");
+const { withAdminChanges } = require("../src/questionBank/adminChanges");
 const { loadFirebaseSecrets, loadLocalSecrets } = require("./liveResourceSmoke");
 
 const SOURCES_COLLECTION = "englishBankSources";
@@ -347,7 +348,8 @@ async function writeSource(run, source, { db, bucket, local }) {
     for (const crop of crops) await bucket.file(crop.storagePath).save(crop.png, { contentType: "image/png", resumable: false });
     for (let start = 0; start < records.length; start += 400) {
       const batch = db.batch();
-      for (const record of records.slice(start, start + 400)) {
+      // RES-104: a re-extracted record keeps an admin's hide and corrections.
+      for (const record of await withAdminChanges(db, records.slice(start, start + 400))) {
         batch.set(db.collection(record.collection).doc(record.id), { ...record.data, extractedAt: admin.firestore.FieldValue.serverTimestamp() });
       }
       await batch.commit();
