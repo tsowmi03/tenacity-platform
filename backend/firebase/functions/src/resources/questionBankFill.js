@@ -148,6 +148,11 @@ function answerRowsFor(parsed, group) {
   return Array.isArray(rows) ? rows : null;
 }
 
+function hasAnswerRows(answers) {
+  if (Array.isArray(answers)) return answers.length > 0;
+  return Boolean(answers && typeof answers === "object" && Object.values(answers).some((rows) => Array.isArray(rows) && rows.length));
+}
+
 function rowsMatching(rows, { number, partLabel, group }) {
   const label = (value) => String(value || "").replace(/[()]/g, "");
   return rows.filter((row) => row?.questionNumber === number &&
@@ -187,7 +192,10 @@ function bankSlots(parsed) {
   };
   walk(parsed, { list: false, group: null });
 
-  const hasAnswers = Boolean(parsed?.answers);
+  // RES-109. A resource made with no answers still carries an empty answer
+  // list. Counting that as answers sent every slot looking for a row that
+  // could never exist, so no-answers resources never used the bank.
+  const hasAnswers = hasAnswerRows(parsed?.answers);
   const slots = [];
   const ineligible = [];
   // A booklet's sub-topic and quiz section can share a title; their answers

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-12 | [No-answers maths resources use the question bank again (RES-109)](#2026-11-12--no-answers-maths-resources-use-the-question-bank-again-res-109) |
 | 2026-11-12 | [Question totals come from the planner, not a regex (RES-108)](#2026-11-12--question-totals-come-from-the-planner-not-a-regex-res-108) |
 | 2026-11-11 | [Bank diagrams cleaned to black, white and grey (RES-107)](#2026-11-11--bank-diagrams-cleaned-to-black-white-and-grey-res-107) |
 | 2026-11-11 | [Mobile 3.5.0 (build 524)](#2026-11-11--mobile-350-build-524) |
@@ -247,6 +248,22 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-12 — No-answers maths resources use the question bank again (RES-109)
+
+**What changed**
+- A maths resource made with no answers now gets textbook diagrams from the
+  question bank, like resources with answers. Nothing is added to its answers.
+
+**Why:** A resource with no answers still carries an empty answer list. The
+bank step counted that as having answers, looked for each question's answer
+row, found none and skipped every question, so all diagrams were drawn. This
+had happened since 5 November (RES-71). A Year 9 paper today had all 12
+diagrams drawn and 3 of them left out.
+
+**Status:** Live. Functions deployed to production on merge.
 
 ---
 

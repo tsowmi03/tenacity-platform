@@ -145,6 +145,19 @@ describe("question bank fill: choosing slots", () => {
     assert.deepEqual(ineligible, [{ questionNumber: 1, reason: "answer_row_unclear" }]);
   });
 
+  // RES-109. A Year 9 paper with no answers had all 12 diagram questions
+  // skipped as answer_row_unclear and every diagram drawn.
+  it("offers slots in a resource made with no answers", () => {
+    const question = (n) => ({ number: n, stem: `Q${n}`, type: "short-answer", options: null, marks: 2, diagram: null, diagramType: "right-triangle", parts: null });
+    for (const answers of [[], { subTopicAnswers: [], endQuizAnswers: [] }]) {
+      const parsed = { sections: [{ title: "A", questions: [question(1), question(2)] }], answers };
+      const { slots, ineligible } = bankSlots(parsed);
+      assert.deepEqual(slots.map((s) => s.number), [1, 2]);
+      assert.ok(slots.every((s) => s.answers === null && s.answerRows.length === 0), "no answer rows are touched");
+      assert.deepEqual(ineligible, []);
+    }
+  });
+
   it("asks for harder questions later in the resource", () => {
     assert.deepEqual([0, 3, 6].map((i) => difficultyAt(i, 9)), ["easy", "medium", "hard"]);
     assert.equal(difficultyAt(0, 2), null);
@@ -175,6 +188,15 @@ describe("question bank fill: swapping questions", () => {
     assert.equal(result.answerRows.length, 10);
     assert.equal(env.calls[0].userMessage.filter((block) => block.type === "image").length, 3, "the model sees every candidate");
     assert.ok(env.calls.every((call) => call.bestEffort && call.concurrent), "bank calls are best effort and may run side by side");
+  });
+
+  it("swaps in textbook diagrams for a resource made with no answers, without adding answers (RES-109)", async () => {
+    const parsed = { ...worksheet(3), answers: [] };
+    const env = setup({ choose: fits, check: agrees });
+    const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    assert.equal(result.used.length, 3);
+    assert.equal(parsed.questions[0].diagram.type, "source-image");
+    assert.deepEqual(parsed.answers, []);
   });
 
   it("replaces a question whose parts share its diagram with one question and one answer", async () => {
