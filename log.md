@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-11 | [Bank diagrams cleaned to black, white and grey (RES-107)](#2026-11-11--bank-diagrams-cleaned-to-black-white-and-grey-res-107) |
 | 2026-11-11 | [Mobile 3.5.0 (build 524)](#2026-11-11--mobile-350-build-524) |
 | 2026-11-11 | [Warnings only flag problems in the finished resource (RES-106)](#2026-11-11--warnings-only-flag-problems-in-the-finished-resource-res-106) |
 | 2026-11-10 | [Files no Function loads no longer force a full deploy (TP-46)](#2026-11-10--files-no-function-loads-no-longer-force-a-full-deploy-tp-46) |
@@ -245,6 +246,26 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-11 — Bank diagrams cleaned to black, white and grey (RES-107)
+
+**What changed**
+- New script `questionBankCropCleanup.js` cleans every maths bank diagram crop. Each label and value stays where it was, and the result is black, white and grey only.
+- Haiku classifies each crop. The script then removes page tints, re-renders slide crops on white and black so white labels survive, erases stray marks near the edges, and maps colours to distinct greys. A second Haiku pass compares each result with the original.
+- Crops that pass are saved as new files beside the originals. Their questions point at the new file, with the old path kept in `originalStoragePath`. Originals are never overwritten.
+- The script can hide questions whose crop has handwriting, wrong symbols (such as ξ) or nothing usable, stamping them `hiddenBy: res-107-crop-cleanup` with a `hiddenReason`. Admins can restore them from the question bank page. `--no-hides` skips this step.
+- Crops that fail the comparison are left as they are. A gradient background without a source slide is tried rather than hidden. A question that names a colour is hidden only when its crop has colour to lose.
+- `--stage=rollback` undoes every change from Firestore alone. The run goes in resumable waves (`--limit`) under a spending cap (`--cap`).
+- `questionBankCropCleanupTest.js` (the 505-crop sample) now shares its code with the bank-wide script.
+
+**Why:** Bank diagrams came with coloured page tints, slide backgrounds, stray marks and colour fills that print badly and look inconsistent in resources.
+
+**Status:** Live in production (12 Nov). Of 71,140 crops, 33,373 were cleaned, 32,549 were already clean and 1,260 failed the check and were left as they were. Cost $11.88. The 3,957 crops flagged as unusable were hidden, which hid 5,182 questions. About a third of them looked usable in a sample, and admins can restore those one by one.
+
+**Next steps**
+- Newly extracted crops are not cleaned yet. Running the same clean-up inside extraction would keep new sources consistent (about a day).
 
 ---
 

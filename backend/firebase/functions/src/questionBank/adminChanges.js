@@ -7,7 +7,7 @@
 
 // Who did what to a record, and the flag history. Extraction never sets these.
 const ADMIN_FIELDS = Object.freeze([
-  "hiddenBy", "hiddenAt", "hiddenWith", "restoredBy", "restoredAt", "editedBy", "editedAt", "adminEditedFields",
+  "hiddenBy", "hiddenAt", "hiddenWith", "hiddenReason", "restoredBy", "restoredAt", "editedBy", "editedAt", "adminEditedFields",
   "flagCount", "lastFlaggedAt",
 ]);
 
