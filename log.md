@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-12 | [Question totals come from the planner, not a regex (RES-108)](#2026-11-12--question-totals-come-from-the-planner-not-a-regex-res-108) |
 | 2026-11-11 | [Bank diagrams cleaned to black, white and grey (RES-107)](#2026-11-11--bank-diagrams-cleaned-to-black-white-and-grey-res-107) |
 | 2026-11-11 | [Mobile 3.5.0 (build 524)](#2026-11-11--mobile-350-build-524) |
 | 2026-11-11 | [Warnings only flag problems in the finished resource (RES-106)](#2026-11-11--warnings-only-flag-problems-in-the-finished-resource-res-106) |
@@ -246,6 +247,27 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-12 — Question totals come from the planner, not a regex (RES-108)
+
+**What changed**
+- The planner now says how many questions the request asks for in total, and
+  quotes the words it worked that out from. It adds up counts given per
+  section, per difficulty, per topic or per question type, plus any extra
+  section such as a final mock exam.
+- The plan must match the planner's own total. A plan that drifts from it is
+  retried with a reason that says exactly what to fix.
+- The old pattern match that pulled a number out of the prompt is now only a
+  hint. If it disagrees, a warning is logged and the job carries on.
+
+**Why:** A Year 9 paper asked for "3 Easy, 3 Medium and 2 Hard questions" per
+topic plus a mock exam of "10 multiple-choice and 6 short-answer questions".
+The pattern match read that as exactly 6 questions, rejected every
+48-question plan, and failed the job with a misleading message.
+
+**Status:** Live. Functions deployed to production on merge.
 
 ---
 
