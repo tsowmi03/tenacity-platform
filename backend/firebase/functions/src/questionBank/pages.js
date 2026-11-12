@@ -179,10 +179,10 @@ async function cleanCrop(png) {
 }
 
 /**
- * Crops a box given in model-page pixels from the high-resolution render and
- * cleans it. `modelWidth` is the model page's width, to scale the box.
+ * Crops a box given in model-page pixels from the high-resolution render.
+ * `modelWidth` is the model page's width, to scale the box.
  */
-async function cropFigure(hiRes, box, modelWidth) {
+async function extractFigure(hiRes, box, modelWidth) {
   const meta = await sharp(hiRes).metadata();
   const scale = meta.width / modelWidth;
   const pad = Math.round(meta.width * CROP_PADDING);
@@ -190,8 +190,11 @@ async function cropFigure(hiRes, box, modelWidth) {
   const top = Math.max(0, Math.round(box.y0 * scale) - pad);
   const width = Math.min(meta.width - left, Math.round((box.x1 - box.x0) * scale) + 2 * pad);
   const height = Math.min(meta.height - top, Math.round((box.y1 - box.y0) * scale) + 2 * pad);
-  const crop = await sharp(hiRes).extract({ left, top, width, height }).png().toBuffer();
-  return cleanCrop(crop);
+  return sharp(hiRes).extract({ left, top, width, height }).png().toBuffer();
+}
+
+async function cropFigure(hiRes, box, modelWidth) {
+  return cleanCrop(await extractFigure(hiRes, box, modelWidth));
 }
 
 module.exports = {
@@ -199,6 +202,7 @@ module.exports = {
   clampBox,
   cleanCrop,
   cropFigure,
+  extractFigure,
   inkShare,
   openPdf,
   pageCount,
