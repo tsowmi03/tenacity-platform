@@ -281,7 +281,10 @@ async function searchSlots({ job, slots, bank, embed }) {
         }), SEARCH_TIMEOUT_MS);
         searched[key] = { candidates: shortlist(found, year).map(savedStimulus) };
       } catch (err) {
-        if (isFatal(err)) throw err;
+        if (isFatal(err)) {
+          if (changed) await store.save({ searched });
+          throw err;
+        }
         searched[key] = { candidates: [], failed: clean(err?.message || err).slice(0, 120) || "search failed" };
       }
       changed = true;
@@ -645,7 +648,10 @@ async function sourceSetFromBank({
   let embed = bank.embed;
   if (!embed && openaiApiKey) {
     const OpenAI = loadOpenAi().default;
-    embed = createEmbedder({ client: new OpenAI({ apiKey: openaiApiKey }) });
+    const defaultEmbed = createEmbedder({ client: new OpenAI({ apiKey: openaiApiKey, ...(bank.providerBudget ? { maxRetries: 0 } : {}) }) });
+    embed = bank.providerBudget
+      ? (text) => bank.providerBudget.run("openai", () => defaultEmbed(text))
+      : defaultEmbed;
   }
   if (!embed) {
     slots.forEach((slot) => fallback(slot, "bank_unavailable"));

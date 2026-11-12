@@ -284,6 +284,7 @@ function createMemoryDb(initialJobs) {
   return {
     jobs,
     collection(name) {
+      if (name === "config") return { doc: () => ({ __type: "missing-config" }) };
       if (name !== "resourceJobs") {
         throw new Error(`Unexpected smoke-test collection: ${name}`);
       }
@@ -299,6 +300,7 @@ function createMemoryDb(initialJobs) {
     runTransaction(callback) {
       const transaction = {
         async get(target) {
+          if (target?.__type === "missing-config") return { exists: false, data: () => undefined };
           if (target?.__type === "ref") {
             const job = jobs.find((item) => item.id === target.id);
             return { exists: Boolean(job), data: () => ({ ...job, jobId: target.id }) };

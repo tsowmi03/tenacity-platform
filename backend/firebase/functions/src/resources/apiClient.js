@@ -234,6 +234,7 @@ async function callAnthropicForResource({
   posthogProperties,
   posthogTraceId,
   posthogDistinctId,
+  maxRetries,
   createClient = createDefaultAnthropicClient,
 }) {
   if (!apiKey) throw new TypeError("callAnthropicForResource requires apiKey");
@@ -281,7 +282,7 @@ async function callAnthropicForResource({
     if (Object.keys(outputConfig).length) request.output_config = outputConfig;
     // Passing `signal` lets the caller abort an in-flight generation (e.g. when a
     // tutor stops a job). When aborted the SDK rejects with APIUserAbortError.
-    const options = signal ? { signal } : undefined;
+    const options = signal || maxRetries !== undefined ? { ...(signal ? { signal } : {}), ...(maxRetries !== undefined ? { maxRetries } : {}) } : undefined;
     const send = async (body) => (shouldStreamResponse(maxTokens)
       ? streamResponseText(await client.messages.create({ ...body, stream: true }, options))
       : client.messages.create(body, options));

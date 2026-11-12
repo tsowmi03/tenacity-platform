@@ -6,12 +6,19 @@ const assert = require("node:assert/strict");
 const {
   claimNextPendingJobForTutor,
   finalizeResourceJobAttempt,
+  processResourceJobImpl,
+  processResourceFallbackImpl,
   recoverStuckResourceJobsImpl,
 } = require("../../src/resources");
+const { createProviderBudget } = require("../../src/resources/providerBudget");
 const { createDurableCaller } = require("../../src/resources/durableStages");
 const { getAdmin, clearCollection } = require("../helpers/emulator");
 
 const clock = () => new Date("2026-06-11T00:00:00.000Z");
+const providerLimits = {
+  anthropic: { maxConcurrent: 4, maxStartsPerMinute: 12 },
+  openai: { maxConcurrent: 2, maxStartsPerMinute: 4 },
+};
 
 describe("resource queue concurrency (firestore emulator)", () => {
   let db;
@@ -22,10 +29,14 @@ describe("resource queue concurrency (firestore emulator)", () => {
 
   beforeEach(async () => {
     await clearCollection(db, "resourceJobs");
+    await clearCollection(db, "resourceProviderBudgets");
+    await db.doc("config/resourceQueue").delete();
   });
 
   after(async () => {
     await clearCollection(db, "resourceJobs");
+    await clearCollection(db, "resourceProviderBudgets");
+    await db.doc("config/resourceQueue").delete();
   });
 
   it("allows only one simultaneous claim for a tutor", async () => {
@@ -69,6 +80,129 @@ describe("resource queue concurrency (firestore emulator)", () => {
       .where("status", "==", "processing")
       .get();
     assert.equal(processing.size, 1);
+  });
+
+  it("admits two distinct turns for a pilot tutor and drains safely when the flag is removed", async () => {
+    const jobs = db.collection("resourceJobs");
+    await db.doc("config/resourceQueue").set({ twoTurnTutorUids: ["pilot"], providerLimits });
+    await Promise.all(["a", "b", "c", "d"].map((id) => jobs.doc(id).set({
+      createdBy: id === "d" ? "other" : "pilot", status: "pending", createdAt: clock(),
+    })));
+    const claim = (createdBy = "pilot") => claimNextPendingJobForTutor({ db, createdBy, clock });
+    const first = await claim();
+    assert.equal(first.extraTurn, false);
+    assert.ok((await jobs.doc("b").get()).data().queueWakeId);
+    const concurrent = await Promise.all([claim(), claim(), claim("other")]);
+    assert.deepEqual(concurrent.filter((job) => job?.createdBy === "pilot").map((job) => job.jobId), ["b"]);
+    const second = concurrent.find((job) => job?.jobId === "b");
+    assert.equal(second.extraTurn, true);
+    assert.equal(concurrent.find((job) => job?.jobId === "d").extraTurn, false);
+
+    await db.doc("config/resourceQueue").update({ twoTurnTutorUids: [] });
+    await finalizeResourceJobAttempt({ db, clock, jobId: first.jobId, attemptId: first.attemptId, patch: { status: "complete" } });
+    assert.equal(await claim(), null);
+    await finalizeResourceJobAttempt({ db, clock, jobId: second.jobId, attemptId: second.attemptId, patch: { status: "complete" } });
+    assert.equal((await claim()).jobId, "c");
+  });
+
+  it("skips a deferred or fallback job while filling both pilot turns in queue order", async () => {
+    const jobs = db.collection("resourceJobs");
+    await db.doc("config/resourceQueue").set({ twoTurnTutorUids: ["pilot"], providerLimits });
+    const write = (id, status, fields = {}) => jobs.doc(id).set({
+      createdBy: "pilot", status, createdAt: clock(), ...fields,
+    });
+    await Promise.all([
+      write("deferred", "pending", { queueNotBefore: new Date(clock().getTime() + 30_000) }),
+      write("fallback", "fallback_pending"),
+      write("continuation", "pending", { queueTurnAt: new Date(clock().getTime() + 500), stageContinuation: true }),
+      write("fresh", "pending"),
+    ]);
+    const claim = () => claimNextPendingJobForTutor({ db, createdBy: "pilot", clock });
+    assert.equal((await claim()).jobId, "fresh");
+    assert.equal((await claim()).jobId, "continuation");
+    assert.equal(await claim(), null);
+  });
+
+  it("resumes a capacity-deferred job through the normal update handler without spending a content retry", async () => {
+    const start = clock().getTime();
+    let time = start;
+    await db.doc("config/resourceQueue").set({ twoTurnTutorUids: ["pilot"], providerLimits });
+    const ref = db.doc("resourceJobs/deferred");
+    const pending = { createdBy: "pilot", status: "pending", createdAt: clock(), generationVersion: 1 };
+    await ref.set(pending);
+    const deps = {
+      db,
+      clock: () => new Date(time),
+      durableStages: true,
+      resourceLogSink: () => {},
+      startCancelWatcher: () => ({ isCancelled: () => false, stop() {} }),
+      generationPipeline: async () => {
+        if (time < start + 2_000) throw Object.assign(new Error("waiting"), {
+          code: "RESOURCE_STAGE_YIELD", resourceControl: true, queueNotBeforeMs: start + 2_000,
+        });
+        return { outputPath: "generated.docx" };
+      },
+    };
+    const event = { data: { data: () => pending } };
+    await processResourceJobImpl({ event, deps });
+    const deferred = (await ref.get()).data();
+    assert.equal(deferred.status, "pending");
+    assert.equal(deferred.queueNotBefore.toMillis(), start + 2_000);
+    assert.equal(deferred.stageRecoveryCount, undefined);
+    assert.deepEqual(await processResourceJobImpl({ event, deps }), []);
+    time += 2_000;
+    await recoverStuckResourceJobsImpl({ deps });
+    const woken = (await ref.get()).data();
+    await processResourceFallbackImpl({ event: { data: { before: { data: () => deferred }, after: { data: () => woken } } }, deps });
+    const ready = (await ref.get()).data();
+    assert.equal(ready.status, "complete");
+    assert.equal(ready.attemptCount, 1);
+    assert.equal(ready.queueElapsedMs, 2_000);
+    assert.equal(ready.outputPath, "generated.docx");
+  });
+
+  it("shares provider permits across workers and keeps capacity for another tutor's first turn", async () => {
+    let now = clock().getTime();
+    const budget = (extraTurn) => createProviderBudget({
+      db, job: { jobId: "test", resourceLogSink: () => {} }, limits: providerLimits, extraTurn, clock: () => now,
+    });
+    const extra = await budget(true).acquire("openai");
+    await assert.rejects(budget(true).acquire("openai"), { code: "RESOURCE_STAGE_YIELD" });
+    const first = await budget(false).acquire("openai");
+    await assert.rejects(budget(false).acquire("openai"), { code: "RESOURCE_STAGE_YIELD" });
+
+    await extra({ status: 429, headers: { "retry-after": "7" } });
+    await first();
+    await assert.rejects(budget(false).acquire("openai"), { queueNotBeforeMs: now + 7_000 });
+    now += 7_000;
+    await (await budget(true).acquire("openai"))();
+    await assert.rejects(budget(true).acquire("openai"), { code: "RESOURCE_STAGE_YIELD" });
+    await (await budget(false).acquire("openai"))();
+    await assert.rejects(budget(false).acquire("openai"), { code: "RESOURCE_STAGE_YIELD" });
+    now += 60_000;
+    await (await budget(false).acquire("openai"))();
+  });
+
+  it("counts each transient retry as a request start and defers a retry over the rate cap", async () => {
+    const now = clock().getTime();
+    const budget = createProviderBudget({ db, job: { jobId: "test", resourceLogSink: () => {} }, limits: providerLimits, extraTurn: false, clock: () => now });
+    const starts = async () => ((await db.collection("resourceProviderBudgets").doc("openai").get()).data()?.starts || []).length;
+    const overloaded = () => Object.assign(new Error("overloaded"), { status: 503 });
+
+    let calls = 0;
+    const result = await budget.run("openai", async () => { calls += 1; if (calls === 1) throw overloaded(); return "ok"; }, { delayMs: () => 0 });
+    assert.equal(result, "ok");
+    assert.equal(await starts(), 2, "the first request and its retry");
+
+    // openai allows 4 starts a minute: one more is admitted, its retry is not.
+    calls = 0;
+    await (await budget.acquire("openai"))();
+    await assert.rejects(budget.run("openai", async () => { calls += 1; throw overloaded(); }, { delayMs: () => 0 }),
+      { code: "RESOURCE_STAGE_YIELD", queueNotBeforeMs: now + 60_000 });
+    assert.equal(calls, 1, "the retry over the cap was not sent");
+    assert.equal(await starts(), 4);
+    const leases = (await db.collection("resourceProviderBudgets").doc("openai").get()).data().leases;
+    assert.deepEqual(leases, {}, "the deferred call released its concurrency permit");
   });
 
   it("rejects finalisation after another attempt has taken the lease", async () => {

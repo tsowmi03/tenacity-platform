@@ -45,6 +45,7 @@ const {
   throwIfCancelled,
 } = require("./cancellation");
 const { diagramOwnerLabel, repairDiagrams } = require("./diagramRepair");
+const { createProviderBudget, queuePolicy } = require("./providerBudget");
 const { QUESTION_BANK_MODES, applyQuestionBank, questionBankModeFor } = require("./questionBankFill");
 const { cloneWithSourceImages, loadSourceImages, withoutSourceImageBytes } = require("./sourceImages");
 const { sourcePassageFromBank, sourceSetFromBank } = require("./englishBankSourcing");
@@ -1254,21 +1255,16 @@ async function claimNextPendingJobForTutor({
   if (!createdBy) throw new TypeError("claimNextPendingJobForTutor requires createdBy");
 
   return db.runTransaction(async (tx) => {
+    const config = await tx.get(db.collection("config").doc("resourceQueue"));
+    const policy = queuePolicy(config.data(), createdBy);
     const processingQuery = db
       .collection("resourceJobs")
       .where("createdBy", "==", createdBy)
       .where("status", "==", "processing")
-      .limit(1);
+      .limit(policy.maxTurns);
     const processingSnap = await tx.get(processingQuery);
-    if (!processingSnap.empty) return null;
-
-    const fallbackQuery = db
-      .collection("resourceJobs")
-      .where("createdBy", "==", createdBy)
-      .where("status", "==", "fallback_pending")
-      .limit(1);
-    const fallbackSnap = await tx.get(fallbackQuery);
-    if (!fallbackSnap.empty) return null;
+    const activeTurns = processingSnap.docs.length;
+    if (activeTurns >= policy.maxTurns) return null;
 
     const pendingQuery = db
       .collection("resourceJobs")
@@ -1283,7 +1279,12 @@ async function claimNextPendingJobForTutor({
       const value = data.queueTurnAt || data.createdAt;
       return value?.toMillis?.() ?? (Number(value) || 0);
     };
-    const pendingDoc = [...pendingSnap.docs].sort((a, b) => queueTime(a) - queueTime(b))[0];
+    const startedDate = clock ? clock() : new Date();
+    const ready = pendingSnap.docs
+      .filter((doc) => timestampMs(doc.data().queueNotBefore) <= startedDate.getTime())
+      .sort((a, b) => queueTime(a) - queueTime(b));
+    const [pendingDoc, nextDoc] = ready;
+    if (!pendingDoc) return null;
     const pendingJob = pendingDoc.data() || {};
     const modelChoice = inferModelChoice(pendingJob);
     // currentModelFor carries a retired model ID (a job queued before a model
@@ -1296,7 +1297,6 @@ async function claimNextPendingJobForTutor({
       activeModel,
     ]));
     const attemptId = attemptIdFactory();
-    const startedDate = clock ? clock() : new Date();
     const startedAt = fromDate(startedDate);
     const leaseExpiresAt = fromDate(
       new Date(startedDate.getTime() + RESOURCE_JOB_LEASE_MS)
@@ -1311,6 +1311,7 @@ async function claimNextPendingJobForTutor({
       attemptCount: (Number(pendingJob.attemptCount) || 0) + (pendingJob.stageContinuation ? 0 : 1),
       stageCount: (Number(pendingJob.stageCount) || 0) + 1,
       stageContinuation: false,
+      queueNotBefore: null,
       queueElapsedMs: (pendingJob.queueElapsedMs || 0) + Math.max(0, startedDate.getTime() - (timestampMs(pendingJob.queueTurnAt || pendingJob.createdAt) || startedDate.getTime())),
       leaseExpiresAt,
       startedAt,
@@ -1321,12 +1322,20 @@ async function claimNextPendingJobForTutor({
       cancelRequested: false,
     };
     tx.update(pendingDoc.ref, patch);
+    // A single wake can see multiple jobs after a restart or flag change.
+    // Schedule a separate invocation for the spare slot.
+    if (nextDoc && activeTurns + 1 < policy.maxTurns) {
+      tx.update(nextDoc.ref, { queueWakeId: randomUUID() });
+    }
 
     return {
       ...pendingJob,
       ...patch,
       jobId: pendingDoc.id,
       ref: pendingDoc.ref,
+      providerLimits: policy.providerLimits,
+      queueCap: policy.maxTurns,
+      extraTurn: activeTurns > 0,
     };
   });
 }
@@ -2636,7 +2645,10 @@ async function runGenerationPipelineLogged(job, deps) {
   let stimulusSourcing = { used: false, texts: [] };
   // RES-78. As for the question bank: the replay runner keeps the job in
   // memory and reads the real bank through a separate database.
-  const stimulusBank = { db: deps.questionBankDb || deps.db, bucket: storage?.bucket?.(), embed: deps.embedStimulus };
+  const stimulusBank = {
+    db: deps.questionBankDb || deps.db, bucket: storage?.bucket?.(), embed: deps.embedStimulus,
+    providerBudget: deps.providerBudget,
+  };
   if (shouldSourcePassage({ job, enablePdTextSourcing, hasUploadedContent })) {
     passageSourcing = await maybeSourcePassage({
       job,
@@ -2829,6 +2841,7 @@ async function runGenerationPipelineLogged(job, deps) {
       bucket: storage.bucket(),
       callAi: trackedCallAi,
       openaiApiKey: deps.openaiApiKey,
+      providerBudget: deps.providerBudget,
       signal: deps.signal,
       logger,
     });
@@ -3848,6 +3861,7 @@ async function runQueueForTutor(createdBy, deps) {
     job.resourceLogSink = deps.resourceLogSink;
     resourceEvent(job, "worker.claimed", { generationVersion: job.generationVersion || 0,
       stageCount: job.stageCount, retryCount: job.stageRecoveryCount || 0, model: modelForResourceJob(job),
+      queueCap: job.queueCap, extraTurn: job.extraTurn,
       queueWaitMs: job.queueTurnAt?.toMillis ? Date.now() - job.queueTurnAt.toMillis() : job.createdAt?.toMillis ? Date.now() - job.createdAt.toMillis() : undefined });
     if (diagramRepairModeForJob(job)) job.repairMode = "diagram";
 
@@ -3863,7 +3877,14 @@ async function runQueueForTutor(createdBy, deps) {
     };
 
     if (deps.durableStages) {
-      jobDeps.callAi = createDurableCaller({ job, db, storage, clock, callAi: deps.callAi || callAiForResource, fallbackModel: deps.enableFailover === false ? null : fallbackTargetForJob(job) });
+      const providerBudget = Object.keys(job.providerLimits).length
+        ? createProviderBudget({ db, job, limits: job.providerLimits, extraTurn: job.extraTurn, clock: clock && (() => clock().getTime()) })
+        : null;
+      jobDeps.providerBudget = providerBudget;
+      jobDeps.callAi = createDurableCaller({
+        job, db, storage, clock, providerBudget, callAi: deps.callAi || callAiForResource,
+        fallbackModel: deps.enableFailover === false ? null : fallbackTargetForJob(job),
+      });
     }
 
     const attemptRepair = async () => {
@@ -3982,7 +4003,10 @@ async function runQueueForTutor(createdBy, deps) {
       if (err?.code === "RESOURCE_STAGE_YIELD") {
         const resumed = await finalizeResourceJobAttempt({ db, clock, jobId: job.jobId, attemptId: job.attemptId,
           patch: {
-            status: "pending", stageContinuation: true, queueTurnAt: now(clock), startedAt: null, error: null,
+            status: "pending", stageContinuation: true,
+            queueTurnAt: now(clock),
+            queueNotBefore: err.queueNotBeforeMs ? fromDate(new Date(err.queueNotBeforeMs)) : null,
+            startedAt: null, error: null,
             // A parse/schema failure can hand off to repair after consuming this
             // invocation's call. Preserve that repair input across the yield.
             ...(job.generatedJson ? {
@@ -4222,7 +4246,7 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   const requestedModel = configuredModelForResourceType(job.resourceType, modelChoice);
   const retryRunId = randomUUID();
   await jobRef.update({
-    runId: retryRunId, runStartedAt: now(clock), activeElapsedMs: 0, queueElapsedMs: 0, queueTurnAt: now(clock),
+    runId: retryRunId, runStartedAt: now(clock), activeElapsedMs: 0, queueElapsedMs: 0, queueTurnAt: now(clock), queueNotBefore: null,
     stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0, optionalReviewFailures: {}, optionalStageFailures: {}, reviewStatus: null, contentReview: null,
     progress: canResume ? job.progress || null : null,
     status: "pending",
@@ -4559,7 +4583,9 @@ async function recoverStuckResourceJobsImpl({ deps }) {
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(doc.ref);
       const current = snap.data() || {};
-      if (current.status === "pending") tx.update(doc.ref, { queueWakeId: randomUUID() });
+      if (current.status === "pending" && timestampMs(current.queueNotBefore) <= currentDate.getTime()) {
+        tx.update(doc.ref, { queueWakeId: randomUUID() });
+      }
     });
   }
 

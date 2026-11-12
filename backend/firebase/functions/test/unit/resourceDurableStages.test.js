@@ -1,5 +1,5 @@
 "use strict";
-const { it } = require("node:test");
+const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const { createDurableCaller } = require("../../src/resources/durableStages");
 
@@ -214,4 +214,167 @@ it("still runs ordinary calls one per invocation", async () => {
   const outcomes = await Promise.allSettled([1, 2].map((n) => caller({ userMessage: `stage ${n}`, model: "m" })));
   assert.deepEqual(outcomes.map((o) => o.status), ["fulfilled", "rejected"]);
   assert.equal(outcomes[1].reason.code, "RESOURCE_STAGE_YIELD");
+});
+
+it("migrates an exact legacy checkpoint and reuses it across compatible prompt edits and Retry", async () => {
+  let calls = 0;
+  const events = [];
+  const h = harness(async (request) => {
+    assert.equal(request.checkpointContract, undefined);
+    return { parsed: { value: ++calls } };
+  });
+  const original = { model: "gpt-test", stageId: "plan.v2", userMessage: "old instructions with source", systemPrompt: "old system" };
+  const contract = { version: 1, inputs: ["source"] };
+  await h.make({ generationVersion: 1 })(original);
+  const make = (runId) => h.make({ generationVersion: 1, runId, resourceLogSink: (_message, event) => events.push(event) });
+  await make("before")({ ...original, checkpointContract: contract });
+  const resumed = await make("retry")({
+    ...original, systemPrompt: "reworded", userMessage: "new instructions with source", checkpointContract: contract,
+  });
+  assert.equal(resumed.parsed.value, 1);
+  assert.equal(calls, 1);
+  assert.ok(events.some((e) => e.event === "checkpoint.migrated" && Number.isFinite(e.durationMs)));
+  assert.ok(events.some((e) => e.event === "checkpoint.lookup" && e.outcome === "hit"));
+});
+
+it("regenerates named checkpoints when their inputs, contract or validation change", async () => {
+  let calls = 0;
+  const events = [];
+  const h = harness(async () => ({ parsed: { value: ++calls } }));
+  const make = () => h.make({ generationVersion: 1, resourceLogSink: (_message, event) => events.push(event) });
+  const request = { model: "gpt-test", stageId: "questions.1", userMessage: "same rendered request" };
+  await make()(request); // An old exact artifact cannot satisfy a bumped contract.
+  await make()({ ...request, checkpointContract: { version: 1, inputs: ["old"] } });
+  await make()({ ...request, checkpointContract: { version: 2, inputs: ["old"] } });
+  await make()({ ...request, checkpointContract: { version: 2, inputs: ["changed"] } });
+  await make()({ ...request, checkpointContract: { version: 2, inputs: ["changed"] }, validateStageResult: ({ parsed }) => {
+    if (parsed.value !== 4) throw new Error("stale");
+  } });
+  assert.equal(calls, 4);
+  assert.deepEqual(events.filter((e) => e.event === "checkpoint.invalidated").map((e) => e.reason),
+    ["contract_changed", "inputs_changed", "cached_validation_failed"]);
+});
+
+it("yields on provider admission before starting a provider call or counting a retry", async () => {
+  const h = harness(async () => assert.fail("capacity denied"));
+  const make = createDurableCaller({
+    job: { jobId: "j", attemptId: "a", generationVersion: 1, ref: {}, resourceLogSink: () => {} },
+    db: h.db, storage: h.storage, callAi: h.callAi,
+    providerBudget: { acquire: async () => { throw Object.assign(new Error("waiting"), {
+      code: "RESOURCE_STAGE_YIELD", resourceControl: true, queueNotBeforeMs: 100,
+    }); } },
+  });
+  await assert.rejects(make({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD", queueNotBeforeMs: 100 });
+  assert.equal(h.current.providerCallCount, undefined);
+  assert.equal(h.current.stageRecoveryCount, undefined);
+});
+
+describe("transient provider failures under the shared budget (RES-112)", () => {
+  const { isTransientProviderError, withTransientRetries } = require("../../src/resources/providerBudget");
+  const status = (code, headers = {}) => Object.assign(new Error(`status ${code}`), { status: code, headers, modelFailure: true });
+  const budgetCaller = (callAi, released) => {
+    const h = harness(callAi);
+    const make = createDurableCaller({
+      job: { jobId: "j", attemptId: "a", generationVersion: 1, ref: {}, resourceLogSink: () => {} },
+      db: h.db, storage: h.storage, callAi, transientRetryDelayMs: () => 0,
+      providerBudget: { acquire: async () => async (err) => released.push(err) },
+    });
+    return { h, make };
+  };
+
+  it("retries an overload inside the permit instead of failing the stage", async () => {
+    const requests = [];
+    const released = [];
+    const { h, make } = budgetCaller(async (request) => {
+      requests.push(request);
+      if (requests.length < 3) throw status(requests.length === 1 ? 529 : 503);
+      return { parsed: { ok: true } };
+    }, released);
+    const result = await make({ stageId: "plan.v2", model: "gpt-test" });
+    assert.equal(result.parsed.ok, true);
+    assert.equal(requests.length, 3);
+    assert.ok(requests.every((r) => r.maxRetries === 0), "the SDK still retries nothing");
+    assert.deepEqual(released, [undefined], "one permit, released once, with no failure");
+    assert.equal(h.current.stageRecoveryCount, undefined, "no stage recovery was spent");
+  });
+
+  it("does not retry a 429: it reaches the budget so the cooldown is shared", async () => {
+    let calls = 0;
+    const released = [];
+    const limited = status(429, { "retry-after": "7" });
+    const { make } = budgetCaller(async () => { calls += 1; throw limited; }, released);
+    await assert.rejects(make({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD" });
+    assert.equal(calls, 1);
+    assert.equal(released[0], limited);
+  });
+
+  it("gives up after the SDK's two retries", async () => {
+    let calls = 0;
+    const { make } = budgetCaller(async () => { calls += 1; throw status(500); }, []);
+    await assert.rejects(make({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD" });
+    assert.equal(calls, 3);
+  });
+
+  it("leaves retries to the SDK when no budget is configured", async () => {
+    let calls = 0;
+    const h = harness(async (request) => { calls += 1; assert.equal(request.maxRetries, undefined); throw status(529); });
+    await assert.rejects(h.make({ generationVersion: 1 })({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD" });
+    assert.equal(calls, 1);
+  });
+
+  it("asks the budget before each retry and yields without spending a stage retry when it says wait", async () => {
+    let calls = 0;
+    let asked = 0;
+    const h = harness(async () => { calls += 1; throw status(529); });
+    const release = async () => {};
+    release.beforeRetry = async () => {
+      asked += 1;
+      throw Object.assign(new Error("waiting"), { code: "RESOURCE_STAGE_YIELD", resourceControl: true, queueNotBeforeMs: 500 });
+    };
+    const make = createDurableCaller({
+      job: { jobId: "j", attemptId: "a", generationVersion: 1, ref: {}, resourceLogSink: () => {} },
+      db: h.db, storage: h.storage, callAi: h.callAi, transientRetryDelayMs: () => 0,
+      providerBudget: { acquire: async () => release },
+    });
+    await assert.rejects(make({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD", queueNotBeforeMs: 500 });
+    assert.equal(calls, 1, "the retry was not sent");
+    assert.equal(asked, 1);
+    assert.equal(h.current.stageRecoveryCount, undefined);
+  });
+
+  it("counts every retry with the budget before sending it", async () => {
+    let calls = 0;
+    let asked = 0;
+    const h = harness(async () => { calls += 1; if (calls < 3) throw status(503); return { parsed: { ok: true } }; });
+    const release = async () => {};
+    release.beforeRetry = async () => { asked += 1; };
+    const make = createDurableCaller({
+      job: { jobId: "j", attemptId: "a", generationVersion: 1, ref: {}, resourceLogSink: () => {} },
+      db: h.db, storage: h.storage, callAi: h.callAi, transientRetryDelayMs: () => 0,
+      providerBudget: { acquire: async () => release },
+    });
+    await make({ stageId: "plan.v2", model: "gpt-test" });
+    assert.deepEqual({ calls, asked }, { calls: 3, asked: 2 });
+  });
+
+  it("classifies only what the SDKs themselves retry", () => {
+    class APIConnectionError extends Error {}
+    assert.equal(isTransientProviderError(new APIConnectionError("reset")), true);
+    for (const code of [408, 409, 500, 502, 503, 504, 529]) assert.equal(isTransientProviderError(status(code)), true, String(code));
+    assert.equal(isTransientProviderError(status(429)), false);
+    assert.equal(isTransientProviderError(status(400)), false);
+    assert.equal(isTransientProviderError(status(503, { "x-should-retry": "false" })), false);
+    assert.equal(isTransientProviderError(Object.assign(new Error("bad JSON"), { modelFailure: true })), false);
+    assert.equal(isTransientProviderError(Object.assign(new Error("yield"), { status: 503, resourceControl: true })), false);
+  });
+
+  it("stops waiting as soon as the stage is aborted", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const pending = withTransientRetries(async () => { calls += 1; throw status(529); }, { signal: controller.signal, delayMs: () => 60_000 });
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort(new Error("cancelled"));
+    await assert.rejects(pending, /cancelled/);
+    assert.equal(calls, 1);
+  });
 });
