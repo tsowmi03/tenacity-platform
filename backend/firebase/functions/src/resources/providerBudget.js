@@ -52,7 +52,7 @@ function abortableSleep(ms, signal) {
   });
 }
 
-async function withTransientRetries(call, { signal, delayMs = transientRetryDelayMs, onRetry } = {}) {
+async function withTransientRetries(call, { signal, delayMs = transientRetryDelayMs, onRetry, beforeRetry } = {}) {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await call();
@@ -60,6 +60,8 @@ async function withTransientRetries(call, { signal, delayMs = transientRetryDela
       if (attempt >= TRANSIENT_RETRIES || signal?.aborted || !isTransientProviderError(err)) throw err;
       onRetry?.(err, attempt + 1);
       await abortableSleep(delayMs(err, attempt), signal);
+      // Each retry is a new request: the shared budget counts it, and may defer it.
+      await beforeRetry?.();
     }
   }
 }
@@ -97,29 +99,35 @@ function createProviderBudget({ db, job, limits, extraTurn, clock = Date.now }) 
     if (!limit) return null;
     const ref = db.collection("resourceProviderBudgets").doc(provider);
     const leaseId = randomUUID();
-    const state = await db.runTransaction(async (tx) => {
+    // A second turn cannot exhaust the capacity available to first turns.
+    const concurrentCap = limit.maxConcurrent - (extraTurn ? 1 : 0);
+    const startsCap = limit.maxStartsPerMinute - (extraTurn ? Math.ceil(limit.maxStartsPerMinute / 4) : 0);
+    // Records one request start. The first start also takes a concurrency
+    // lease; a retry under that lease is another request against the
+    // provider's rate limit, so it is counted and admitted the same way.
+    const admit = (retry) => db.runTransaction(async (tx) => {
       const now = clock();
       const snapshot = await tx.get(ref);
       const data = snapshot.data() || {};
       const leases = Object.fromEntries(Object.entries(data.leases || {}).filter(([, expiry]) => expiry > now));
       const starts = (data.starts || []).filter((start) => start > now - WINDOW_MS).sort((a, b) => a - b);
-      // A second turn cannot exhaust the capacity available to first turns.
-      const concurrentCap = limit.maxConcurrent - (extraTurn ? 1 : 0);
-      const startsCap = limit.maxStartsPerMinute - (extraTurn ? Math.ceil(limit.maxStartsPerMinute / 4) : 0);
       if (data.blockedUntil > now) return { retryAt: data.blockedUntil, reason: "provider_backoff" };
       if (starts.length >= startsCap) return { retryAt: starts[starts.length - startsCap] + WINDOW_MS, reason: "request_rate" };
-      if (Object.keys(leases).length >= concurrentCap) return { retryAt: now + 2_000, reason: "concurrent_calls" };
-      tx.set(ref, { leases: { ...leases, [leaseId]: now + LEASE_MS }, starts: [...starts, now], blockedUntil: data.blockedUntil || 0 });
-      return { leaseId };
+      if (!retry && Object.keys(leases).length >= concurrentCap) return { retryAt: now + 2_000, reason: "concurrent_calls" };
+      tx.set(ref, { leases: retry ? leases : { ...leases, [leaseId]: now + LEASE_MS }, starts: [...starts, now], blockedUntil: data.blockedUntil || 0 });
+      return {};
     });
-    if (state.retryAt) {
-      resourceEvent(job, "provider.deferred", { provider, reason: state.reason, durationMs: Math.max(0, state.retryAt - clock()) });
+    const admitOrYield = async (retry) => {
+      const state = await admit(retry);
+      if (!state.retryAt) return;
+      resourceEvent(job, "provider.deferred", { provider, reason: state.reason, retryCount: retry ? 1 : 0, durationMs: Math.max(0, state.retryAt - clock()) });
       throw Object.assign(new Error("Waiting for model capacity"), {
         code: "RESOURCE_STAGE_YIELD", resourceControl: true, queueNotBeforeMs: state.retryAt,
       });
-    }
+    };
+    await admitOrYield(false);
 
-    return async (error) => {
+    const release = async (error) => {
       try {
         await db.runTransaction(async (tx) => {
           const data = (await tx.get(ref)).data();
@@ -132,13 +140,17 @@ function createProviderBudget({ db, job, limits, extraTurn, clock = Date.now }) 
         resourceEvent(job, "provider.permit_release_failed", { provider }, "warn");
       }
     };
+    // Called before each transient retry. Yields the stage, keeping the content
+    // retry budget, when the rate allowance or a shared cooldown says to wait.
+    release.beforeRetry = () => admitOrYield(true);
+    return release;
   }
 
   async function run(provider, call, { delayMs } = {}) {
     const release = await acquire(provider);
     let failure;
     try {
-      return await withTransientRetries(call, { delayMs });
+      return await withTransientRetries(call, { delayMs, beforeRetry: release?.beforeRetry });
     } catch (err) {
       failure = err;
       throw err;

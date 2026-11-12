@@ -322,6 +322,41 @@ describe("transient provider failures under the shared budget (RES-112)", () => 
     assert.equal(calls, 1);
   });
 
+  it("asks the budget before each retry and yields without spending a stage retry when it says wait", async () => {
+    let calls = 0;
+    let asked = 0;
+    const h = harness(async () => { calls += 1; throw status(529); });
+    const release = async () => {};
+    release.beforeRetry = async () => {
+      asked += 1;
+      throw Object.assign(new Error("waiting"), { code: "RESOURCE_STAGE_YIELD", resourceControl: true, queueNotBeforeMs: 500 });
+    };
+    const make = createDurableCaller({
+      job: { jobId: "j", attemptId: "a", generationVersion: 1, ref: {}, resourceLogSink: () => {} },
+      db: h.db, storage: h.storage, callAi: h.callAi, transientRetryDelayMs: () => 0,
+      providerBudget: { acquire: async () => release },
+    });
+    await assert.rejects(make({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD", queueNotBeforeMs: 500 });
+    assert.equal(calls, 1, "the retry was not sent");
+    assert.equal(asked, 1);
+    assert.equal(h.current.stageRecoveryCount, undefined);
+  });
+
+  it("counts every retry with the budget before sending it", async () => {
+    let calls = 0;
+    let asked = 0;
+    const h = harness(async () => { calls += 1; if (calls < 3) throw status(503); return { parsed: { ok: true } }; });
+    const release = async () => {};
+    release.beforeRetry = async () => { asked += 1; };
+    const make = createDurableCaller({
+      job: { jobId: "j", attemptId: "a", generationVersion: 1, ref: {}, resourceLogSink: () => {} },
+      db: h.db, storage: h.storage, callAi: h.callAi, transientRetryDelayMs: () => 0,
+      providerBudget: { acquire: async () => release },
+    });
+    await make({ stageId: "plan.v2", model: "gpt-test" });
+    assert.deepEqual({ calls, asked }, { calls: 3, asked: 2 });
+  });
+
   it("classifies only what the SDKs themselves retry", () => {
     class APIConnectionError extends Error {}
     assert.equal(isTransientProviderError(new APIConnectionError("reset")), true);

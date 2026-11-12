@@ -379,7 +379,9 @@ of the request-start allowance for first turns. Provider responses with HTTP
 429 apply shared cooldown using Retry-After when supplied. With the budget on,
 the SDKs retry nothing. Other transient failures that the SDKs would retry
 (408, 409, 5xx, 529 and dropped connections) are retried twice inside the
-permit on the SDK schedule, and each retry is logged as `provider.retried`. The
+permit on the SDK schedule, and each retry is logged as `provider.retried`.
+Each retry counts as a request start. A retry over the start allowance, or
+during a shared cooldown, yields the stage without spending a content retry. The
 budget applies to every tutor's calls once both maps are valid, not only the
 pilot cohort. A capacity deferral
 releases the job turn and waits for eligibility, with the minute recovery

@@ -183,6 +183,28 @@ describe("resource queue concurrency (firestore emulator)", () => {
     await (await budget(false).acquire("openai"))();
   });
 
+  it("counts each transient retry as a request start and defers a retry over the rate cap", async () => {
+    const now = clock().getTime();
+    const budget = createProviderBudget({ db, job: { jobId: "test", resourceLogSink: () => {} }, limits: providerLimits, extraTurn: false, clock: () => now });
+    const starts = async () => ((await db.collection("resourceProviderBudgets").doc("openai").get()).data()?.starts || []).length;
+    const overloaded = () => Object.assign(new Error("overloaded"), { status: 503 });
+
+    let calls = 0;
+    const result = await budget.run("openai", async () => { calls += 1; if (calls === 1) throw overloaded(); return "ok"; }, { delayMs: () => 0 });
+    assert.equal(result, "ok");
+    assert.equal(await starts(), 2, "the first request and its retry");
+
+    // openai allows 4 starts a minute: one more is admitted, its retry is not.
+    calls = 0;
+    await (await budget.acquire("openai"))();
+    await assert.rejects(budget.run("openai", async () => { calls += 1; throw overloaded(); }, { delayMs: () => 0 }),
+      { code: "RESOURCE_STAGE_YIELD", queueNotBeforeMs: now + 60_000 });
+    assert.equal(calls, 1, "the retry over the cap was not sent");
+    assert.equal(await starts(), 4);
+    const leases = (await db.collection("resourceProviderBudgets").doc("openai").get()).data().leases;
+    assert.deepEqual(leases, {}, "the deferred call released its concurrency permit");
+  });
+
   it("rejects finalisation after another attempt has taken the lease", async () => {
     const ref = db.collection("resourceJobs").doc("job-1");
     await ref.set({

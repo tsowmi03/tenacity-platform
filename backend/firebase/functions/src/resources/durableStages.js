@@ -208,7 +208,7 @@ function createDurableCaller({ job, db, storage, callAi, providerBudget = null, 
       // cooldown; other transient failures are retried here inside the permit.
       const send = () => callAi({ ...providerRequest, signal: controller.signal, ...(release ? { maxRetries: 0 } : {}) });
       const call = release
-        ? withTransientRetries(send, { signal: controller.signal, delayMs: transientRetryDelayMs,
+        ? withTransientRetries(send, { signal: controller.signal, delayMs: transientRetryDelayMs, beforeRetry: release.beforeRetry,
           onRetry: (err, retry) => resourceEvent(job, "provider.retried", { model: providerRequest.model, provider: providerForModel(providerRequest.model), httpStatus: err?.status, retryCount: retry }, "warn") })
         : send();
       const result = await Promise.race([call, deadline]);
@@ -226,7 +226,8 @@ function createDurableCaller({ job, db, storage, callAi, providerBudget = null, 
       return structuredClone(result);
     } catch (err) {
       failure = err;
-      if (providerStarted !== undefined && !providerFinished) resourceEvent(job, "provider.failed", { model: activeModel, provider: providerForModel(activeModel),
+      // A capacity deferral before a retry is logged as provider.deferred, not a failure.
+      if (providerStarted !== undefined && !providerFinished && !err?.queueNotBeforeMs) resourceEvent(job, "provider.failed", { model: activeModel, provider: providerForModel(activeModel),
         responseId: err?.responseId, errorCode: err?.code || "PROVIDER_FAILURE", httpStatus: err?.status, durationMs: Date.now() - providerStarted, ...err?.usage }, signal?.aborted ? "info" : "error");
       if (providerResult?.usage) { err.usage = providerResult.usage; err.provider = providerResult.provider; }
       const recoverable = ["RESOURCE_STAGE_TIMEOUT", "RESOURCE_BATCH_INVALID", "RESOURCE_PLAN_INVALID"].includes(err?.code) ||
