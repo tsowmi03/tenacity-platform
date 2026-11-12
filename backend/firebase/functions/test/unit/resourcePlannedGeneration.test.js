@@ -2,7 +2,7 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const { createDurableCaller, requestedQuestionCount } = require("../../src/resources/durableStages");
-const { clarificationMessage, clarificationOptions, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings } = require("../../src/resources/plannedGeneration");
+const { statedTotal, clarificationMessage, clarificationOptions, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, validateQuestions, validateAnswers, reconcilePlanTopics, unmatchedEvidenceTopics, evidenceWarnings } = require("../../src/resources/plannedGeneration");
 const { resourceEvent, resourceStage } = require("../../src/resources/resourceLog");
 
 function harness(extra = {}) {
@@ -731,5 +731,44 @@ describe("omitted diagrams and review reports (RES-106)", () => {
     const out = await run([], { questions: [] }, async () => { called = true; return { parsed: { items: [] } }; });
     assert.equal(called, false);
     assert.deepEqual(out, { warnings: [], notes: [] });
+  });
+});
+
+// Patrick's Year 9 paper (Nov 2026): "3 Easy, 3 Medium and 2 Hard questions" per
+// topic plus a mock exam of "10 multiple-choice and 6 short-answer questions".
+// The regex read that as exactly 6 and rejected every 48-question plan. The
+// planner now states the total it read, and the plan is held to that.
+describe("question totals come from the planner's own reading", () => {
+  const paper = { resourceType: "practice-paper", customPrompt: "For each topic, write about 3 Easy, 3 Medium and 2 Hard questions. Finish with a mock exam (about 10 multiple-choice and 6 short-answer questions)." };
+  const reasonFor = (parsed, job = paper) => { try { validatePlan({ parsed }, job, "Algebra Geometry"); } catch (err) { return err.reason; } return null; };
+
+  it("accepts a plan matching its stated total even when the regex reads a different number", () => {
+    assert.equal(requestedQuestionCount(paper.customPrompt), 6);
+    assert.equal(reasonFor({ ...plan(48), requestedTotal: 48, requestedTotalEvidence: "3 Easy, 3 Medium and 2 Hard questions" }), null);
+  });
+
+  it("rejects a plan that drifts from its stated total and says how to fix it", () => {
+    const reason = reasonFor({ ...plan(14), requestedTotal: 20, requestedTotalEvidence: "20 questions" }, { resourceType: "worksheet", customPrompt: "20 questions" });
+    assert.match(reason, /^question_count_not_stated_total: the plan has 14 questions but requestedTotal is 20/);
+  });
+
+  it("leaves the count free when the request gives none", () => {
+    assert.equal(reasonFor({ ...plan(12), requestedTotal: 0, requestedTotalEvidence: "" }, { resourceType: "worksheet", customPrompt: "20 questions" }), null);
+    assert.equal(statedTotal({ requestedTotal: -3 }), null);
+    assert.equal(statedTotal({}), null);
+  });
+
+  it("asks the planner for the total and logs a regex disagreement without failing", async () => {
+    let seen;
+    const events = [];
+    const job = { jobId: "j", subject: "maths", year: 9, generationVersion: 1, ...paper, resourceLogSink: (_m, data) => events.push(data) };
+    const saved = { ...plan(16), requestedTotal: 16, requestedTotalEvidence: "about 10 multiple-choice and 6 short-answer questions" };
+    // Stop after planning: the hint is logged before any question is written.
+    const callAi = async (req) => { if (seen) throw new Error("planning finished"); seen = req; return { parsed: saved }; };
+    await assert.rejects(generatePlannedResource({ job, request: { userMessage: paper.customPrompt }, callAi }), /planning finished/);
+    assert.ok(seen.responseSchema.required.includes("requestedTotal"));
+    assert.match(seen.systemPrompt, /include any extra section the request asks for/);
+    const mismatch = events.find((e) => e.event === "plan.count_hint_mismatch");
+    assert.deepEqual([mismatch?.hintedTotal, mismatch?.requestedTotal, mismatch?.questionCount], [6, 16, 16]);
   });
 });
