@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-12 | [Saved stages survive deploys; two-job pilot ready behind a flag (RES-110, RES-111, RES-112)](#2026-11-12--saved-stages-survive-deploys-two-job-pilot-ready-behind-a-flag-res-110-res-111-res-112) |
 | 2026-11-12 | [No-answers maths resources use the question bank again (RES-109)](#2026-11-12--no-answers-maths-resources-use-the-question-bank-again-res-109) |
 | 2026-11-12 | [Question totals come from the planner, not a regex (RES-108)](#2026-11-12--question-totals-come-from-the-planner-not-a-regex-res-108) |
 | 2026-11-11 | [Bank diagrams cleaned to black, white and grey (RES-107)](#2026-11-11--bank-diagrams-cleaned-to-black-white-and-grey-res-107) |
@@ -248,6 +249,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-12 — Saved stages survive deploys; two-job pilot ready behind a flag (RES-110, RES-111, RES-112)
+
+**What changed**
+- RES-110 measured where generation time goes. In a five-job batch from one
+  tutor on 12 November, 61–88% of each job's time was spent waiting for that
+  tutor's other jobs, and the last file was ready after 57 minutes. Findings
+  are on the ticket.
+- Saved planning, question, answer and review stages are now kept across a
+  Functions deploy. Before, a prompt edit threw them away mid-job: four jobs
+  repeated 22 finished stages (15m36s of model time) on 12 November. Each
+  stage now has a version number, and a unit test fails when a stage's prompt
+  changes without a decision on that version.
+- A tutor can have two jobs running at once when they are listed in
+  `config/resourceQueue`, with a shared limit on model calls across all
+  workers. Nobody is listed yet, so the queue still runs one job per tutor.
+- With the shared limit on, brief provider errors (overload, 5xx, dropped
+  connections) are retried inside the call as the SDK did before, so one
+  blip no longer fails a stage or turns a paper into a draft.
+
+**Why:** Several papers queued by one tutor each ran at a fraction of full
+speed, and every deploy during the day made in-flight jobs redo work.
+
+**Status:** Live. Functions deployed to production on merge. The two-job
+pilot is off until `config/resourceQueue` is set.
+
+**Next steps**
+- Set `config/resourceQueue` in staging and compare one- and two-job batches
+  against the RES-112 targets (at least 25% faster median batch, no worse
+  completion, quality, other-tutor wait or cost). About half a day.
 
 ---
 

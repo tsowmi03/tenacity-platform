@@ -344,6 +344,14 @@ require a version bump. Changes to the actual upstream data or response
 schema change the identity directly. Unnamed stages continue to use exact
 request hashes.
 
+Because prompt text is not part of a versioned identity, the unit test
+`test/unit/resourceCheckpointContracts.test.js` fingerprints each contracted
+stage's prompts. It fails when a prompt changes under the same version. Bump
+the version if results saved under the old prompt are unsuitable. Otherwise
+keep it. In both cases refresh
+`test/fixtures/checkpointContractFingerprints.json` with
+`UPDATE_CHECKPOINT_FINGERPRINTS=1`, so the decision is visible in review.
+
 An existing exact-hash artifact can be migrated the first time a worker with
 the version-one contract reads it. A resumable Retry can reuse compatible
 checkpoints. The regular fresh-retry cleanup still removes the whole journal
@@ -368,7 +376,12 @@ the actual provider request and token limits, accounting for other traffic
 using the same keys. The shared limits cover Resource Generator calls and bank
 embeddings. A second turn leaves at least one concurrent permit and a quarter
 of the request-start allowance for first turns. Provider responses with HTTP
-429 apply shared cooldown using Retry-After when supplied. A capacity deferral
+429 apply shared cooldown using Retry-After when supplied. With the budget on,
+the SDKs retry nothing. Other transient failures that the SDKs would retry
+(408, 409, 5xx, 529 and dropped connections) are retried twice inside the
+permit on the SDK schedule, and each retry is logged as `provider.retried`. The
+budget applies to every tutor's calls once both maps are valid, not only the
+pilot cohort. A capacity deferral
 releases the job turn and waits for eligibility, with the minute recovery
 sweep as a backstop. It does not consume a content retry.
 

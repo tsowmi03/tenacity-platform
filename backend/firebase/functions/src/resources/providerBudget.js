@@ -7,6 +7,63 @@ const PROVIDERS = ["anthropic", "openai"];
 const WINDOW_MS = 60_000;
 const LEASE_MS = 540_000;
 
+// With a shared budget the SDKs' own retries are off (maxRetries: 0), so a 429
+// reaches the budget and sets one shared cooldown instead of every worker
+// retrying it blind. Every other failure the SDK would have retried (overload,
+// 5xx, a dropped connection) is retried here, inside the permit, on the same
+// schedule. Without this a single 529 counted as a failed stage: two moved the
+// stage to the fallback model and an optional review gave up at once.
+const TRANSIENT_STATUSES = new Set([408, 409, 500, 502, 503, 504, 529]);
+const CONNECTION_ERRORS = new Set(["APIConnectionError", "APIConnectionTimeoutError"]);
+const TRANSIENT_RETRIES = 2;
+const MAX_RETRY_DELAY_MS = 20_000;
+
+function headerValue(err, name) {
+  const headers = err?.headers;
+  return headers?.get?.(name) ?? headers?.[name];
+}
+
+function isTransientProviderError(err) {
+  if (!err || err.resourceControl || err.refusal) return false;
+  const shouldRetry = headerValue(err, "x-should-retry");
+  if (shouldRetry === "false") return false;
+  const status = Number(err.status);
+  if (status === 429) return false;
+  if (shouldRetry === "true") return true;
+  if (status) return TRANSIENT_STATUSES.has(status) || status >= 500;
+  return CONNECTION_ERRORS.has(err.constructor?.name) || CONNECTION_ERRORS.has(err.name);
+}
+
+function transientRetryDelayMs(err, attempt) {
+  const ms = Number(headerValue(err, "retry-after-ms"));
+  if (ms > 0 && ms <= MAX_RETRY_DELAY_MS) return ms;
+  const seconds = Number(headerValue(err, "retry-after"));
+  if (seconds > 0 && seconds * 1000 <= MAX_RETRY_DELAY_MS) return seconds * 1000;
+  // The SDKs' schedule: 0.5s doubling, capped at 8s, with up to 25% jitter off.
+  return Math.min(500 * 2 ** attempt, 8_000) * (1 - Math.random() * 0.25);
+}
+
+function abortableSleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason || new Error("aborted"));
+    const onAbort = () => { clearTimeout(timer); reject(signal.reason || new Error("aborted")); };
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function withTransientRetries(call, { signal, delayMs = transientRetryDelayMs, onRetry } = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await call();
+    } catch (err) {
+      if (attempt >= TRANSIENT_RETRIES || signal?.aborted || !isTransientProviderError(err)) throw err;
+      onRetry?.(err, attempt + 1);
+      await abortableSleep(delayMs(err, attempt), signal);
+    }
+  }
+}
+
 function queuePolicy(config, tutor) {
   const providerLimits = {};
   for (const provider of PROVIDERS) {
@@ -24,8 +81,7 @@ function queuePolicy(config, tutor) {
 
 function retryAfter(err, now) {
   if (Number(err?.status) !== 429) return 0;
-  const headers = err.headers;
-  const header = (name) => headers?.get?.(name) ?? headers?.[name];
+  const header = (name) => headerValue(err, name);
   const ms = Number(header("retry-after-ms"));
   if (ms > 0 && Number.isFinite(ms)) return now + ms;
   const value = header("retry-after");
@@ -78,11 +134,11 @@ function createProviderBudget({ db, job, limits, extraTurn, clock = Date.now }) 
     };
   }
 
-  async function run(provider, call) {
+  async function run(provider, call, { delayMs } = {}) {
     const release = await acquire(provider);
     let failure;
     try {
-      return await call();
+      return await withTransientRetries(call, { delayMs });
     } catch (err) {
       failure = err;
       throw err;
@@ -94,4 +150,4 @@ function createProviderBudget({ db, job, limits, extraTurn, clock = Date.now }) 
   return { acquire, run };
 }
 
-module.exports = { createProviderBudget, queuePolicy };
+module.exports = { createProviderBudget, isTransientProviderError, queuePolicy, withTransientRetries };

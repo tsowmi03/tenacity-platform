@@ -1,6 +1,7 @@
 "use strict";
 
 const { checkpointFor } = require("./resourceCheckpoints");
+const { withTransientRetries } = require("./providerBudget");
 const { providerForModel } = require("./modelRegistry");
 const { resourceEvent, resourceStage } = require("./resourceLog");
 const { fromDate } = require("../shared/timestamps");
@@ -49,7 +50,7 @@ function assertRequestSize(job) {
 // Content-addressed results are private Storage objects, not Firestore fields:
 // a large response can exceed Firestore's document limit. Only the worker writes
 // them; an attempt fence protects both the journal and the progress display.
-function createDurableCaller({ job, db, storage, callAi, providerBudget = null, fallbackModel = null, clock = () => new Date(), timeoutMs = STAGE_TIMEOUT_MS, optionalTimeoutMs = OPTIONAL_STAGE_TIMEOUT_MS }) {
+function createDurableCaller({ job, db, storage, callAi, providerBudget = null, fallbackModel = null, clock = () => new Date(), timeoutMs = STAGE_TIMEOUT_MS, optionalTimeoutMs = OPTIONAL_STAGE_TIMEOUT_MS, transientRetryDelayMs }) {
   let inFlight = null;
   let completed = 0;
   const invocationStarted = Date.now();
@@ -203,7 +204,14 @@ function createDurableCaller({ job, db, storage, callAi, providerBudget = null, 
       if (recovery.fallback && fallbackModel) providerRequest.model = fallbackModel;
       if (recovery.lastReason) providerRequest.userMessage += `\n\nThe prior response failed validation (${recovery.lastReason}). Correct that issue while preserving the original scope and requested limits.`;
       resourceEvent(job, "provider.started", { model: providerRequest.model, provider: providerForModel(providerRequest.model), timeoutMs: budget, remainingMs: INVOCATION_BUDGET_MS - (Date.now() - invocationStarted), retryCount: recovery.failures || 0 });
-      const result = await Promise.race([callAi({ ...providerRequest, signal: controller.signal, ...(release ? { maxRetries: 0 } : {}) }), deadline]);
+      // Under a shared budget the SDK retries nothing, so a 429 sets the shared
+      // cooldown; other transient failures are retried here inside the permit.
+      const send = () => callAi({ ...providerRequest, signal: controller.signal, ...(release ? { maxRetries: 0 } : {}) });
+      const call = release
+        ? withTransientRetries(send, { signal: controller.signal, delayMs: transientRetryDelayMs,
+          onRetry: (err, retry) => resourceEvent(job, "provider.retried", { model: providerRequest.model, provider: providerForModel(providerRequest.model), httpStatus: err?.status, retryCount: retry }, "warn") })
+        : send();
+      const result = await Promise.race([call, deadline]);
       providerFinished = true;
       providerResult = result;
       resourceEvent(job, "provider.completed", { model: result?.model || providerRequest.model, provider: result?.provider, responseId: result?.responseId, durationMs: Date.now() - providerStarted, ...result?.usage });

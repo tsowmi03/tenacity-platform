@@ -1,5 +1,5 @@
 "use strict";
-const { it } = require("node:test");
+const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const { createDurableCaller } = require("../../src/resources/durableStages");
 
@@ -267,4 +267,79 @@ it("yields on provider admission before starting a provider call or counting a r
   await assert.rejects(make({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD", queueNotBeforeMs: 100 });
   assert.equal(h.current.providerCallCount, undefined);
   assert.equal(h.current.stageRecoveryCount, undefined);
+});
+
+describe("transient provider failures under the shared budget (RES-112)", () => {
+  const { isTransientProviderError, withTransientRetries } = require("../../src/resources/providerBudget");
+  const status = (code, headers = {}) => Object.assign(new Error(`status ${code}`), { status: code, headers, modelFailure: true });
+  const budgetCaller = (callAi, released) => {
+    const h = harness(callAi);
+    const make = createDurableCaller({
+      job: { jobId: "j", attemptId: "a", generationVersion: 1, ref: {}, resourceLogSink: () => {} },
+      db: h.db, storage: h.storage, callAi, transientRetryDelayMs: () => 0,
+      providerBudget: { acquire: async () => async (err) => released.push(err) },
+    });
+    return { h, make };
+  };
+
+  it("retries an overload inside the permit instead of failing the stage", async () => {
+    const requests = [];
+    const released = [];
+    const { h, make } = budgetCaller(async (request) => {
+      requests.push(request);
+      if (requests.length < 3) throw status(requests.length === 1 ? 529 : 503);
+      return { parsed: { ok: true } };
+    }, released);
+    const result = await make({ stageId: "plan.v2", model: "gpt-test" });
+    assert.equal(result.parsed.ok, true);
+    assert.equal(requests.length, 3);
+    assert.ok(requests.every((r) => r.maxRetries === 0), "the SDK still retries nothing");
+    assert.deepEqual(released, [undefined], "one permit, released once, with no failure");
+    assert.equal(h.current.stageRecoveryCount, undefined, "no stage recovery was spent");
+  });
+
+  it("does not retry a 429: it reaches the budget so the cooldown is shared", async () => {
+    let calls = 0;
+    const released = [];
+    const limited = status(429, { "retry-after": "7" });
+    const { make } = budgetCaller(async () => { calls += 1; throw limited; }, released);
+    await assert.rejects(make({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD" });
+    assert.equal(calls, 1);
+    assert.equal(released[0], limited);
+  });
+
+  it("gives up after the SDK's two retries", async () => {
+    let calls = 0;
+    const { make } = budgetCaller(async () => { calls += 1; throw status(500); }, []);
+    await assert.rejects(make({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD" });
+    assert.equal(calls, 3);
+  });
+
+  it("leaves retries to the SDK when no budget is configured", async () => {
+    let calls = 0;
+    const h = harness(async (request) => { calls += 1; assert.equal(request.maxRetries, undefined); throw status(529); });
+    await assert.rejects(h.make({ generationVersion: 1 })({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD" });
+    assert.equal(calls, 1);
+  });
+
+  it("classifies only what the SDKs themselves retry", () => {
+    class APIConnectionError extends Error {}
+    assert.equal(isTransientProviderError(new APIConnectionError("reset")), true);
+    for (const code of [408, 409, 500, 502, 503, 504, 529]) assert.equal(isTransientProviderError(status(code)), true, String(code));
+    assert.equal(isTransientProviderError(status(429)), false);
+    assert.equal(isTransientProviderError(status(400)), false);
+    assert.equal(isTransientProviderError(status(503, { "x-should-retry": "false" })), false);
+    assert.equal(isTransientProviderError(Object.assign(new Error("bad JSON"), { modelFailure: true })), false);
+    assert.equal(isTransientProviderError(Object.assign(new Error("yield"), { status: 503, resourceControl: true })), false);
+  });
+
+  it("stops waiting as soon as the stage is aborted", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const pending = withTransientRetries(async () => { calls += 1; throw status(529); }, { signal: controller.signal, delayMs: () => 60_000 });
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort(new Error("cancelled"));
+    await assert.rejects(pending, /cancelled/);
+    assert.equal(calls, 1);
+  });
 });
