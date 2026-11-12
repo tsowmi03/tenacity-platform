@@ -151,6 +151,7 @@ async function callOpenAiForResource({
   posthogProperties,
   posthogTraceId,
   posthogDistinctId,
+  maxRetries,
   createClient = createDefaultOpenAiClient,
 }) {
   if (!apiKey) throw new TypeError("callOpenAiForResource requires apiKey");
@@ -183,7 +184,7 @@ async function callOpenAiForResource({
     if (responseSchema) request.text = { format: responseFormat(responseSchema) };
     if (safetyIdentifier) request.safety_identifier = safetyIdentifier;
 
-    const options = signal ? { signal } : undefined;
+    const options = signal || maxRetries !== undefined ? { ...(signal ? { signal } : {}), ...(maxRetries !== undefined ? { maxRetries } : {}) } : undefined;
     let response;
     try {
       const result = await client.responses.create(request, options);

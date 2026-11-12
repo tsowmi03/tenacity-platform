@@ -489,6 +489,7 @@ async function applyQuestionBank({
   callAi,
   embed,
   openaiApiKey,
+  providerBudget,
   anthropicApiKey,
   signal,
   logger = console,
@@ -507,7 +508,12 @@ async function applyQuestionBank({
     return result;
   }
 
-  const embedText = embed || (openaiApiKey ? createEmbedder({ client: new (require("openai").default)({ apiKey: openaiApiKey }) }) : null);
+  const defaultEmbed = openaiApiKey && !embed
+    ? createEmbedder({ client: new (require("openai").default)({ apiKey: openaiApiKey, ...(providerBudget ? { maxRetries: 0 } : {}) }) })
+    : null;
+  const embedText = embed || (defaultEmbed && providerBudget
+    ? (text) => providerBudget.run("openai", () => defaultEmbed(text))
+    : defaultEmbed);
   if (!embedText) {
     result.skipped.push(...slots.map((slot) => ({ ...slotWhere(slot), reason: "bank_unavailable" })));
     return result;
@@ -552,6 +558,10 @@ async function applyQuestionBank({
         searched[slotKey] = entry;
         searchedNew = true;
       } catch (err) {
+        if (err?.resourceControl) {
+          if (searchedNew) await store.save({ searched });
+          throw err;
+        }
         result.skipped.push({ ...slotWhere(slot), reason: `search_failed: ${String(err?.message || err).slice(0, 120)}` });
         continue;
       }
@@ -615,7 +625,12 @@ async function applyQuestionBank({
       entry.tries += 1;
       entry.plan.candidates = entry.plan.pool.filter((c) => !chosen.has(questionFamily(c))).slice(0, CANDIDATES);
     }
-    const results = await Promise.all(wave.map(({ plan }) => fillSlot(plan)));
+    // A capacity yield in one slot must not leave sibling provider calls
+    // running after the worker releases its claim.
+    const settled = await Promise.allSettled(wave.map(({ plan }) => fillSlot(plan)));
+    const failed = settled.find((entry) => entry.status === "rejected");
+    if (failed) throw failed.reason;
+    const results = settled.map((entry) => entry.value);
     const again = [];
     wave.forEach((entry, i) => {
       const out = results[i];

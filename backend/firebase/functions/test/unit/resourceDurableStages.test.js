@@ -215,3 +215,56 @@ it("still runs ordinary calls one per invocation", async () => {
   assert.deepEqual(outcomes.map((o) => o.status), ["fulfilled", "rejected"]);
   assert.equal(outcomes[1].reason.code, "RESOURCE_STAGE_YIELD");
 });
+
+it("migrates an exact legacy checkpoint and reuses it across compatible prompt edits and Retry", async () => {
+  let calls = 0;
+  const events = [];
+  const h = harness(async (request) => {
+    assert.equal(request.checkpointContract, undefined);
+    return { parsed: { value: ++calls } };
+  });
+  const original = { model: "gpt-test", stageId: "plan.v2", userMessage: "old instructions with source", systemPrompt: "old system" };
+  const contract = { version: 1, inputs: ["source"] };
+  await h.make({ generationVersion: 1 })(original);
+  const make = (runId) => h.make({ generationVersion: 1, runId, resourceLogSink: (_message, event) => events.push(event) });
+  await make("before")({ ...original, checkpointContract: contract });
+  const resumed = await make("retry")({
+    ...original, systemPrompt: "reworded", userMessage: "new instructions with source", checkpointContract: contract,
+  });
+  assert.equal(resumed.parsed.value, 1);
+  assert.equal(calls, 1);
+  assert.ok(events.some((e) => e.event === "checkpoint.migrated" && Number.isFinite(e.durationMs)));
+  assert.ok(events.some((e) => e.event === "checkpoint.lookup" && e.outcome === "hit"));
+});
+
+it("regenerates named checkpoints when their inputs, contract or validation change", async () => {
+  let calls = 0;
+  const events = [];
+  const h = harness(async () => ({ parsed: { value: ++calls } }));
+  const make = () => h.make({ generationVersion: 1, resourceLogSink: (_message, event) => events.push(event) });
+  const request = { model: "gpt-test", stageId: "questions.1", userMessage: "same rendered request" };
+  await make()(request); // An old exact artifact cannot satisfy a bumped contract.
+  await make()({ ...request, checkpointContract: { version: 1, inputs: ["old"] } });
+  await make()({ ...request, checkpointContract: { version: 2, inputs: ["old"] } });
+  await make()({ ...request, checkpointContract: { version: 2, inputs: ["changed"] } });
+  await make()({ ...request, checkpointContract: { version: 2, inputs: ["changed"] }, validateStageResult: ({ parsed }) => {
+    if (parsed.value !== 4) throw new Error("stale");
+  } });
+  assert.equal(calls, 4);
+  assert.deepEqual(events.filter((e) => e.event === "checkpoint.invalidated").map((e) => e.reason),
+    ["contract_changed", "inputs_changed", "cached_validation_failed"]);
+});
+
+it("yields on provider admission before starting a provider call or counting a retry", async () => {
+  const h = harness(async () => assert.fail("capacity denied"));
+  const make = createDurableCaller({
+    job: { jobId: "j", attemptId: "a", generationVersion: 1, ref: {}, resourceLogSink: () => {} },
+    db: h.db, storage: h.storage, callAi: h.callAi,
+    providerBudget: { acquire: async () => { throw Object.assign(new Error("waiting"), {
+      code: "RESOURCE_STAGE_YIELD", resourceControl: true, queueNotBeforeMs: 100,
+    }); } },
+  });
+  await assert.rejects(make({ stageId: "plan.v2", model: "gpt-test" }), { code: "RESOURCE_STAGE_YIELD", queueNotBeforeMs: 100 });
+  assert.equal(h.current.providerCallCount, undefined);
+  assert.equal(h.current.stageRecoveryCount, undefined);
+});

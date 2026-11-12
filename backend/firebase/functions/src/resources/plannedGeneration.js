@@ -387,6 +387,9 @@ async function generatePlannedResource({ job, request, callAi, hasStimulus = fal
   const planMessage = `${request.userMessage}\n\nSELECTED SETTINGS: subject ${job.subject || "unspecified"}, Year ${job.year ?? "unspecified"}, ${job.resourceType}.\n\nREFERENCE-DERIVED SCOPE (use representative chapter coverage for papers unless every subsection is explicitly requested; honour exclusions): ${JSON.stringify(scope)}`;
   const validateStageResult = (result) => validatePlan(result, job, planMessage, scope);
   const { parsed: modelPlan } = await callAi({ ...request,
+    // The contract covers the saved stage's meaning. Update its version when
+    // changing instructions in a way that makes old results unsuitable.
+    checkpointContract: { version: 1, inputs: [request.userMessage, job.subject, job.year, job.resourceType, scope] },
     stageId: "plan.v2", stageLabel: "Planning topics, question counts and sections",
     maxTokens: 16000, responseSchema: PLAN_SCHEMA, validateStageResult,
     userMessage: planMessage,
@@ -462,7 +465,10 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     const prior = chunks.flatMap((p) => questionRows(p, job.resourceType)).map((q) => q.stem);
     let result;
     try {
-      result = await callAi({ ...request, stageId: `questions.${path}`, splitAllowed: specs.length > 1,
+      result = await callAi({ ...request, stageId: `questions.${path}`,
+        checkpointContract: { version: 1, inputs: [request.userMessage, specs, prior, contentOptions, fixedStimulus, maxTextWords, sourcedCount,
+          hasStimulus && !fixedStimulus ? plan.questions : null] },
+        splitAllowed: specs.length > 1,
         stageLabel: `Writing questions ${specs[0].number}–${specs.at(-1).number} of ${plan.questions.length}`,
         maxTokens: 16000, systemPrompt: buildSystemPrompt(job.resourceType, contentOptions),
         responseSchema: buildResponseSchema(job.resourceType, contentOptions),
@@ -500,7 +506,9 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
 
   async function solutionBatch(questions, path) {
     try {
-      const result = await callAi({ ...request, stageId: `solutions.${path}`, splitAllowed: questions.length > 1,
+      const result = await callAi({ ...request, stageId: `solutions.${path}`,
+        checkpointContract: { version: 1, inputs: [request.userMessage, questions, job.answerMode, fixedStimulus, imageNotes] },
+        splitAllowed: questions.length > 1,
         stageLabel: `Writing solutions for questions ${questions[0].number}–${questions.at(-1).number}`,
         maxTokens: 16000, responseSchema: answerSchema,
         validateStageResult: (r) => validateAnswers(r, questions, answerKey),
@@ -545,7 +553,9 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     const repairSchema = obj({ questions: list(questionSchema || { type: "object" }), ...(job.answerMode !== "none" ? { [answerKey]: answerSchema.properties[answerKey] } : {}) });
     const validate = (result) => validateRepair(result, rows, job, answerKey, stimulusRules());
     try {
-      const result = await callAi({ ...request, optionalReview: true, stageId: `content.repair.${attempt}`, stageLabel: "Repairing what the review found",
+      const result = await callAi({ ...request, optionalReview: true, stageId: `content.repair.${attempt}`,
+        checkpointContract: { version: 1, inputs: [request.userMessage, tasks, rows, minutesByQuestion, parsed[answerKey], fixedStimulus, imageNotes] },
+        stageLabel: "Repairing what the review found",
         maxTokens: 16000, responseSchema: repairSchema, validateStageResult: validate,
         userMessage: `${request.userMessage}\n\nA review of the finished resource found the problems below. Fix them by rewriting only the questions you must. Never raise a question's marks, never add to the paper's overall workload${scope.minutes ? ` (the sitting is ${scope.minutes} minutes)` : ""}, and never state a time allowance in a question. Do not change the stimulus texts or any other question, and keep each question's number. Return ONLY the questions you changed, in the normal question shape, in "questions"${job.answerMode !== "none" ? `, and "${answerKey}" with exactly one row for each changed question, or one per labelled part, rewritten to match it` : ""}.\n\nPROBLEMS:\n- ${tasks.join("\n- ")}\n\nTHE RESOURCE'S QUESTIONS, with estimated minutes:\n${JSON.stringify(rows.map((q) => ({ ...q, estimatedMinutes: minutesByQuestion[q.number] })))}\n\nTHEIR CURRENT ${answerKey}:\n${JSON.stringify(parsed[answerKey] || [])}${stimulusNote(true)}`,
       });

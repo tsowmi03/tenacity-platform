@@ -1,6 +1,6 @@
 "use strict";
 
-const { createHash } = require("crypto");
+const { checkpointFor } = require("./resourceCheckpoints");
 const { providerForModel } = require("./modelRegistry");
 const { resourceEvent, resourceStage } = require("./resourceLog");
 const { fromDate } = require("../shared/timestamps");
@@ -49,7 +49,7 @@ function assertRequestSize(job) {
 // Content-addressed results are private Storage objects, not Firestore fields:
 // a large response can exceed Firestore's document limit. Only the worker writes
 // them; an attempt fence protects both the journal and the progress display.
-function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, clock = () => new Date(), timeoutMs = STAGE_TIMEOUT_MS, optionalTimeoutMs = OPTIONAL_STAGE_TIMEOUT_MS }) {
+function createDurableCaller({ job, db, storage, callAi, providerBudget = null, fallbackModel = null, clock = () => new Date(), timeoutMs = STAGE_TIMEOUT_MS, optionalTimeoutMs = OPTIONAL_STAGE_TIMEOUT_MS }) {
   let inFlight = null;
   let completed = 0;
   const invocationStarted = Date.now();
@@ -111,7 +111,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     return result;
   };
   const durableCall = async (request) => {
-    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, bestEffort, concurrent, validateStageResult, progressPhase, ...publicRequest } = request;
+    const { signal, apiKey, anthropicApiKey, openaiApiKey, stageLabel, stageId, splitAllowed, optionalReview, bestEffort, concurrent, validateStageResult, progressPhase, checkpointContract, ...publicRequest } = request;
     // RES-84. Work before the first named step (English passage and stimulus
     // sourcing, reference reading) is preparation: it counts as planning, so
     // the bar moves and its time is not mistaken for slow progress.
@@ -121,24 +121,21 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     }
     // Versioned planned artifacts are reusable across providers. Legacy hashes stay exact.
     if (job.generationVersion === 1) { delete publicRequest.model; if (stageId) publicRequest.logicalStageId = stageId; }
-    const key = createHash("sha256").update(JSON.stringify(publicRequest)).digest("hex");
-    const file = storage.bucket().file(`resources/checkpoints/${job.jobId}/${key}.json`);
-    try {
-      const [bytes] = await file.download();
+    const checkpoint = checkpointFor({ bucket: storage.bucket(), job, stageId, request: publicRequest, contract: checkpointContract });
+    const { key, legacyKey } = checkpoint;
+    const cached = await checkpoint.read(validateStageResult, () => progress("Preserving saved generation progress"));
+    if (cached) {
       completed += 1;
-      const cached = JSON.parse(bytes.toString("utf8"));
-      if (validateStageResult) validateStageResult(cached);
       resourceEvent(job, "checkpoint.reused", { stageId: stageId || key, completedStages: completed });
       return cached;
-    } catch (err) {
-      if (Number(err.code) !== 404) throw err;
     }
-    if (request.optionalReview && job.optionalReviewFailures?.[key]) {
+    if (request.optionalReview && (job.optionalReviewFailures?.[key] || job.optionalReviewFailures?.[legacyKey])) {
       throw controlError("RESOURCE_REVIEW_UNAVAILABLE", "This optional review could not finish; the draft is retained.");
     }
-    if (bestEffort && bestEffortGivenUp(job.optionalStageFailures?.[key])) {
+    const optionalFailure = job.optionalStageFailures?.[key] || job.optionalStageFailures?.[legacyKey];
+    if (bestEffort && bestEffortGivenUp(optionalFailure)) {
       resourceEvent(job, "stage.skipped", { stageId: stageId || key, reason: "best_effort_failed_before" });
-      throw bestEffortSkipped(job.optionalStageFailures[key].code);
+      throw bestEffortSkipped(optionalFailure.code);
     }
     // Concurrent stages (diagram fills run under Promise.all) reach here
     // together. The slot is taken before any await, so only one provider call
@@ -151,19 +148,22 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     // still stops a new one starting too late.
     while (inFlight && !(concurrent && bestEffort)) {
       const current = inFlight;
-      const saved = await current.then(() => true, () => false);
+      const saved = await current.then(() => true, (err) => {
+        if (err.queueNotBeforeMs) throw err;
+        return false;
+      });
       if (saved) throw controlError("RESOURCE_STAGE_YIELD", "Continuing from saved progress");
       if (inFlight === current) break;
     }
     if (completed >= (job.generationVersion === 1 ? MAX_PLANNED_STAGE_COUNT : MAX_STAGE_COUNT)) {
       throw controlError("RESOURCE_STAGE_LIMIT", "This request needs too many generation stages. Split it into smaller resources.");
     }
-    const recovery = job.stageRecovery?.[key] || {};
+    const recovery = job.stageRecovery?.[key] || job.stageRecovery?.[legacyKey] || {};
     if ((job.stageRecoveryCount || 0) > MAX_STAGE_RECOVERIES) throw controlError("RESOURCE_RECOVERY_EXHAUSTED", "Generation reached its recovery limit. Reduce the request before retrying.");
     if (recovery.split) throw controlError("RESOURCE_STAGE_SPLIT", "Continuing in smaller batches.");
     if (recovery.exhausted) throw controlError("RESOURCE_RECOVERY_EXHAUSTED", "This stage could not finish after bounded retries. Completed stages are retained; reduce the request before retrying.");
     if (INVOCATION_BUDGET_MS - (Date.now() - invocationStarted) < MIN_CALL_BUDGET_MS) throw controlError("RESOURCE_STAGE_YIELD", "Continuing in a fresh worker.");
-    const running = resourceStage(job, stageId || key, () => runFreshStage({ request, signal, stageLabel, file, key, recovery }), { model: recovery.fallback ? fallbackModel : request.model, batchIndex: /^(questions|solutions)\./.test(stageId || "") ? Number(stageId.split(".")[1]) : undefined });
+    const running = resourceStage(job, stageId || key, () => runFreshStage({ request, signal, stageLabel, checkpoint, key, legacyKey, recovery }), { model: recovery.fallback ? fallbackModel : request.model, batchIndex: /^(questions|solutions)\./.test(stageId || "") ? Number(stageId.split(".")[1]) : undefined });
     if (!(concurrent && bestEffort)) inFlight = running;
     return running;
   };
@@ -176,8 +176,10 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
   durableCall.progressTracker = tracker;
   return durableCall;
 
-  async function runFreshStage({ request, signal, stageLabel, file, key, recovery }) {
-    await progress(stageLabel || `Generating · ${completed} steps saved`, true, recovery);
+  async function runFreshStage({ request, signal, stageLabel, checkpoint, key, legacyKey, recovery }) {
+    const activeModel = recovery.fallback && fallbackModel ? fallbackModel : request.model;
+    const provider = providerForModel(activeModel);
+    const release = await providerBudget?.acquire(provider);
     const controller = new AbortController();
     const cancel = () => controller.abort(signal.reason);
     if (signal?.aborted) cancel();
@@ -185,36 +187,39 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     let timer;
     let providerFinished = false;
     let providerResult;
-    const providerStarted = Date.now();
-    const activeModel = recovery.fallback && fallbackModel ? fallbackModel : request.model;
-    const budget = Math.max(1, Math.min(timeoutMs, request.optionalReview || request.bestEffort ? optionalTimeoutMs : timeoutMs, INVOCATION_BUDGET_MS - (Date.now() - invocationStarted)));
+    let providerStarted;
+    let failure;
     try {
+      await progress(stageLabel || `Generating · ${completed} steps saved`, true, recovery);
+      providerStarted = Date.now();
+      const budget = Math.max(1, Math.min(timeoutMs, request.optionalReview || request.bestEffort ? optionalTimeoutMs : timeoutMs, INVOCATION_BUDGET_MS - (Date.now() - invocationStarted)));
       const deadline = new Promise((_, reject) => {
         timer = setTimeout(() => {
           reject(controlError("RESOURCE_STAGE_TIMEOUT", `A generation stage exceeded its time limit. ${completed ? `${completed} completed stages are saved.` : "No stages have been saved yet."} Retry or split the request into smaller resources.`));
           controller.abort();
         }, budget);
       });
-      const { stageLabel: _label, stageId: _stageId, splitAllowed: _split, optionalReview: _optional, bestEffort: _bestEffort, concurrent: _concurrent, validateStageResult: validate, progressPhase: _phase, ...providerRequest } = request;
+      const { stageLabel: _label, stageId: _stageId, splitAllowed: _split, optionalReview: _optional, bestEffort: _bestEffort, concurrent: _concurrent, validateStageResult: validate, progressPhase: _phase, checkpointContract: _contract, ...providerRequest } = request;
       if (recovery.fallback && fallbackModel) providerRequest.model = fallbackModel;
       if (recovery.lastReason) providerRequest.userMessage += `\n\nThe prior response failed validation (${recovery.lastReason}). Correct that issue while preserving the original scope and requested limits.`;
       resourceEvent(job, "provider.started", { model: providerRequest.model, provider: providerForModel(providerRequest.model), timeoutMs: budget, remainingMs: INVOCATION_BUDGET_MS - (Date.now() - invocationStarted), retryCount: recovery.failures || 0 });
-      const result = await Promise.race([callAi({ ...providerRequest, signal: controller.signal }), deadline]);
+      const result = await Promise.race([callAi({ ...providerRequest, signal: controller.signal, ...(release ? { maxRetries: 0 } : {}) }), deadline]);
       providerFinished = true;
       providerResult = result;
       resourceEvent(job, "provider.completed", { model: result?.model || providerRequest.model, provider: result?.provider, responseId: result?.responseId, durationMs: Date.now() - providerStarted, ...result?.usage });
       if (validate) await resourceStage(job, "validation", () => validate(result));
       await progress(`Saving stage ${completed + 1}`);
-      await file.save(JSON.stringify(result), { resumable: false, metadata: { contentType: "application/json" } });
+      const saveMs = await checkpoint.save(result);
       completed += 1;
-      resourceEvent(job, "checkpoint.saved", { completedStages: completed });
+      resourceEvent(job, "checkpoint.saved", { completedStages: completed, durationMs: saveMs });
       await progress(`${completed} steps saved · preparing the next step`);
       // A caller can mutate parsed in place (diagram fills / verification).
       // Return an isolated value so replay always starts from the same bytes.
       return structuredClone(result);
     } catch (err) {
-      if (!providerFinished) resourceEvent(job, "provider.failed", { model: activeModel, provider: providerForModel(activeModel),
-        responseId: err?.responseId, errorCode: err?.code || "PROVIDER_FAILURE", durationMs: Date.now() - providerStarted, ...err?.usage }, signal?.aborted ? "info" : "error");
+      failure = err;
+      if (providerStarted !== undefined && !providerFinished) resourceEvent(job, "provider.failed", { model: activeModel, provider: providerForModel(activeModel),
+        responseId: err?.responseId, errorCode: err?.code || "PROVIDER_FAILURE", httpStatus: err?.status, durationMs: Date.now() - providerStarted, ...err?.usage }, signal?.aborted ? "info" : "error");
       if (providerResult?.usage) { err.usage = providerResult.usage; err.provider = providerResult.provider; }
       const recoverable = ["RESOURCE_STAGE_TIMEOUT", "RESOURCE_BATCH_INVALID", "RESOURCE_PLAN_INVALID"].includes(err?.code) ||
         (!err?.resourceControl && !err?.refusal && !signal?.aborted && (err?.modelFailure || [429, 503, 529].includes(err?.status)));
@@ -237,7 +242,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
           const snap = await tx.get(job.ref);
           const current = snap.data() || {};
           if (!snap.exists || current.status !== "processing" || current.attemptId !== job.attemptId || current.cancelRequested) throw controlError("RESOURCE_SUPERSEDED", "This worker no longer owns the resource.");
-          const previous = current.optionalStageFailures?.[key] || {};
+          const previous = current.optionalStageFailures?.[key] || current.optionalStageFailures?.[legacyKey] || {};
           // RES-80: a refusal of a best-effort call is random (Sonnet refused
           // 0–3 question bank calls per resource, and the same prompt usually
           // went through the second time), so it earns the second attempt a
@@ -278,6 +283,7 @@ function createDurableCaller({ job, db, storage, callAi, fallbackModel = null, c
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", cancel);
+      await release?.(failure);
     }
   }
 }

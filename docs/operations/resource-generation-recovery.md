@@ -333,3 +333,54 @@ legacy checkpoints, which planned generation cannot reuse.
 When Claude rejects a schema at compile time (`compiled grammar is too large`,
 `schema is too complex`, compile timeout), `callAnthropicForResource` sends the
 same request once without `output_config.format`.
+
+### Versioned checkpoints for planned stages (RES-111)
+
+Plan, question, answer and content-review/repair stages use a named checkpoint
+contract. Its version, structured inputs and response schema identify a
+compatible saved result. The current validator still checks saved responses
+before they are reused. Changes to a stage's meaning or validation contract
+require a version bump. Changes to the actual upstream data or response
+schema change the identity directly. Unnamed stages continue to use exact
+request hashes.
+
+An existing exact-hash artifact can be migrated the first time a worker with
+the version-one contract reads it. A resumable Retry can reuse compatible
+checkpoints. The regular fresh-retry cleanup still removes the whole journal
+where required. Logs include checkpoint lookup outcome and duration, save
+duration, migration and the reason for invalidating an older artifact.
+
+### Two-turn tutor pilot (RES-112)
+
+The queue reads the server-only Firestore document `config/resourceQueue`
+when claiming a job. Missing or invalid budget settings keep one active turn
+per tutor. Configure these fields in the staging project first.
+
+| Field | Value |
+| --- | --- |
+| `twoTurnTutorUids` | Array of Firebase tutor UIDs eligible for two concurrent turns |
+| `providerLimits.anthropic` | Map with integer `maxConcurrent` and `maxStartsPerMinute` |
+| `providerLimits.openai` | Map with integer `maxConcurrent` and `maxStartsPerMinute` |
+
+Both provider maps are required. Concurrent limits accept 2–80 and start
+limits accept 2–1,000 per rolling minute. Choose values with headroom under
+the actual provider request and token limits, accounting for other traffic
+using the same keys. The shared limits cover Resource Generator calls and bank
+embeddings. A second turn leaves at least one concurrent permit and a quarter
+of the request-start allowance for first turns. Provider responses with HTTP
+429 apply shared cooldown using Retry-After when supplied. A capacity deferral
+releases the job turn and waits for eligibility, with the minute recovery
+sweep as a backstop. It does not consume a content retry.
+
+The claim log exposes `queueCap` and `extraTurn`. Use `provider.deferred` to
+see how often requests wait for capacity. Compare matched one- and two-turn
+batches with a second tutor's single job. Record time to first and last ready
+DOCX, the other tutor's wait, valid output, provider usage and throttles, and
+worker memory. The pilot target is at least 25% faster median batch completion
+with stable completion, document quality, other-tutor wait and cost per ready
+file. Keep the second turn restricted to the pilot cohort while collecting
+those results.
+
+To roll back concurrency, clear `twoTurnTutorUids` and leave the budget maps
+in place while current turns finish. New claims immediately use the one-turn
+cap. The two trigger functions read the same configuration.
