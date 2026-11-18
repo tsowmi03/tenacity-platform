@@ -301,6 +301,15 @@ the question is flagged; if all three differ, the crop isn't used (RES-114):
 the question is flagged, the slot tries another crop, and keeps the drawn
 question if none can be confirmed. Nothing about the check is printed.
 
+**Fit check (RES-115):** before a crop is used, one low-effort look at the crop
+and the final question text checks they belong together: the same labels,
+every value needed, the same figure, the answer not shown (no finished graph
+for a sketch question), no labels the question doesn't use, and nothing else
+from the page. A crop that fails is ruled out for that slot, which tries
+another and then keeps the drawn question. A check that errors counts as a
+fit. About $0.004 a check. Separately, any question that asks the student to
+sketch, draw or plot a graph gets a blank number plane at build time.
+
 **Backfill (2026-11-06):** `scripts/questionBankAnswers.js plan|run|write`
 linked 30,100 of 56,763 numbered live questions from 1,820 books for $18.
 A random audit of 100 links found about 3% linked to the wrong part. Scanned
