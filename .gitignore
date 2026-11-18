@@ -24,3 +24,4 @@ backend/firebase/functions/.env*
 !backend/firebase/functions/.env.tenacity-tutoring-staging
 backend/firebase/functions/*.local
 backend/firebase/functions/**/*.local
+backend/firebase/functions/.benchmark-runs/
