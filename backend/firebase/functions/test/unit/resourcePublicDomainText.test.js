@@ -31,6 +31,7 @@ const {
   applySourcedStimulus,
   planStimulusSelections,
   stripVerbatimFlags,
+  MISSING_TEXT_OPTIONS,
 } = require("../../src/resources/index");
 
 describe("Gutenberg text extraction", () => {
@@ -355,14 +356,36 @@ describe("maybeSourcePassage", () => {
     assert.match(r.warning, /No verified public-domain text/);
   });
 
-  it("doesn't swap in another work for a passage the tutor named (RES-114)", async () => {
+  it("asks the tutor before swapping or writing a passage they named (RES-114, RES-101)", async () => {
     const named = { ...job, customPrompt: "Annotate Shelley's Ozymandias for imagery." };
     let askedForAnother = false;
-    const r = await maybeSourcePassage({ job: named, apiKey: "k",
+    await assert.rejects(maybeSourcePassage({ job: named, apiKey: "k",
       sourceText: async () => ({ ok: false, passage: null, selection: { title: "Ozymandias", author: "Percy Bysshe Shelley", type: "poem" } }),
-      selectAlternative: async () => { askedForAnother = true; return { title: "The Tyger" }; } });
+      selectAlternative: async () => { askedForAnother = true; return { title: "The Tyger" }; } }), (err) => {
+      assert.equal(err.code, "RESOURCE_SCOPE_CLARIFICATION");
+      assert.equal(err.clarificationKind, "missing-text");
+      assert.match(err.message, /"Ozymandias"/);
+      // An annotation task needs its passage, so leaving it out isn't offered.
+      assert.deepEqual(err.clarificationOptions, [MISSING_TEXT_OPTIONS.another, MISSING_TEXT_OPTIONS.original]);
+      return true;
+    });
     assert.equal(askedForAnother, false);
-    assert.equal(r.used, false);
+  });
+
+  it("finds another passage, or writes one, as the tutor chose", async () => {
+    const miss = async ({ selection }) => (selection?.title === "The Tyger"
+      ? { ok: true, passage: "Tyger Tyger", selection }
+      : { ok: false, passage: null, selection: { title: "Ozymandias", author: "Percy Bysshe Shelley", type: "poem" } });
+    const another = await maybeSourcePassage({ job: { ...job, customPrompt: `Annotate Shelley's Ozymandias.\n\nTopics to cover: ${MISSING_TEXT_OPTIONS.another}.` }, apiKey: "k",
+      sourceText: miss, selectAlternative: async () => ({ title: "The Tyger", author: "William Blake", type: "poem" }) });
+    assert.equal(another.sourced.passage, "Tyger Tyger");
+    assert.deepEqual(another.replacedNamedTexts, ["Ozymandias"]);
+
+    const original = await maybeSourcePassage({ job: { ...job, customPrompt: `Annotate Shelley's Ozymandias.\n\nTopics to cover: ${MISSING_TEXT_OPTIONS.original}.` }, apiKey: "k",
+      sourceText: miss, selectAlternative: async () => { throw new Error("not asked"); } });
+    assert.equal(original.used, false);
+    assert.equal(original.warning, undefined, "the tutor asked for an original");
+    assert.deepEqual(original.replacedNamedTexts, ["Ozymandias"]);
   });
 
   it("never throws — sourcing errors degrade to fallback", async () => {
@@ -688,28 +711,64 @@ describe("maybeSourceStimulusSet", () => {
   });
 
   // RES-114: an Ozymandias essay scaffold was given "The Tyger" when Ozymandias
-  // couldn't be sourced. A text the tutor named is never swapped.
-  it("never swaps a text the tutor named, and says it isn't printed", async () => {
-    const named = { ...job, customPrompt: "Essay scaffold on how Shelley's \"Ozymandias\" presents power and time." };
-    const planStimulus = async () => ({ needed: true, texts: [{ title: "Ozymandias", author: "Percy Bysshe Shelley", type: "poem" }] });
-    const sourceText = async ({ selection }) => ({ ok: false, passage: null, selection });
+  // couldn't be sourced. RES-101: a text the tutor named is never swapped or
+  // written without asking them first.
+  const ozymandias = { title: "Ozymandias", author: "Percy Bysshe Shelley", type: "poem" };
+  const scaffold = (answer = "") => ({ ...job, customPrompt: `Essay scaffold on how Shelley's "Ozymandias" presents power and time.${answer ? `\n\nTopics to cover: ${answer}.` : ""}` });
+
+  it("stops and asks when a named text can't be found, before swapping anything", async () => {
+    const planStimulus = async () => ({ needed: true, texts: [ozymandias] });
     let askedForAnother = false;
     const selectAlternative = async () => { askedForAnother = true; return { title: "The Tyger", author: "William Blake", type: "poem" }; };
-    const r = await maybeSourceStimulusSet({ job: named, planStimulus, sourceText, selectAlternative });
+    await assert.rejects(maybeSourceStimulusSet({ job: scaffold(), planStimulus, sourceText: async ({ selection }) => ({ ok: false, passage: null, selection }), selectAlternative }), (err) => {
+      assert.equal(err.code, "RESOURCE_SCOPE_CLARIFICATION");
+      assert.equal(err.resourceControl, true);
+      assert.equal(err.clarificationKind, "missing-text");
+      assert.equal(err.message, "We couldn't find a copy of \"Ozymandias\" that we can print. How should we go on?");
+      assert.deepEqual(err.clarificationOptions, Object.values(MISSING_TEXT_OPTIONS));
+      return true;
+    });
     assert.equal(askedForAnother, false);
-    assert.equal(r.used, false);
-    assert.equal(r.originalTextsAllowed, false, "a named text is never written as an original either");
-    assert.match(r.warning, /"Ozymandias" couldn't be found, so it isn't printed/);
-    assert.doesNotMatch(r.warning, /Tenacity Original/);
   });
 
-  it("treats a named text whose sourcing errors the same way", async () => {
-    const named = { ...job, customPrompt: "Essay scaffold on Shelley's Ozymandias." };
-    const planStimulus = async () => ({ needed: true, texts: [{ title: "Ozymandias", author: "Percy Bysshe Shelley", type: "poem" }] });
+  it("asks the same way when the named text's sourcing errors", async () => {
+    const planStimulus = async () => ({ needed: true, texts: [ozymandias] });
     const sourceText = async () => { throw Object.assign(new Error("HTTP 429"), { status: 429 }); };
-    const r = await maybeSourceStimulusSet({ job: named, planStimulus, sourceText, selectAlternative: async () => ({ title: "The Tyger" }) });
-    assert.equal(r.originalTextsAllowed, false);
-    assert.match(r.warning, /"Ozymandias" couldn't be found/);
+    await assert.rejects(maybeSourceStimulusSet({ job: scaffold(), planStimulus, sourceText, selectAlternative: async () => ({ title: "The Tyger" }) }),
+      { code: "RESOURCE_SCOPE_CLARIFICATION" });
+  });
+
+  it("leaves a named text out when the tutor says students have their own copy", async () => {
+    const planStimulus = async () => ({ needed: true, texts: [ozymandias] });
+    let askedForAnother = false;
+    const r = await maybeSourceStimulusSet({ job: scaffold(MISSING_TEXT_OPTIONS.leaveOut), planStimulus,
+      sourceText: async ({ selection }) => ({ ok: false, passage: null, selection }),
+      selectAlternative: async () => { askedForAnother = true; return { title: "The Tyger" }; } });
+    assert.equal(askedForAnother, false);
+    assert.equal(r.used, false);
+    assert.equal(r.originalTextsAllowed, false, "a left-out text is never written as an original");
+    assert.match(r.warning, /"Ozymandias" couldn't be found, so it isn't printed/);
+  });
+
+  it("finds another real text when the tutor chose one", async () => {
+    const planStimulus = async () => ({ needed: true, texts: [ozymandias] });
+    const sourceText = async ({ selection }) => (selection.title === "The Tyger" ? { ok: true, passage: "Tyger Tyger", selection } : { ok: false, passage: null, selection });
+    const r = await maybeSourceStimulusSet({ job: scaffold(MISSING_TEXT_OPTIONS.another), planStimulus, sourceText,
+      selectAlternative: async () => ({ title: "The Tyger", author: "William Blake", type: "poem" }) });
+    assert.equal(r.texts[0].passage, "Tyger Tyger");
+    assert.deepEqual(r.replacedNamedTexts, ["Ozymandias"]);
+    assert.equal(r.warning, undefined);
+  });
+
+  it("lets the generator write an original, without a warning, when the tutor chose one", async () => {
+    const planStimulus = async () => ({ needed: true, texts: [ozymandias] });
+    const r = await maybeSourceStimulusSet({ job: scaffold(MISSING_TEXT_OPTIONS.original), planStimulus,
+      sourceText: async ({ selection }) => ({ ok: false, passage: null, selection }),
+      selectAlternative: async () => { throw new Error("not asked"); } });
+    assert.equal(r.used, false);
+    assert.equal(r.originalTextsAllowed, true);
+    assert.deepEqual(r.replacedNamedTexts, ["Ozymandias"]);
+    assert.equal(r.warning, "");
   });
 
   it("still finds another work for a text the tutor didn't name", async () => {

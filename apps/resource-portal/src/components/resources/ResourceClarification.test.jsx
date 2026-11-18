@@ -98,6 +98,35 @@ describe("Needs your input", () => {
     expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
   });
 
+  // RES-101. A text the tutor named couldn't be found: one choice, required.
+  it("asks for exactly one choice when a named text is missing", async () => {
+    api.answerResourceClarification.mockResolvedValue({ jobId: "job-2" });
+    const missing = {
+      ...job,
+      subject: "english",
+      customPrompt: "A paper on \"The Garden Party\".",
+      error: "We couldn't find a copy of \"The Garden Party\" that we can print. How should we go on?",
+      clarificationKind: "missing-text",
+      clarificationOptions: ["Choose another real text", "Write an original text", "Leave it out (students have their own copy)"],
+    };
+    show([missing]);
+
+    const go = screen.getByRole("button", { name: "Continue" });
+    fireEvent.change(screen.getByLabelText("Anything else?"), { target: { value: "A Mansfield story if you can" } });
+    expect(go).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText("Write an original text"));
+    fireEvent.click(screen.getByLabelText("Choose another real text"));
+    expect(screen.getByLabelText("Write an original text")).not.toBeChecked();
+    fireEvent.click(go);
+
+    await waitFor(() =>
+      expect(api.answerResourceClarification).toHaveBeenCalledWith(missing, {
+        topics: ["Choose another real text"], note: "A Mansfield story if you can", kind: "missing-text",
+      })
+    );
+  });
+
   it("keeps ordinary failures as Failed", () => {
     show([{ ...job, errorCode: "RESOURCE_RECOVERY_EXHAUSTED" }]);
     expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
