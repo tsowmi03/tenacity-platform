@@ -1915,12 +1915,12 @@ GENERATORS["parallel-lines"] = (spec) => {
   ];
   const placedLabelObstacles = [];
 
-  const placeAngleLabel = (cx, cy, label) => {
+  const placeAngleLabel = (cx, cy, label, midDeg = transAng * 90 / Math.PI) => {
     const displayLabel = formatAngleLabelForDisplay(label);
     const candidates = angleLabelCandidates(
       cx,
       cy,
-      transAng * 90 / Math.PI,
+      midDeg,
       arcR,
       { svgDegrees: true }
     );
@@ -1933,13 +1933,27 @@ GENERATORS["parallel-lines"] = (spec) => {
     return text(placed.x, placed.y, displayLabel, { color: S.angle, size: 20, anchor: placed.anchor });
   };
 
-  if (angles.top) {
-    svg += arcOpen(ix1, y1, arcR, 0, transAng * 180 / Math.PI, { color: S.angle, width: 1.6 });
-    svg += placeAngleLabel(ix1, y1, angles.top);
-  }
-  if (angles.bottom) {
-    svg += arcOpen(ix2, y2, arcR, 0, transAng * 180 / Math.PI, { color: S.angle, width: 1.6 });
-    svg += placeAngleLabel(ix2, y2, angles.bottom);
+  // RES-115: each angle sits in one of the four corners at its crossing.
+  // Going clockwise in SVG from the right-hand ray: below-right (to the
+  // transversal's lower arm), below-left, above-left, above-right. The old
+  // top/bottom pair (saved resources) meant below-right on each line.
+  const t = transAng * 180 / Math.PI;
+  const SECTORS = {
+    "below-right": [0, t],
+    "below-left": [t, 180],
+    "above-left": [180, 180 + t],
+    "above-right": [180 + t, 360],
+  };
+  const marked = Array.isArray(spec.marked) ? spec.marked : [
+    ...(angles.top ? [{ line: "line1", position: "below-right", label: angles.top }] : []),
+    ...(angles.bottom ? [{ line: "line2", position: "below-right", label: angles.bottom }] : []),
+  ];
+  for (const angle of marked) {
+    const sector = SECTORS[angle?.position];
+    if (!sector) continue;
+    const [cx, cy] = angle.line === "line2" ? [ix2, y2] : [ix1, y1];
+    svg += arcOpen(cx, cy, arcR, sector[0], sector[1], { color: S.angle, width: 1.6 });
+    svg += placeAngleLabel(cx, cy, angle.label, (sector[0] + sector[1]) / 2);
   }
 
   svg += svgClose;

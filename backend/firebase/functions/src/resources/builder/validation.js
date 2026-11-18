@@ -553,9 +553,27 @@ function validateVennDiagram(value, path) {
   optionalTextField(value.universalLabel, `${path}.universalLabel`);
 }
 
+const PARALLEL_LINE_POSITIONS = ["above-left", "above-right", "below-left", "below-right"];
+
 function validateParallelLinesDiagram(value, path) {
-  assertAllowedFields(value, path, ["type", "angles", "labels"], { forbidLayoutFields: true });
+  assertAllowedFields(value, path, ["type", "angles", "marked", "labels"], { forbidLayoutFields: true });
   validateTextRecord(value.angles || {}, `${path}.angles`, ["top", "bottom"]);
+  if (value.marked !== undefined && value.marked !== null) {
+    const marked = assertArray(value.marked, `${path}.marked`);
+    if (marked.length > 8) fail(`${path}.marked can mark at most the 8 angles at the two crossings`);
+    const seen = new Set();
+    marked.forEach((angle, index) => {
+      const at = `${path}.marked[${index}]`;
+      assertObject(angle, at);
+      assertAllowedFields(angle, at, ["line", "position", "label"]);
+      const line = optionalEnum(angle.line, `${at}.line`, ["line1", "line2"]);
+      const position = optionalEnum(angle.position, `${at}.position`, PARALLEL_LINE_POSITIONS);
+      if (!line || !position) fail(`${at} needs a line and a position`);
+      assertText(angle.label, `${at}.label`);
+      if (seen.has(`${line}:${position}`)) fail(`${at} marks the same angle twice`);
+      seen.add(`${line}:${position}`);
+    });
+  }
   validateTextRecord(value.labels || {}, `${path}.labels`, ["line1", "line2", "transversal"]);
 }
 
@@ -1184,6 +1202,40 @@ function validateSourceImageDiagram(value, path) {
   optionalText(value.storagePath, `${path}.storagePath`);
 }
 
+// RES-115. On drawn geometry and shape diagrams a label is a value, unknown
+// or name. One that says where it is ("48° above l and to the right of t") is
+// rejected so the diagram goes to repair, and so is one too long to sit by an
+// arc or edge without running off the drawing. Side names used in trigonometry
+// ("opposite", "hypotenuse") are fine.
+const LABEL_RULE_FAMILIES = new Set(["geometry", "shape", "measurement"]);
+const LABEL_POSITION_WORDS = /\b(?:above|below)\b|\b(?:left|right) of\b|\bto the (?:left|right)\b|\bbetween\b/i;
+const LABEL_MAX_CHARS = 16;
+const LABEL_SKIP_KEYS = new Set(["type", "subtype", "unit", "style", "position", "line", "orientation", "direction", "shape"]);
+
+function displayLabelLength(text) {
+  return String(text).replace(/\s*degrees?\b/gi, "°").replace(/\s+/g, " ").trim().length;
+}
+
+// Fields that hold text drawn on the diagram: anything named for a label,
+// and the angle values of parallel-lines and angles diagrams.
+const LABEL_FIELD = /label/i;
+const ANGLE_VALUE_FIELDS = new Set(["angles", "marked"]);
+
+function validateDiagramLabels(value, path) {
+  const visit = (node, at, key, inLabel) => {
+    if (typeof node === "string") {
+      if (!inLabel || LABEL_SKIP_KEYS.has(key)) return;
+      if (LABEL_POSITION_WORDS.test(node)) fail(`${at} must be a value or name only, not where it is ("${node}")`);
+      if (displayLabelLength(node) > LABEL_MAX_CHARS) fail(`${at} is too long for a diagram label ("${node}"); use the value or name only`);
+      return;
+    }
+    const here = (k) => inLabel || LABEL_FIELD.test(k) || ANGLE_VALUE_FIELDS.has(k);
+    if (Array.isArray(node)) node.forEach((item, i) => visit(item, `${at}[${i}]`, key, inLabel));
+    else if (node && typeof node === "object") Object.entries(node).forEach(([k, v]) => visit(v, `${at}.${k}`, k, here(k)));
+  };
+  Object.entries(value).forEach(([k, v]) => visit(v, `${path}.${k}`, k, LABEL_FIELD.test(k) || ANGLE_VALUE_FIELDS.has(k)));
+}
+
 function validateDiagram(value, path) {
   if (value === null || value === undefined) return;
   assertObject(value, path);
@@ -1202,6 +1254,7 @@ function validateDiagram(value, path) {
   const validator = DIAGRAM_SPEC_VALIDATORS[type];
   if (!validator) fail(`${path}.type ${type} does not have a schema validator`);
   validator(value, path);
+  if (LABEL_RULE_FAMILIES.has(definition.family)) validateDiagramLabels(value, path);
 }
 
 function validateDiagramRequirement(value, path) {

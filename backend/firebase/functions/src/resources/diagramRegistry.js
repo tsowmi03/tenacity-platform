@@ -280,10 +280,16 @@ const DIAGRAM_REGISTRY = Object.freeze({
     status: stable,
     promptVisible: true,
     rendererBackend: customSvgWithLayout,
-    promptExample: `{ "type": "parallel-lines", "angles": { "top": "x degrees", "bottom": "55 degrees" }, "labels": { "line1": "l", "line2": "m", "transversal": "t" } }`,
+    // RES-115: each marked angle names its line and which of the four corners
+    // at that crossing it is, so the label is just the value.
+    promptExample: `{ "type": "parallel-lines", "marked": [{ "line": "line1", "position": "below-right", "label": "55 degrees" }, { "line": "line2", "position": "above-left", "label": "x" }], "labels": { "line1": "l", "line2": "m", "transversal": "t" } }`,
+    promptNote: `line1 is the upper parallel line and line2 the lower; the transversal runs from top-left to bottom-right. "position" is the corner the angle sits in at that crossing: above-left, above-right, below-left or below-right of where the transversal meets the line. Mark every angle the question gives or asks for, and only those. Each label is the value or unknown only ("48 degrees", "x", "2x + 10 degrees"), never a description of where the angle is.`,
     fixture: {
       type: "parallel-lines",
-      angles: { top: "x degrees", bottom: "55 degrees" },
+      marked: [
+        { line: "line1", position: "below-right", label: "55 degrees" },
+        { line: "line2", position: "above-left", label: "x" },
+      ],
       labels: { line1: "l", line2: "m", transversal: "t" },
     },
   },

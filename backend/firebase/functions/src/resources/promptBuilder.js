@@ -729,10 +729,12 @@ The diagram must depict exactly what its question refers to, using values consis
 
 Use only the semantic fields shown in this example of a valid ${type}:
 ${definition.promptExample}
-
+${definition.promptNote ? `\n${definition.promptNote}\n` : ""}
 Do not add layout or rendering fields — no coordinates, canvas size, paths, SVG, scale, or positioning. The renderer decides all of that.
 
 Label a measurement only when it is an unknown the student must find — "x", "h", "2x + 1". A labelled edge is drawn with the label INSTEAD of its measurement, so repeating a value you have already given ("80 cm" on a side that is 80) both hides the number and overflows the drawing. Leave a measurement unlabelled to have it shown.
+
+Every label is a value, unknown or name only ("48 degrees", "x", "2x + 1", "12 cm", "A"), at most a few characters. Never write where something is or what it is ("above l", "to the right of t", "the hypotenuse"): the drawing shows that.
 ${shapeRules}`;
 }
 
@@ -762,10 +764,12 @@ Keep the diagram type "${type}". Do not substitute a different kind of visual.
 
 Use only the semantic fields shown in this example of a valid ${type}:
 ${definition.promptExample}
-
+${definition.promptNote ? `\n${definition.promptNote}\n` : ""}
 Do not add layout or rendering fields — no coordinates, canvas size, paths, SVG, scale, or positioning. The renderer decides all of that.
 
 Label a measurement only when it is an unknown the student must find — "x", "h", "2x + 1". A labelled edge is drawn with the label INSTEAD of its measurement, so repeating a value you have already given ("80 cm" on a side that is 80) both hides the number and overflows the drawing. Leave a measurement unlabelled to have it shown.
+
+Every label is a value, unknown or name only ("48 degrees", "x", "2x + 1", "12 cm", "A"), at most a few characters. Never write where something is or what it is ("above l", "to the right of t", "the hypotenuse"): the drawing shows that.
 
 Fix the stated failure. A specification that fails the same way again is worse than useless.
 ${shapeRules}`;
