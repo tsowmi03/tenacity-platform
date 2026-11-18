@@ -222,3 +222,47 @@ describe("a replaced named text is never named (RES-101)", () => {
     assert.deepEqual(renameReplacedTexts(parsed, ["The Garden Party"]), { retitled: false, stillNamed: 0 });
   });
 });
+
+describe("review follow-ups on #380", () => {
+  const { maybeSourceStimulusSet, maybeSourcePassage, MISSING_TEXT_OPTIONS, missingTextChoice } = require("../../src/resources/index");
+
+  it("prefers an exact heading to one that differs only by its article", () => {
+    const verse = (seed) => Array.from({ length: 8 }, (_, i) => `${seed} line ${i + 1} of the song`).join("\n");
+    const songs = ["THE LITTLE BOY LOST", "", verse("Father"), "", "", "A LITTLE BOY LOST", "", verse("Nought loves another") + "\n" + verse("And Father"), ""].join("\n");
+    assert.match(extractNamedPiece(songs, "The Little Boy Lost", { shortForm: true }).text, /^Father line 1/);
+    assert.match(extractNamedPiece(songs, "A Little Boy Lost", { shortForm: true }).text, /^Nought loves another line 1/);
+    const stories = BOOK.replace("Miss Brill\n\n\n" + para("Miss Brill", 30), "Miss Brill\n\n\n" + para("Miss Brill", 30) + "\n\n\n\n\nA Garden Party\n\n\n" + para("Another party", 60));
+    assert.match(extractNamedPiece(stories, "The Garden Party").text, /^And after all the weather was ideal/);
+    assert.match(extractNamedPiece(stories, "A Garden Party").text, /^Another party sentence 1/);
+  });
+
+  it("reads the tutor's latest answer", () => {
+    assert.equal(missingTextChoice(`Paper.\n\nTutor's choice for the missing text: ${MISSING_TEXT_OPTIONS.another}.\n\nTutor's choice for the missing text: ${MISSING_TEXT_OPTIONS.original}.`), "original");
+    assert.equal(missingTextChoice("Paper."), null);
+  });
+
+  const ozymandias = { title: "Ozymandias", author: "Percy Bysshe Shelley", type: "poem" };
+  const scaffold = { year: 10, resourceType: "practice-paper", subject: "english", customPrompt: `Essay scaffold on Shelley's "Ozymandias".\n\nTutor's choice for the missing text: ${MISSING_TEXT_OPTIONS.another}.` };
+
+  it("asks again, without the same choice, when no other real text can be found", async () => {
+    for (const selectAlternative of [async () => ({ title: "The Tyger", author: "William Blake", type: "poem" }), async () => { throw new Error("HTTP 503"); }]) {
+      await assert.rejects(maybeSourceStimulusSet({ job: scaffold, planStimulus: async () => ({ needed: true, texts: [ozymandias] }),
+        sourceText: async ({ selection }) => ({ ok: false, passage: null, selection }), selectAlternative }), (err) => {
+        assert.equal(err.code, "RESOURCE_SCOPE_CLARIFICATION");
+        assert.match(err.message, /couldn't find another real text to use instead of "Ozymandias" either/);
+        assert.deepEqual(err.clarificationOptions, [MISSING_TEXT_OPTIONS.original, MISSING_TEXT_OPTIONS.leaveOut]);
+        return true;
+      });
+    }
+  });
+
+  it("asks again for a passage too, offering only an original", async () => {
+    const job = { year: 8, resourceType: "annotation-task", subject: "english", customPrompt: `Annotate Shelley's Ozymandias.\n\nTutor's choice for the missing text: ${MISSING_TEXT_OPTIONS.another}.` };
+    await assert.rejects(maybeSourcePassage({ job, apiKey: "k",
+      sourceText: async () => ({ ok: false, passage: null, selection: ozymandias }),
+      selectAlternative: async () => ({ title: "The Tyger", author: "William Blake", type: "poem" }) }), (err) => {
+      assert.deepEqual(err.clarificationOptions, [MISSING_TEXT_OPTIONS.original]);
+      return true;
+    });
+  });
+});

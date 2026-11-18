@@ -1031,21 +1031,32 @@ function normalizeHeading(s) {
 
 // RES-101. Headings and planned names differ in punctuation and spacing: the
 // planner says "The Garden Party", the book's heading is "The Garden-Party".
-// Compared with every non-letter removed, and without a leading article.
-function compactHeading(s) {
+// They are compared with every non-letter removed. A leading article is
+// ignored only when one side has none ("Garden Party"); two different
+// articles name different pieces ("A Little Boy Lost" is not "The Little Boy
+// Lost", Codex review on #380).
+const LEADING_ARTICLE = /^(?:the|a|an) /;
+function headingWords(s) {
   return String(s || "")
     .toLowerCase()
-    .replace(/[‘’']/g, "")
+    .replace(/[\u2018\u2019']/g, "")
     .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/^(?:the|a|an) /, "")
-    .replace(/ /g, "");
+    .trim();
+}
+function compactHeading(s) {
+  return headingWords(s).replace(LEADING_ARTICLE, "").replace(/ /g, "");
 }
 
 function headingMatches(line, pieceTitle) {
   const target = normalizeHeading(pieceTitle);
   if (!target) return false;
   if (normalizeHeading(line) === target) return true;
+  const a = headingWords(line);
+  const b = headingWords(pieceTitle);
+  if (a.replace(/ /g, "") === b.replace(/ /g, "")) return b.replace(/ /g, "").length >= 4;
+  const articleA = a.match(LEADING_ARTICLE)?.[0];
+  const articleB = b.match(LEADING_ARTICLE)?.[0];
+  if (articleA && articleB && articleA !== articleB) return false;
   const compact = compactHeading(pieceTitle);
   return compact.length >= 4 && compactHeading(line) === compact;
 }
@@ -1125,11 +1136,15 @@ function extractNamedPiece(body, pieceTitle, { shortForm = false } = {}) {
     return { text: null, confidence: "none", notes: "No piece title supplied." };
   }
 
-  let matches = [];
+  // An exact heading wins over a loose one: "A Little Boy Lost" is a
+  // different poem from "The Little Boy Lost" (Codex review on #380).
+  const exact = [];
+  const loose = [];
   lines.forEach((line, i) => {
-    if (headingMatches(line, pieceTitle)) matches.push(i);
+    if (normalizeHeading(line) === target) exact.push(i);
+    else if (headingMatches(line, pieceTitle)) loose.push(i);
   });
-  if (!matches.length) {
+  if (!exact.length && !loose.length) {
     return {
       text: null,
       confidence: "none",
@@ -1138,10 +1153,15 @@ function extractNamedPiece(body, pieceTitle, { shortForm = false } = {}) {
   }
 
   // RES-101. For prose, a heading followed by the story itself is preferred to
-  // the title page and the contents entry, which share its name.
+  // the title page and the contents entry, which share its name. Within that,
+  // an exact heading still wins over a loose one.
+  let matches = exact.length ? exact : loose;
   if (!shortForm) {
-    const opensStory = matches.filter((idx) => openingReadsAsProse(lines, idx));
-    if (opensStory.length) matches = opensStory;
+    const opensStory = (indexes) => indexes.filter((idx) => openingReadsAsProse(lines, idx));
+    const exactStory = opensStory(exact);
+    const looseStory = opensStory(loose);
+    if (exactStory.length) matches = exactStory;
+    else if (looseStory.length) matches = looseStory;
   }
 
   let best = "";
