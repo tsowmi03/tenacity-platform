@@ -133,6 +133,20 @@ describe("Question bank page (RES-104)", () => {
     await waitFor(() => expect(api.restoreBankRecord).toHaveBeenCalledWith({ bank: "maths", id: "q1" }));
   });
 
+  // RES-103. A tutor's flag took this question out of use.
+  it("offers to keep a flag-held question hidden or put it back", async () => {
+    const flag = { id: "f1", reason: "crop", note: "", stopUsing: true, createdByName: "Sam", createdAt: "2026-11-01T00:00:00Z" };
+    api.browseBank.mockResolvedValue({ records: [{ ...row, status: "hidden" }], nextCursor: null, total: 1 });
+    api.getBankRecord.mockResolvedValue(detail({ status: "hidden", heldByFlag: true, openFlags: 1 }, { flags: [flag] }));
+    api.hideBankRecord.mockResolvedValue({ ...detail({ status: "hidden" }), cascade: 0 });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Find x\./ }));
+    expect(await screen.findByText(/Out of use because of a flag/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+    await waitFor(() => expect(api.hideBankRecord).toHaveBeenCalledWith({ bank: "maths", id: "q1" }));
+  });
+
   it("dismisses a flag and shows who raised it", async () => {
     const flag = { id: "f1", reason: "crop", note: "cut off", createdByName: "Sam", createdAt: "2026-11-01T00:00:00Z" };
     api.getBankRecord.mockResolvedValueOnce(detail({ openFlags: 1 }, { flags: [flag] })).mockResolvedValue(detail());

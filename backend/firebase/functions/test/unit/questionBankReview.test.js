@@ -51,6 +51,16 @@ function fakeDb(seed = {}) {
     store,
     collection: (name) => collection(name),
     getAll: async (...refs) => refs.map((ref) => snap(ref.path)),
+    runTransaction: async (fn) => {
+      const ops = [];
+      const result = await fn({
+        get: async (ref) => snap(ref.path),
+        set: (ref, data) => ops.push(() => apply(ref.path, data, false)),
+        update: (ref, data) => ops.push(() => apply(ref.path, data, true)),
+      });
+      ops.forEach((op) => op());
+      return result;
+    },
     batch: () => {
       const ops = [];
       return {
@@ -132,6 +142,51 @@ describe("manageQuestionBank", () => {
     assert.equal(out.closed, 2);
     assert.equal(db.store.get("questionBank/q1").status, "hidden");
     assert.equal((await call(db, "admin", { action: "listFlags" })).flags.length, 0);
+  });
+
+  // RES-103. Flagging doesn't always mean the question is unusable.
+  it("keeps a flagged question in use unless the tutor says to stop using it", async () => {
+    const db = fakeDb(seed());
+    const kept = await call(db, "tutor", { action: "flag", jobId: "job1", questionId: "q1", reason: "text" });
+    assert.equal(kept.stoppedUsing, false);
+    assert.equal(db.store.get("questionBank/q1").status, "live");
+
+    const stopped = await call(db, "tutor", { action: "flag", jobId: "job1", questionId: "q1", reason: "crop", stopUsing: true }, "tutor2");
+    assert.equal(stopped.stoppedUsing, true);
+    const q = db.store.get("questionBank/q1");
+    assert.equal(q.status, "hidden");
+    assert.equal(q.hiddenReason, "flagged");
+    assert.equal(q.hiddenBy, "tutor2");
+    const { flags } = await call(db, "admin", { action: "listFlags" });
+    assert.deepEqual(flags.map((f) => f.stopUsing).sort(), [false, true]);
+  });
+
+  it("puts a question a flag took out of use back when the flag is dismissed or the question corrected", async () => {
+    for (const [resolution, updates] of [["dismiss", undefined], ["update", { difficulty: "medium" }]]) {
+      const db = fakeDb(seed());
+      await call(db, "tutor", { action: "flag", jobId: "job1", questionId: "q1", reason: "tags", stopUsing: true });
+      const { flags } = await call(db, "admin", { action: "listFlags" });
+      await call(db, "admin", { action: "resolve", flagId: flags[0].id, resolution, ...(updates ? { updates } : {}) });
+      const q = db.store.get("questionBank/q1");
+      assert.equal(q.status, "live", resolution);
+      assert.equal(q.hiddenReason, null);
+      assert.equal(q.restoredBy, "admin1");
+    }
+  });
+
+  it("keeps it out when the admin hides it, and never brings back a question an admin hid", async () => {
+    const db = fakeDb(seed());
+    await call(db, "tutor", { action: "flag", jobId: "job1", questionId: "q1", reason: "crop", stopUsing: true });
+    let { flags } = await call(db, "admin", { action: "listFlags" });
+    await call(db, "admin", { action: "resolve", flagId: flags[0].id, resolution: "hide" });
+    assert.equal(db.store.get("questionBank/q1").status, "hidden");
+    assert.equal(db.store.get("questionBank/q1").hiddenReason, null);
+
+    await call(db, "tutor", { action: "flag", jobId: "job1", questionId: "q1", reason: "text", stopUsing: true }, "tutor2");
+    assert.equal(db.store.get("questionBank/q1").hiddenBy, "admin1", "a hidden question isn't re-stamped");
+    ({ flags } = await call(db, "admin", { action: "listFlags" }));
+    await call(db, "admin", { action: "resolve", flagId: flags[0].id, resolution: "dismiss" });
+    assert.equal(db.store.get("questionBank/q1").status, "hidden");
   });
 
   it("updates tags and text an admin corrects", async () => {

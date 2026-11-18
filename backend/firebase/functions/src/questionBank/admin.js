@@ -275,7 +275,7 @@ async function openFlagsOf(db, questionId) {
   return snapshot.docs
     .map((doc) => {
       const flag = doc.data();
-      return { id: doc.id, reason: flag.reason, note: flag.note || "", createdByName: flag.createdByName || null, createdAt: isoOf(flag.createdAt), jobId: flag.jobId || null };
+      return { id: doc.id, reason: flag.reason, note: flag.note || "", stopUsing: flag.stopUsing === true, createdByName: flag.createdByName || null, createdAt: isoOf(flag.createdAt), jobId: flag.jobId || null };
     })
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
@@ -295,6 +295,7 @@ async function detailOf({ db, bucket, name, bank, recordId }) {
       ...summarise(bank, doc, { openFlags: flags.length }),
       ...bank.detail(data),
       hiddenBecauseOfStimulus: Boolean(data.hiddenWith),
+      heldByFlag: heldByFlag(data),
     },
     images: crops.filter(Boolean),
     flags,
@@ -327,6 +328,19 @@ function chunkedWrites(db) {
 
 function audit(db, writes, { name, recordId, action, fields = [], cascade = 0, actor, at }) {
   writes.set(db.collection(AUDIT_COLLECTION).doc(), { bank: name, recordId, action, fields, cascade, actorUid: actor.uid, actorName: actor.name, at });
+}
+
+// RES-103. A tutor can take a flagged question out of use straight away. It
+// stays hidden, marked with this reason, until an admin decides: hiding it
+// keeps it out, while a correction, a dismissal or a restore puts it back.
+const FLAG_HIDDEN_REASON = "flagged";
+const heldByFlag = (data) => data?.status === "hidden" && data?.hiddenReason === FLAG_HIDDEN_REASON;
+
+/** Puts a question a flag took out of use back in use. Returns whether it did. */
+function releaseFlagHold(writes, ref, data, { actor, at }) {
+  if (!heldByFlag(data)) return false;
+  writes.update(ref, { status: "live", hiddenBy: null, hiddenAt: null, hiddenWith: null, hiddenReason: null, restoredBy: actor.uid, restoredAt: at });
+  return true;
 }
 
 async function closeOpenFlags(db, writes, { questionId, resolution, actor, at }) {
@@ -379,10 +393,12 @@ async function loadForChange(db, payload) {
 async function hide({ db, bucket, actor, payload, now }) {
   requireAdmin(actor);
   const { name, bank, recordId, ref, snapshot } = await loadForChange(db, payload);
-  if (snapshot.get("status") !== "live") throw new HttpsError("failed-precondition", "Only a live record can be hidden");
+  // A question a flag took out of use can be hidden for good: that is the
+  // admin's decision on the flag (RES-103).
+  if (snapshot.get("status") !== "live" && !heldByFlag(snapshot.data())) throw new HttpsError("failed-precondition", "Only a live record can be hidden");
   const at = now();
   const writes = chunkedWrites(db);
-  writes.update(ref, { status: "hidden", hiddenBy: actor.uid, hiddenAt: at, hiddenWith: null });
+  writes.update(ref, { status: "hidden", hiddenBy: actor.uid, hiddenAt: at, hiddenWith: null, hiddenReason: null });
   const cascade = name === "stimuli" ? await hideLinked(db, writes, { stimulusId: recordId, actor, at }) : 0;
   if (bank.flaggable) await closeOpenFlags(db, writes, { questionId: recordId, resolution: "hide", actor, at });
   audit(db, writes, { name, recordId, action: "hide", cascade, actor, at });
@@ -396,8 +412,10 @@ async function restore({ db, bucket, actor, payload, now }) {
   if (snapshot.get("status") !== "hidden") throw new HttpsError("failed-precondition", "Only a hidden record can be restored");
   const at = now();
   const writes = chunkedWrites(db);
-  writes.update(ref, { status: "live", hiddenBy: null, hiddenAt: null, hiddenWith: null, restoredBy: actor.uid, restoredAt: at });
+  writes.update(ref, { status: "live", hiddenBy: null, hiddenAt: null, hiddenWith: null, hiddenReason: null, restoredBy: actor.uid, restoredAt: at });
   const cascade = name === "stimuli" ? await restoreLinked(db, writes, { stimulusId: recordId, actor, at }) : 0;
+  // Restoring a question a flag took out of use settles that flag (RES-103).
+  if (bank.flaggable && heldByFlag(snapshot.data())) await closeOpenFlags(db, writes, { questionId: recordId, resolution: "restore", actor, at });
   audit(db, writes, { name, recordId, action: "restore", cascade, actor, at });
   await writes.commit();
   return { ...(await detailOf({ db, bucket, name, bank, recordId })), cascade };
@@ -421,7 +439,11 @@ async function edit({ db, bucket, actor, payload, now }) {
   const at = now();
   const writes = chunkedWrites(db);
   writes.update(ref, { ...fields, ...editStamp(current, fields, actor, at) });
-  if (bank.flaggable) await closeOpenFlags(db, writes, { questionId: recordId, resolution: "update", actor, at });
+  if (bank.flaggable) {
+    // A corrected question goes back into use if a flag took it out (RES-103).
+    releaseFlagHold(writes, ref, current, { actor, at });
+    await closeOpenFlags(db, writes, { questionId: recordId, resolution: "update", actor, at });
+  }
   audit(db, writes, { name, recordId, action: "edit", fields: Object.keys(fields), actor, at });
   await writes.commit();
   return detailOf({ db, bucket, name, bank, recordId });
@@ -437,4 +459,4 @@ const ADMIN_ACTIONS = Object.freeze({
   editRecord: edit,
 });
 
-module.exports = { ADMIN_ACTIONS, AUDIT_COLLECTION, FLAGS_COLLECTION, MATHS_COLLECTION, audit, closeOpenFlags, editStamp };
+module.exports = { ADMIN_ACTIONS, AUDIT_COLLECTION, FLAGS_COLLECTION, FLAG_HIDDEN_REASON, MATHS_COLLECTION, audit, closeOpenFlags, editStamp, heldByFlag, releaseFlagHold };
