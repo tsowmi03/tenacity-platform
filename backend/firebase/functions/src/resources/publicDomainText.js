@@ -1152,29 +1152,43 @@ function extractNamedPiece(body, pieceTitle, { shortForm = false } = {}) {
     };
   }
 
-  // RES-101. For prose, a heading followed by the story itself is preferred to
-  // the title page and the contents entry, which share its name. Within that,
-  // an exact heading still wins over a loose one.
-  let matches = exact.length ? exact : loose;
-  if (!shortForm) {
-    const opensStory = (indexes) => indexes.filter((idx) => openingReadsAsProse(lines, idx));
-    const exactStory = opensStory(exact);
-    const looseStory = opensStory(loose);
-    if (exactStory.length) matches = exactStory;
-    else if (looseStory.length) matches = looseStory;
-  }
-
-  let best = "";
-  for (const idx of matches) {
-    let slice = sliceFromHeading(lines, idx, { storyBreaks: !shortForm });
-    const next = (lines[idx + 1] || "").trim();
-    // Keep the line's original indent: verse callers dedent by the common
-    // indent, which only lines up when the first line still carries its own.
-    if (next && slice) slice = `${lines[idx].replace(/[ \t]+$/, "")}\n${slice}`;
-    if (countWords(slice) > countWords(best)) best = slice;
-  }
-
+  // RES-101. Candidates in order of preference. For prose, a heading followed
+  // by the story itself comes before the title page and the contents entry,
+  // which share its name; then an exact heading before a loose one. A group
+  // whose best slice is too short gives way to the next, so an exact contents
+  // entry never hides the real heading ("The Sea Wind" in the contents, "THE
+  // SEA-WIND" over the poem; Codex review on #382).
   const minWords = shortForm ? 24 : 40;
+  const opensStory = (indexes) => indexes.filter((idx) => openingReadsAsProse(lines, idx));
+  const groups = (shortForm ? [exact, loose] : [opensStory(exact), opensStory(loose), exact, loose])
+    .filter((group) => group.length);
+  const longestSlice = (indexes) => {
+    let longest = "";
+    for (const idx of indexes) {
+      let slice = sliceFromHeading(lines, idx, { storyBreaks: !shortForm });
+      const next = (lines[idx + 1] || "").trim();
+      // Keep the line's original indent: verse callers dedent by the common
+      // indent, which only lines up when the first line still carries its own.
+      if (next && slice) slice = `${lines[idx].replace(/[ \t]+$/, "")}\n${slice}`;
+      if (countWords(slice) > countWords(longest)) longest = slice;
+    }
+    return longest;
+  };
+  let matches = groups[0];
+  let best = "";
+  for (const group of groups) {
+    const slice = longestSlice(group);
+    if (countWords(slice) > countWords(best)) {
+      best = slice;
+      matches = group;
+    }
+    if (countWords(slice) >= minWords) {
+      best = slice;
+      matches = group;
+      break;
+    }
+  }
+
   const mediumWords = shortForm ? 48 : 120;
   const words = countWords(best);
   const confidence = words >= mediumWords ? "medium" : words >= minWords ? "low" : "none";

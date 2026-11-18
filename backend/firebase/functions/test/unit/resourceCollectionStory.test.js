@@ -266,3 +266,14 @@ describe("review follow-ups on #380", () => {
     });
   });
 });
+
+describe("an exact contents entry doesn't hide the real heading (Codex review on #382)", () => {
+  it("finds a poem whose heading differs from its contents entry in punctuation", () => {
+    const verse = Array.from({ length: 8 }, (_, i) => `The sea wind line ${i + 1} blows across the bay`).join("\n");
+    const book = ["CONTENTS", "", "The Sea Wind", "Evening", "", "", "", "THE SEA-WIND", "", verse, "", "", "EVENING", "", "Another poem entirely here"].join("\n");
+    const { text } = extractNamedPiece(book, "The Sea Wind", { shortForm: true });
+    assert.ok(text, "expected the poem");
+    assert.match(text, /^The sea wind line 1/);
+    assert.doesNotMatch(text, /Another poem/);
+  });
+});
