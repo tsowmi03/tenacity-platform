@@ -2,9 +2,14 @@
 export const MAX_CUSTOM_PROMPT = 5000;
 
 // The original request plus the tutor's answer to the planner's question.
-export function clarifiedResourcePrompt(prompt, { topics = [], note = "" } = {}) {
+// RES-101: a "missing-text" question takes one choice, not a set of topics.
+export function clarifiedResourcePrompt(prompt, { topics = [], note = "", kind = null } = {}) {
   const parts = [String(prompt || "").trim()];
-  if (topics.length) parts.push(`Topics to cover: ${topics.join("; ")}.`);
+  if (topics.length) {
+    parts.push(kind === "missing-text"
+      ? `Tutor's choice for the missing text: ${topics[0]}.`
+      : `Topics to cover: ${topics.join("; ")}.`);
+  }
   if (note.trim()) parts.push(`Tutor's answer: ${note.trim()}`);
   return parts.filter(Boolean).join("\n\n");
 }

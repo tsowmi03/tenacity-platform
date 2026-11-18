@@ -875,7 +875,17 @@ function bankExamplesBlock(sourced) {
   return `\n\nEXAMPLES: questions set on this text in the paper it came from, written for that paper's students. Restate or adapt any that suit this student's year and the task, and write your own for the rest. Pitch every question at this student. Never mention these examples or where they came from. Answers and marking still follow the format this resource requires.\n${lines.join("\n")}`;
 }
 
-function buildUserMessage(job, uploadedContent, sourcedText = null) {
+// RES-101. The tutor named a text that couldn't be found and chose another
+// real text or an original instead. Nothing may name the missing text.
+function replacedTextNote(titles, replacement) {
+  const list = titles.map((t) => `"${t}"`).join(" and ");
+  const instead = replacement === "original"
+    ? "write an original text instead (in the stimulus or passage, with no author)"
+    : "use the verified text supplied here instead";
+  return `TEXT NAMED IN THE REQUEST IS NOT AVAILABLE — ${list} couldn't be found, and the tutor chose to ${instead}. Do not name ${list} anywhere: not in the resource title, a text title, a question or the marking guide, and do not borrow its characters or setting. Title the resource and frame every question around the text actually printed.`;
+}
+
+function buildUserMessage(job, uploadedContent, sourcedText = null, { replacedNamedTexts = [], replacement = null } = {}) {
   const parts = [];
 
   if (Array.isArray(uploadedContent) && uploadedContent.length) {
@@ -914,6 +924,8 @@ function buildUserMessage(job, uploadedContent, sourcedText = null) {
         `${sourcedTextHeader(sourcedText)}\n\nPASSAGE:\n${sourcedText.passage}${bankExamplesBlock(sourcedText)}`
     );
   }
+
+  if (replacedNamedTexts.length) parts.push(replacedTextNote(replacedNamedTexts, replacement));
 
   parts.push(
     `Generate a ${String(job.resourceType || "resource").replace(/-/g, " ")} for a Year ${job.year} ${job.subject} student.`

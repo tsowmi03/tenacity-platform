@@ -9,7 +9,7 @@ const { analyticsEnvironment } = require("../shared/posthogClient");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
-const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSHEET_BATCH_SIZE, MAX_RECOVERIES } = require("./durableStages");
+const { createDurableCaller, assertRequestSize, generateWorksheetBatches, WORKSHEET_BATCH_SIZE, MAX_RECOVERIES, controlError } = require("./durableStages");
 const { resourceEvent, resourceStage, terminalFields, timestampMs } = require("./resourceLog");
 const { canKeepDraftAfterReview, requestedMinutes, unavailableReviewWarning } = require("./contentVerification");
 const { generatePlannedResource, usesPlannedGeneration } = require("./plannedGeneration");
@@ -738,6 +738,31 @@ function namedInRequest(selection, job) {
 function namedTextMissingWarning(titles) {
   const list = titles.map((t) => `"${t}"`).join(" and ");
   return `A verified copy of ${list} couldn't be found, so it isn't printed. Students will need their own copy.`;
+}
+
+// RES-101. When a text the tutor named can't be found in the English bank or
+// the archives, the job stops before anything is written and asks how to go
+// on. The tutor's pick comes back inside the request as one of these labels.
+const MISSING_TEXT_OPTIONS = Object.freeze({
+  another: "Choose another real text",
+  original: "Write an original text",
+  leaveOut: "Leave it out (students have their own copy)",
+});
+
+function missingTextChoice(prompt) {
+  const text = String(prompt || "").toLowerCase();
+  const found = Object.entries(MISSING_TEXT_OPTIONS).find(([, label]) => text.includes(label.toLowerCase()));
+  return found ? found[0] : null;
+}
+
+function missingTextClarification(titles, { leaveOut = true } = {}) {
+  const list = titles.map((t) => `"${t}"`).join(" and ");
+  const options = [MISSING_TEXT_OPTIONS.another, MISSING_TEXT_OPTIONS.original];
+  if (leaveOut) options.push(MISSING_TEXT_OPTIONS.leaveOut);
+  return Object.assign(
+    controlError("RESOURCE_SCOPE_CLARIFICATION", `We couldn't find a copy of ${list} that we can print. How should we go on?`),
+    { clarificationOptions: options, clarificationKind: "missing-text" }
+  );
 }
 
 function sanitizedSourceSelection(selection) {
@@ -1814,9 +1839,13 @@ async function maybeSourcePassageLogged({
     let planner = sourced?.selection?._planner || job.sourcePlanner || null;
     if (sourced?.ok && sourced.passage) return { used: true, sourced, planner };
 
-    // RES-114: no other work is swapped in for a text the tutor named. The
-    // annotation task then falls back as it does when nothing is found.
-    if (sourced?.selection?.title && !namedInRequest(sourced.selection, job)) {
+    // RES-114: no other work is swapped in for a text the tutor named without
+    // asking. RES-101: the job stops and asks; the tutor's answer decides.
+    const named = Boolean(sourced?.selection?.title && namedInRequest(sourced.selection, job));
+    const choice = named ? missingTextChoice(job.customPrompt) : null;
+    if (named && !choice) throw missingTextClarification([sourced.selection.title], { leaveOut: false });
+    const replacedNamedTexts = named ? [sourced.selection.title] : [];
+    if (sourced?.selection?.title && (!named || choice === "another")) {
       const alternative = await selectAlternative({
         anthropicApiKey,
         openaiApiKey,
@@ -1842,13 +1871,15 @@ async function maybeSourcePassageLogged({
         reasonCode: "CANONICAL_SOURCE_MISS",
         alternateWorkRequired: true,
       };
-      if (sourced?.ok && sourced.passage) return { used: true, sourced, planner };
+      if (sourced?.ok && sourced.passage) return { used: true, sourced, planner, replacedNamedTexts };
     }
     return {
       used: false,
       sourced: sourced || null,
       planner,
-      warning: "No verified public-domain text found; used model-written passage.",
+      replacedNamedTexts,
+      // The tutor asked for an original: nothing to warn about.
+      ...(choice === "original" ? {} : { warning: "No verified public-domain text found; used model-written passage." }),
     };
   } catch (err) {
     if (isCancellationError(err) || err?.resourceControl) throw err;
@@ -1893,6 +1924,34 @@ function applyEnglishIntegrity(job, parsed) {
     }
   }
   return changed;
+}
+
+/**
+ * RES-101. A backstop for the prompt: a resource title that still names a text
+ * the tutor chose to replace is renamed after the text actually printed
+ * ("Practice Paper: The Garden Party" → "Practice Paper: The Welcome Desk").
+ * Questions can't be rewritten here; how many still name it is reported.
+ */
+function renameReplacedTexts(parsed, titles) {
+  if (!parsed || typeof parsed !== "object" || !titles.length) return { retitled: false, stillNamed: 0 };
+  const escape = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sources = titles.filter(Boolean).map((t) => `["“'‘]?${escape(t)}["”'’]?`);
+  const names = (text) => sources.some((source) => new RegExp(source, "i").test(text));
+  const firstText = Array.isArray(parsed.stimulus) ? parsed.stimulus.find((entry) => entry?.title) : null;
+  const printed = String(firstText?.title || parsed.passageTitle || "").replace(/^Extract from\s+/i, "").trim();
+  let retitled = false;
+  if (typeof parsed.title === "string" && names(parsed.title)) {
+    let title = parsed.title;
+    for (const source of sources) title = title.replace(new RegExp(source, "gi"), printed);
+    title = title.replace(/\s*[:—–-]\s*$/, "").replace(/\(\s*\)/g, "").replace(/\s{2,}/g, " ").trim();
+    if (title && title !== parsed.title) {
+      parsed.title = title;
+      retitled = true;
+    }
+  }
+  const questions = Array.isArray(parsed.questions) ? parsed.questions : [];
+  const stillNamed = questions.filter((q) => names(JSON.stringify(q))).length;
+  return { retitled, stillNamed };
 }
 
 /**
@@ -2055,6 +2114,23 @@ async function maybeSourceStimulusSetLogged({
     job, plannedTexts, plannedVisuals, persisted, maxWords, bank, callAi, anthropicApiKey, openaiApiKey, signal, judge,
   });
   const namedMissing = [];
+  // RES-101. Named texts the tutor has already told us to replace, and how
+  // many of them become originals.
+  const choice = missingTextChoice(job.customPrompt);
+  const replacedNamedTexts = [];
+  let originalsForNamed = 0;
+  // A named text that can't be found: left out after the tutor said so,
+  // replaced as they chose, or (with no answer yet) queued for the question.
+  const settleNamed = (title) => {
+    if (namedMissing.includes(title) || replacedNamedTexts.includes(title)) return false;
+    if (!choice || choice === "leaveOut") {
+      namedMissing.push(title);
+      return false;
+    }
+    replacedNamedTexts.push(title);
+    if (choice === "original") originalsForNamed += 1;
+    return choice === "another";
+  };
   for (const [index, selection] of plannedTexts.entries()) {
     if (fromBank.texts.has(index)) {
       texts.push(fromBank.texts.get(index));
@@ -2077,10 +2153,8 @@ async function maybeSourceStimulusSetLogged({
         texts.push(sourced);
         continue;
       }
-      if (namedInRequest(selection, job)) {
-        namedMissing.push(selection.title);
-        continue;
-      }
+      // Only "Choose another real text" goes on to look for one.
+      if (namedInRequest(selection, job) && !settleNamed(selection.title)) continue;
 
       const alternative = await selectAlternative({
         anthropicApiKey,
@@ -2112,10 +2186,13 @@ async function maybeSourceStimulusSetLogged({
     } catch (err) {
       if (isCancellationError(err) || err?.resourceControl) throw err;
       // best-effort: a single failed text must not sink the whole booklet.
-      // A named text that errored is still left out, not written (RES-114).
-      if (namedInRequest(selection, job) && !namedMissing.includes(selection.title)) namedMissing.push(selection.title);
+      // A named text that errored is settled like one that wasn't found.
+      if (namedInRequest(selection, job)) settleNamed(selection.title);
     }
   }
+
+  // RES-101. Stop before anything else is fetched or written, and ask.
+  if (namedMissing.length && !choice) throw missingTextClarification(namedMissing);
 
   // Visuals are sourced after the texts so a resource that is meant to be
   // mostly reading is not held up by an image lookup. Each sourced image adds
@@ -2150,7 +2227,9 @@ async function maybeSourceStimulusSetLogged({
     // the images alone.
     // Named texts that couldn't be found are left out, never written as
     // originals (RES-114), so they don't count as texts to write.
-    const missingTexts = plannedTexts.length - texts.length - namedMissing.length;
+    // RES-101. Originals the tutor chose for a missing named text are written
+    // too, but aren't a shortfall to warn about.
+    const missingTexts = plannedTexts.length - texts.length - namedMissing.length - originalsForNamed;
     const shortfall = missingTexts <= 0
       ? null
       : texts.length
@@ -2168,7 +2247,8 @@ async function maybeSourceStimulusSetLogged({
       // them: it put the passage inside Question 1's stem, where later stages
       // could not see it and no source line was printed. It now writes them
       // into the booklet as originals instead.
-      originalTextsAllowed: texts.length === 0 && missingTexts > 0,
+      originalTextsAllowed: texts.length === 0 && missingTexts + originalsForNamed > 0,
+      replacedNamedTexts,
       ...(warning ? { warning } : {}),
     };
   }
@@ -2180,9 +2260,10 @@ async function maybeSourceStimulusSetLogged({
     planner,
     bankUsage: fromBank.usage,
     originalTextsAllowed: unnamedMissing > 0,
+    replacedNamedTexts,
     warning: [
       namedMissing.length ? namedTextMissingWarning(namedMissing) : null,
-      unnamedMissing > 0 ? "Planned stimulus texts could not be verified, so the reading texts are original (labelled Tenacity Original)." : null,
+      unnamedMissing - originalsForNamed > 0 ? "Planned stimulus texts could not be verified, so the reading texts are original (labelled Tenacity Original)." : null,
     ].filter(Boolean).join(" "),
   };
 }
@@ -2776,7 +2857,15 @@ async function runGenerationPipelineLogged(job, deps) {
     : stimulusSourcing.used
       ? { texts: stimulusSourcing.texts }
       : null;
-  const userMessage = buildUserMessage(job, uploadedContent, sourcedForPrompt);
+  // RES-101. Named texts the tutor chose to replace must not be named anywhere.
+  const replacedNamedTexts = [
+    ...(passageSourcing.replacedNamedTexts || []),
+    ...(stimulusSourcing.replacedNamedTexts || []),
+  ];
+  const userMessage = buildUserMessage(job, uploadedContent, sourcedForPrompt, {
+    replacedNamedTexts,
+    replacement: missingTextChoice(job.customPrompt),
+  });
   throwIfCancelled(deps);
 
   // The stimulus field is offered to the model only when real public-domain
@@ -3013,6 +3102,12 @@ async function runGenerationPipelineLogged(job, deps) {
   }
   if (isEnglishSubject(job.subject) && applyEnglishIntegrity(job, parsed)) {
     raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
+  }
+  // RES-101. The resource title never names a text the tutor chose to replace.
+  if (replacedNamedTexts.length) {
+    const named = renameReplacedTexts(parsed, replacedNamedTexts);
+    if (named.retitled) raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
+    if (named.retitled || named.stillNamed) resourceEvent(job, "stimulus.replaced_text_named", { retitled: named.retitled, stillNamed: named.stillNamed }, named.stillNamed ? "warn" : "info");
   }
 
   // Verification pass: clean and cross-check maths working out. A topic booklet
@@ -4132,6 +4227,8 @@ async function runQueueForTutor(createdBy, deps) {
         // Always written: a later failure of another kind must not inherit the
         // suggestions from an earlier clarification.
         clarificationOptions: err?.clarificationOptions || [],
+        // RES-101. "missing-text" asks for one choice, not a set of topics.
+        clarificationKind: err?.clarificationKind || null,
         cancelRequested: false,
         completedAt: now(clock),
         usageByProvider: err?.usageByProvider || {},
@@ -4932,6 +5029,9 @@ module.exports = {
   applySourcedStimulus,
   applyTopicBookletStimulusPlacement,
   maybeSourceStimulusSet,
+  MISSING_TEXT_OPTIONS,
+  missingTextChoice,
+  renameReplacedTexts,
   shouldSourceStimulusSet,
   planStimulusSelections,
   deleteResourceJob,

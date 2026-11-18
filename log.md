@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-18 | [Stories inside collections print the right story; a missing named text asks the tutor (RES-101)](#2026-11-18--stories-inside-collections-print-the-right-story-a-missing-named-text-asks-the-tutor-res-101) |
 | 2026-11-18 | [Two resource jobs per account (RES-112)](#2026-11-18--two-resource-jobs-per-account-res-112) |
 | 2026-11-18 | [Maths diagrams match their questions (RES-115)](#2026-11-18--maths-diagrams-match-their-questions-res-115) |
 | 2026-11-18 | [Internal generator notes kept out of resources (RES-114)](#2026-11-18--internal-generator-notes-kept-out-of-resources-res-114) |
@@ -254,6 +255,22 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-18 — Stories inside collections print the right story; a missing named text asks the tutor (RES-101)
+
+**What changed**
+- A story named inside a collection is cut from its own heading. A collection named after one of its stories ("The Garden Party, and Other Stories") used to be taken as the story, so the paper printed the book's opening story ("At the Bay") under the named title.
+- Headings match despite punctuation and a leading article ("The Garden-Party" for "The Garden Party"). The title page and contents entry are skipped, and the slice stops where the next story starts. If the story can't be found in the book, nothing is printed from it.
+- A piece cut from a collection is titled as that piece, never as the book.
+- When a text the tutor named can't be found in the English bank or the archives, the job stops before anything is written and shows "Needs your input": choose another real text, write an original, or (for papers) leave it out because students have their own copy. The job waits for the tutor's answer.
+- With another text or an original, the writer is told not to name the missing text anywhere, and a resource title that still names it is renamed after the text actually printed.
+- Resource portal: this question takes exactly one choice (radio buttons).
+
+**Why:** A Year 10 paper planned on "The Garden Party" printed a different story, then (in the RES-113 benchmark) an invented text under Mansfield's title. Request fit scored 1/5.
+
+**Status:** Live. Functions deployed to production; the portal deployed on merge.
 
 ---
 

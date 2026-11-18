@@ -1029,11 +1029,41 @@ function normalizeHeading(s) {
     .trim();
 }
 
+// RES-101. Headings and planned names differ in punctuation and spacing: the
+// planner says "The Garden Party", the book's heading is "The Garden-Party".
+// Compared with every non-letter removed, and without a leading article.
+function compactHeading(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[‘’']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/^(?:the|a|an) /, "")
+    .replace(/ /g, "");
+}
+
+function headingMatches(line, pieceTitle) {
+  const target = normalizeHeading(pieceTitle);
+  if (!target) return false;
+  if (normalizeHeading(line) === target) return true;
+  const compact = compactHeading(pieceTitle);
+  return compact.length >= 4 && compactHeading(line) === compact;
+}
+
+// A line that could open the next piece in a collection: short, with no
+// sentence ending ("The Daughters of the Late Colonel", "Miss Brill").
+function looksLikePieceTitle(line) {
+  const text = String(line || "").trim();
+  return Boolean(text) && countWords(text) <= 10 && !/[.!?,;:]["'”’)\]_*]*$/.test(text);
+}
+
 /**
  * Slice a body from just after a heading line until a `* * *` separator, a run
  * of blank lines followed by a new ALL-CAPS/roman-numeral heading, or the end.
+ * Prose (`storyBreaks`) also ends where a collection starts its next piece:
+ * three or more blank lines, then a short title line (RES-101).
  */
-function sliceFromHeading(lines, startIdx) {
+function sliceFromHeading(lines, startIdx, { storyBreaks = false } = {}) {
   const collected = [];
   let blanks = 0;
   for (let i = startIdx + 1; i < lines.length; i += 1) {
@@ -1044,7 +1074,8 @@ function sliceFromHeading(lines, startIdx) {
       if (blanks >= 2 && collected.length) {
         const next = (lines[i + 1] || "").trim();
         const looksLikeHeading =
-          next && (next === next.toUpperCase() || /^[IVXLC]+\.?$/.test(next));
+          next && (next === next.toUpperCase() || /^[IVXLC]+\.?$/.test(next) ||
+            (storyBreaks && blanks >= 3 && looksLikePieceTitle(next)));
         if (looksLikeHeading) break;
       }
       collected.push("");
@@ -1054,6 +1085,26 @@ function sliceFromHeading(lines, startIdx) {
     collected.push(line);
   }
   return collected.join("\n").trim();
+}
+
+// RES-101. The paragraph straight after a heading line, unwrapped.
+function paragraphAfter(lines, idx) {
+  let i = idx + 1;
+  while (i < lines.length && lines[i].trim() === "") i += 1;
+  const collected = [];
+  for (; i < lines.length && lines[i].trim() !== ""; i += 1) collected.push(lines[i].trim());
+  return collected.join(" ");
+}
+
+// A real story heading is followed by the story: a paragraph that ends a
+// sentence. A title page is followed by "AND OTHER STORIES" or "by …", and a
+// contents entry by the next entry, so neither qualifies.
+function openingReadsAsProse(lines, idx) {
+  const paragraph = paragraphAfter(lines, idx);
+  return countWords(paragraph) >= 3 &&
+    /[.!?]["'”’)\]_*]*$/.test(paragraph) &&
+    !isHeadingLike(paragraph) &&
+    !FRONT_MATTER_PARA_RE.test(paragraph);
 }
 
 /**
@@ -1074,9 +1125,9 @@ function extractNamedPiece(body, pieceTitle, { shortForm = false } = {}) {
     return { text: null, confidence: "none", notes: "No piece title supplied." };
   }
 
-  const matches = [];
+  let matches = [];
   lines.forEach((line, i) => {
-    if (normalizeHeading(line) === target) matches.push(i);
+    if (headingMatches(line, pieceTitle)) matches.push(i);
   });
   if (!matches.length) {
     return {
@@ -1086,9 +1137,16 @@ function extractNamedPiece(body, pieceTitle, { shortForm = false } = {}) {
     };
   }
 
+  // RES-101. For prose, a heading followed by the story itself is preferred to
+  // the title page and the contents entry, which share its name.
+  if (!shortForm) {
+    const opensStory = matches.filter((idx) => openingReadsAsProse(lines, idx));
+    if (opensStory.length) matches = opensStory;
+  }
+
   let best = "";
   for (const idx of matches) {
-    let slice = sliceFromHeading(lines, idx);
+    let slice = sliceFromHeading(lines, idx, { storyBreaks: !shortForm });
     const next = (lines[idx + 1] || "").trim();
     // Keep the line's original indent: verse callers dedent by the common
     // indent, which only lines up when the first line still carries its own.
@@ -1109,6 +1167,24 @@ function extractNamedPiece(body, pieceTitle, { shortForm = false } = {}) {
     confidence,
     notes: `${ambiguity}Heuristic slice — verify against the source URL.`,
   };
+}
+
+/**
+ * RES-101. Whether the resolved ebook is a collection holding the named piece
+ * rather than the piece itself: the words its title adds to the piece's name
+ * include a collection word ("The Garden Party, and Other Stories", "The
+ * Complete Works of …"). Edition words alone don't count, so "The Adventures
+ * of Tom Sawyer, Complete" is still the novel. A chapter of a novel is never a
+ * piece in a collection, and a collection the planner asked for whole
+ * ("Grimms' Fairy Tales") adds nothing.
+ */
+const COLLECTION_WORD_RE = /^(?:other|stories|tales|poems|sketches|essays|works|collected|selected|anthology|verse|speeches|letters)$/;
+function isNamedPieceInCollection(resolvedTitle, pieceName, selection = {}) {
+  const resolved = String(resolvedTitle || "");
+  if (!resolved || !pieceName) return false;
+  if (chapterFromPieceTitle(selection.pieceTitle) !== null) return false;
+  const pieceTokens = significantTokens(pieceName);
+  return significantTokens(resolved).some((token) => !pieceTokens.includes(token) && COLLECTION_WORD_RE.test(token));
 }
 
 function buildChecks({ selection, resolution, bodyText, wordCount, brief }) {
@@ -1215,10 +1291,14 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
   // ebook title itself names the piece (a genuine standalone edition).
   const isPoemSelection = String(selection.type || "").toLowerCase() === "poem";
   const pieceName = selection.pieceTitle || selection.title;
+  // RES-101. A collection named after one of its stories ("The Garden Party,
+  // and Other Stories") matches that story's title precisely, but its opening
+  // is a different story. The named piece is cut from it like any collection.
+  const pieceInCollection = isNamedPieceInCollection(resolution.titleResolved, pieceName, selection);
   let passage = body;
   let extraction = { method: "whole-work", confidence: "high", notes: "Whole work after boilerplate strip." };
   let wholeWork = true;
-  if (resolution.viaFallback || isPoemSelection) {
+  if (resolution.viaFallback || isPoemSelection || pieceInCollection) {
     const sliced = extractNamedPiece(body, pieceName, { shortForm: isPoemSelection });
     if (sliced.text) {
       passage = sliced.text;
@@ -1249,7 +1329,11 @@ async function sourceGutenbergWork({ selection, brief = {} }) {
   const pieceQuery = selection.pieceTitle ? dedupedQueries[0]?.query : null;
   const resolvedAsPiece = Boolean(pieceQuery && resolution.matchedQuery === pieceQuery &&
     selection.pieceTitle !== selection.title && chapterFromPieceTitle(selection.pieceTitle) === null);
-  const workTitle = resolvedAsPiece ? selection.pieceTitle : selection.title;
+  // RES-101. A piece cut from a collection is titled as that piece, never as
+  // the book it came from.
+  const slicedProsePiece = extraction.method === "named-piece" && !isPoemSelection &&
+    chapterFromPieceTitle(selection.pieceTitle) === null;
+  const workTitle = resolvedAsPiece || slicedProsePiece ? pieceName : selection.title;
   if (wholeWork) {
     const resolvedTitle = String(resolution.titleResolved || "");
     passage = stripGutenbergFrontMatter(passage, [workTitle, selection.title, resolvedTitle, resolvedTitle.split(/[:;]/)[0]]);
@@ -1334,6 +1418,7 @@ module.exports = {
   fetchPlainText,
   stripGutenbergBoilerplate,
   extractNamedPiece,
+  isNamedPieceInCollection,
   countWords,
   unwrapProse,
   dedentLines,
