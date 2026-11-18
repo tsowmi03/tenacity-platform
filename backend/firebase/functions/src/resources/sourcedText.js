@@ -61,7 +61,7 @@ async function sourceVerifiedText({
     // Wikisource first (one clean page per poem). When its search misses —
     // common for poems known by first line or numbered inside a collection —
     // fall back to slicing the named piece out of the Gutenberg collection.
-    sourced = await wikisource({ title: selection.title, author: selection.author });
+    sourced = await wikisource({ title: selection.title, author: selection.author, approxWordCount: selection.approxWordCount });
     if (!sourced.ok) {
       const fromGutenberg = await gutenberg({ selection, brief });
       if (fromGutenberg.ok) sourced = fromGutenberg;
