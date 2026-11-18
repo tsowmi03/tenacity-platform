@@ -59,6 +59,8 @@ function sourceLine(question) {
 function FlagForm({ question, jobId, onFlagged }) {
   const [reason, setReason] = useState("crop");
   const [note, setNote] = useState("");
+  // RES-103. Reporting a problem doesn't always mean the question is unusable.
+  const [stopUsing, setStopUsing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -66,8 +68,8 @@ function FlagForm({ question, jobId, onFlagged }) {
     setBusy(true);
     setError("");
     try {
-      await flagBankQuestion({ jobId, questionId: question.id, reason, note });
-      onFlagged();
+      await flagBankQuestion({ jobId, questionId: question.id, reason, note, stopUsing });
+      onFlagged({ stopUsing });
     } catch (err) {
       setError(err?.userMessage || err?.message || "Could not flag this question.");
     } finally {
@@ -90,6 +92,17 @@ function FlagForm({ question, jobId, onFlagged }) {
         rows={2}
         value={note}
       />
+      <fieldset className="rg-bank-flag-use mt-2">
+        <legend className="label">Until an admin reviews it</legend>
+        <label className="row gap-2">
+          <input checked={!stopUsing} name={`flag-use-${question.id}`} onChange={() => setStopUsing(false)} type="radio" />
+          <span>Keep using this question</span>
+        </label>
+        <label className="row gap-2">
+          <input checked={stopUsing} name={`flag-use-${question.id}`} onChange={() => setStopUsing(true)} type="radio" />
+          <span>Stop using this question</span>
+        </label>
+      </fieldset>
       {error ? <div className="error mt-2">{error}</div> : null}
       <div className="row gap-2 mt-2">
         <Button disabled={busy} onClick={submit} size="sm" variant="primary">Send flag</Button>
@@ -102,6 +115,7 @@ export default function BankQuestionsSection({ job }) {
   const [state, setState] = useState({ loading: false, error: "", questions: null });
   const [flagging, setFlagging] = useState(null);
   const [flagged, setFlagged] = useState(() => new Set());
+  const [stopped, setStopped] = useState(() => new Set());
   const used = job?.questionBankUsage?.used || [];
   if (!used.length) return <DrawnDiagramsList job={job} />;
 
@@ -135,12 +149,17 @@ export default function BankQuestionsSection({ job }) {
               <div className="text-sm muted">{sourceLine(question)}</div>
               {question.image ? <img alt={`Diagram for question ${question.questionNumber}`} className="rg-bank-image" src={question.image} /> : null}
               {flagged.has(question.id) ? (
-                <div className="text-sm muted">Flagged. An admin will review it.</div>
+                <div className="text-sm muted">
+                  {stopped.has(question.id)
+                    ? "Flagged. It won't be used in new resources until an admin reviews it."
+                    : "Flagged. An admin will review it."}
+                </div>
               ) : flagging === question.id ? (
                 <FlagForm
                   jobId={job.jobId || job.id}
-                  onFlagged={() => {
+                  onFlagged={({ stopUsing }) => {
                     setFlagged((current) => new Set([...current, question.id]));
+                    if (stopUsing) setStopped((current) => new Set([...current, question.id]));
                     setFlagging(null);
                   }}
                   question={question}

@@ -47,8 +47,24 @@ describe("textbook questions in a resource (RES-61)", () => {
     fireEvent.change(screen.getByLabelText("Note for the admin"), { target: { value: "should be 13" } });
     fireEvent.click(screen.getByRole("button", { name: "Send flag" }));
 
-    await waitFor(() => expect(api.flagBankQuestion).toHaveBeenCalledWith({ jobId: "j1", questionId: "q1", reason: "answer", note: "should be 13" }));
+    await waitFor(() => expect(api.flagBankQuestion).toHaveBeenCalledWith({ jobId: "j1", questionId: "q1", reason: "answer", note: "should be 13", stopUsing: false }));
     expect(await screen.findByText("Flagged. An admin will review it.")).toBeInTheDocument();
+  });
+
+  // RES-103. Taking the question out of use is the tutor's choice.
+  it("can stop the question being used until an admin reviews it", async () => {
+    api.getResourceBankQuestions.mockResolvedValue({ questions: [question] });
+    api.flagBankQuestion.mockResolvedValue({ flagId: "f1", stoppedUsing: true });
+    render(<BankQuestionsSection job={{ jobId: "j1", questionBankUsage: { used: [{ questionNumber: 3, questionId: "q1" }] } }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show textbook questions" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Flag a problem" }));
+    expect(screen.getByLabelText("Keep using this question")).toBeChecked();
+    fireEvent.click(screen.getByLabelText("Stop using this question"));
+    fireEvent.click(screen.getByRole("button", { name: "Send flag" }));
+
+    await waitFor(() => expect(api.flagBankQuestion).toHaveBeenCalledWith({ jobId: "j1", questionId: "q1", reason: "crop", note: "", stopUsing: true }));
+    expect(await screen.findByText("Flagged. It won't be used in new resources until an admin reviews it.")).toBeInTheDocument();
   });
 });
 

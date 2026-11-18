@@ -428,8 +428,8 @@ export function getResourceBankQuestions(jobId) {
   return callFunction("manageQuestionBank", { action: "forJob", jobId });
 }
 
-export function flagBankQuestion({ jobId, questionId, reason, note }) {
-  return callFunction("manageQuestionBank", { action: "flag", jobId, questionId, reason, note: note || "" });
+export function flagBankQuestion({ jobId, questionId, reason, note, stopUsing = false }) {
+  return callFunction("manageQuestionBank", { action: "flag", jobId, questionId, reason, note: note || "", stopUsing: Boolean(stopUsing) });
 }
 
 // Admin only.
