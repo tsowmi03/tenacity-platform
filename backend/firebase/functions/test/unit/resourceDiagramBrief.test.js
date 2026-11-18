@@ -90,3 +90,24 @@ describe("a question whose diagram is left out still works (RES-117)", () => {
     assert.equal(safeRewording("Find x in the diagram.", "The angle is 48°. Find x.", BRIEF), false);
   });
 });
+
+describe("diagram questions that share a stem (RES-117, Codex review on #381)", () => {
+  const { validateQuestions, questionIdentity } = require("../../src/resources/plannedGeneration");
+  const q = (number, diagramBrief) => ({ number, marks: 2, stem: "Find x. Give a reason.", diagramBrief });
+  const specs = [{ number: 1, marks: 2 }, { number: 2, marks: 2 }];
+
+  it("are different questions when their diagrams differ", () => {
+    assert.doesNotThrow(() => validateQuestions({ parsed: { questions: [q(1, "Angle 52°, find x."), q(2, "Angle 71°, find x.")] } }, specs, "worksheet"));
+    assert.doesNotThrow(() => validateQuestions({ parsed: { questions: [q(2, "Angle 71°, find x.")] } }, [specs[1]], "worksheet", [questionIdentity(q(1, "Angle 52°, find x."))]));
+  });
+
+  it("are still repeats when the diagrams are the same too", () => {
+    assert.throws(() => validateQuestions({ parsed: { questions: [q(1, "Angle 52°, find x."), q(2, "Angle 52°, find x.")] } }, specs, "worksheet"), { code: "RESOURCE_BATCH_INVALID" });
+    assert.throws(() => validateQuestions({ parsed: { questions: [q(1, ""), q(2, "")] } }, specs, "worksheet"), { code: "RESOURCE_BATCH_INVALID" });
+  });
+
+  it("identify a part's diagram too, and leave a plain question as its stem", () => {
+    assert.equal(questionIdentity({ stem: "Find the area." }), "Find the area.");
+    assert.equal(questionIdentity({ stem: "Find x.", parts: [{ diagramBrief: "Angle 52°." }] }), "Find x. [diagram: Angle 52°.]");
+  });
+});
