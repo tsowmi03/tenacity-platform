@@ -74,3 +74,23 @@ describe("diagram labels are values, not descriptions (RES-115)", () => {
     assert.doesNotThrow(() => validateDiagram(getDiagramDefinition("net").fixture, "d"), "net's solid: rectangular-prism is not a label");
   });
 });
+
+describe("parallel-lines angles are drawn to size (RES-115)", () => {
+  const { renderDiagramSvgForTest: render } = require("../../src/resources/diagramGenerator");
+  // The arc's sweep in degrees, read from its SVG path around the crossing.
+  const sweep = (marked) => {
+    const svg = String(render({ type: "parallel-lines", marked, labels: lines }).svg || render({ type: "parallel-lines", marked, labels: lines }));
+    const m = svg.match(/<path d="M ([\d.-]+) ([\d.-]+) A ([\d.]+) [\d.]+ 0 (\d) 1 ([\d.-]+) ([\d.-]+)"/);
+    const [x1, y1, r, , x2, y2] = m.slice(1).map(Number);
+    const chord = Math.hypot(x2 - x1, y2 - y1);
+    return 2 * Math.asin(Math.min(1, chord / (2 * r))) * 180 / Math.PI;
+  };
+  it("draws a numbered angle at its true size in any corner", () => {
+    assert.ok(Math.abs(sweep([{ line: "line1", position: "below-right", label: "133 degrees" }]) - 133) < 1);
+    assert.ok(Math.abs(sweep([{ line: "line2", position: "above-right", label: "52°" }]) - 52) < 1);
+    assert.ok(Math.abs(sweep([{ line: "line1", position: "above-left", label: "70" }]) - 70) < 1);
+  });
+  it("keeps very sharp angles drawable", () => {
+    assert.ok(Math.abs(sweep([{ line: "line1", position: "below-right", label: "15 degrees" }]) - 40) < 1);
+  });
+});

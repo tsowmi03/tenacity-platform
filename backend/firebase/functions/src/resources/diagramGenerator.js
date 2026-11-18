@@ -1881,12 +1881,34 @@ GENERATORS["parallel-lines"] = (spec) => {
 
   const y1 = h * 0.32, y2 = h * 0.68;
   const lx = PAD, rx = w - PAD;
-  const t1x = w * 0.3, t1y = PAD - 10;
-  const t2x = w * 0.7, t2y = h - PAD + 10;
+  const top = PAD - 10, bottom = h - PAD + 10;
 
-  const slope = (t2y - t1y) / (t2x - t1x);
-  const ix1 = t1x + (y1 - t1y) / slope;
-  const ix2 = t1x + (y2 - t1y) / slope;
+  // RES-115: the transversal is drawn so a numbered angle appears at its true
+  // size. Its direction t (degrees clockwise from the right-hand ray, SVG y
+  // down) is the below-right angle; above-left equals it, and below-left and
+  // above-right are 180 - t. Without a number, the old slope (about 60°).
+  const markedSpec = Array.isArray(spec.marked) ? spec.marked : [];
+  const numbered = markedSpec
+    .map((a) => ({ position: a?.position, value: Number(String(a?.label ?? "").match(/^\s*(\d+(?:\.\d+)?)\s*(?:°|degrees?)?\s*$/i)?.[1]) }))
+    .find((a) => a.value > 0 && a.value < 180);
+  const defaultT = Math.atan2(bottom - top, w * 0.4) * 180 / Math.PI;
+  const wantT = numbered
+    ? (["below-right", "above-left"].includes(numbered.position) ? numbered.value : 180 - numbered.value)
+    : defaultT;
+  const tDeg = Math.min(140, Math.max(40, wantT));
+  const tRad = tDeg * Math.PI / 180;
+  const cx = w / 2, cy = (y1 + y2) / 2;
+  const xAt = (y) => cx + (y - cy) * Math.cos(tRad) / Math.sin(tRad);
+  // Clip the transversal to the drawing.
+  const clipX = (x, y) => {
+    if (x >= lx + 10 && x <= rx - 10) return [x, y];
+    const edge = x < lx + 10 ? lx + 10 : rx - 10;
+    return [edge, cy + (edge - cx) * Math.sin(tRad) / Math.cos(tRad)];
+  };
+  const [t1x, t1y] = clipX(xAt(top), top);
+  const [t2x, t2y] = clipX(xAt(bottom), bottom);
+  const ix1 = xAt(y1);
+  const ix2 = xAt(y2);
 
   let svg = svgOpen(w, h);
 
@@ -1901,12 +1923,12 @@ GENERATORS["parallel-lines"] = (spec) => {
 
   svg += text(lx - 22, y1, labels.line1 || "l", { italic: true, size: 22 });
   svg += text(lx - 22, y2, labels.line2 || "m", { italic: true, size: 22 });
-  svg += text(t2x + 18, t2y - 5, labels.transversal || "t", { italic: true, size: 22 });
+  svg += text(t2x + (tDeg <= 90 ? 18 : -30), t2y - 5, labels.transversal || "t", { italic: true, size: 22 });
 
   // Transversal direction (from its upper end to its lower end) — both angles
   // are drawn in the lower-right sector at each intersection. Labels are
   // scored against the drawn lines so long labels do not sit on the transversal.
-  const transAng = Math.atan2(t2y - t1y, t2x - t1x);
+  const transAng = tRad;
   const arcR = 26;
   const lineObstacles = [
     { type: "segment", segment: layoutSegment(lx, y1, rx, y1) },
