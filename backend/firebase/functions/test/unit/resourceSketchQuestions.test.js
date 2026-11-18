@@ -35,3 +35,19 @@ describe("sketch questions get an empty number plane (RES-115)", () => {
     assert.equal(resource.answers[0].diagram.type, "function-plot", "an answer may show the finished graph");
   });
 });
+
+describe("bank crop fit check (RES-115)", () => {
+  const { readFit, fitPrompt, FIT_SCHEMA } = require("../../src/resources/questionBankFit");
+  it("asks about every failure seen in the RES-113 baseline", () => {
+    const prompt = fitPrompt({ stem: "Sketch the graph of y = 2x + 1.", options: [] });
+    for (const phrase of [/same letter or label/, /needs is on the diagram/, /same figure, scenario and numbers/, /must not already show it/, /no other questions/, /not a fragment of text/]) assert.match(prompt, phrase);
+    assert.deepEqual(FIT_SCHEMA.required, ["fits", "problems", "note"]);
+  });
+  it("treats listed problems as a failure and a missing verdict as a fit", () => {
+    assert.equal(readFit({ fits: true, problems: ["answer_shown"], note: "" }).fits, false);
+    assert.equal(readFit({ fits: false, problems: [], note: "x" }).fits, false);
+    assert.equal(readFit({ fits: true, problems: [], note: "" }).fits, true);
+    assert.equal(readFit(null).fits, true);
+    assert.deepEqual(readFit({ fits: false, problems: ["made_up", "no_diagram"], note: "" }).problems, ["no_diagram"]);
+  });
+});

@@ -29,6 +29,7 @@
 // a resource.
 
 const { createHash } = require("crypto");
+const { FIT_EFFORT, FIT_SCHEMA, fitPrompt, readFit } = require("./questionBankFit");
 const { searchQuestions, createEmbedder } = require("../questionBank/search");
 const { pngSize, SOURCE_IMAGE } = require("./sourceImages");
 const { sameAnswer } = require("../questionBank/answerKeys");
@@ -637,8 +638,9 @@ async function applyQuestionBank({
     wave.forEach((entry, i) => {
       const out = results[i];
       // RES-114: an answer nobody could confirm rules that crop out for this
-      // slot; the slot tries again without it while it has crops left.
-      if (out?.skip === "answer_unconfirmed") {
+      // slot, and so does (RES-115) a crop that doesn't fit its question; the
+      // slot tries again without it while it has crops left.
+      if (out?.skip === "answer_unconfirmed" || out?.skip === "crop_unfit") {
         if (out.flag) unconfirmedFlags.push(out.flag);
         entry.excluded = new Set([...(entry.excluded || []), out.rejectedFamily]);
         const left = entry.plan.pool.some((c) => !chosen.has(questionFamily(c)) && !entry.excluded.has(questionFamily(c)));
@@ -729,9 +731,28 @@ async function applyQuestionBank({
       const note = `The book's answer (${book}) and two independent solves (${first.answer}; ${secondAnswer || "none"}) all disagree.`;
       return { skip: "answer_unconfirmed", reason: note, rejectedFamily: questionFamily(candidate), flag: { questionId: candidate.id, note } };
     };
+    // RES-115: a crop that doesn't fit its final question text (labels that
+    // differ, a value missing, a different figure, the answer shown, other
+    // page content) isn't used; the slot tries another crop. A check that
+    // errors counts as a fit, so it never costs a good crop.
+    const runChecked = async () => {
+      const out = await run();
+      if (!out?.candidate || !out.png) return out;
+      const where = slotWhere(plan.slot);
+      const label = `Question ${where.questionNumber}${where.partLabel ? where.partLabel : ""}`;
+      let fit;
+      try {
+        fit = readFit(await call([imageBlock(out.png), { type: "text", text: fitPrompt({ stem: out.stem, options: out.options }) }], FIT_SCHEMA, FIT_EFFORT, `Checking the textbook diagram fits ${label}`));
+      } catch (err) {
+        if (err?.name === "AbortError" || err?.resourceControl) throw err;
+        fit = readFit(null);
+      }
+      if (fit.fits) return out;
+      return { skip: "crop_unfit", reason: `${fit.problems.join(", ")}${fit.note ? `: ${fit.note}` : ""}`, rejectedFamily: questionFamily(out.candidate) };
+    };
     try {
       if (now() >= deadline) return { skip: "out_of_time" };
-      const out = await withDeadline(run(), deadline);
+      const out = await withDeadline(runChecked(), deadline);
       return out?.timedOut ? { skip: "out_of_time" } : out;
     } catch (err) {
       if (err?.name === "AbortError" || (err?.resourceControl && err.code !== "RESOURCE_STAGE_TIMEOUT")) throw err;
