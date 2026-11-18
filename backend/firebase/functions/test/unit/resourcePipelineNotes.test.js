@@ -48,3 +48,39 @@ describe("pipeline notes (RES-114)", () => {
     assert.equal(JSON.stringify(resource), before);
   });
 });
+
+// Codex review on #372: the check must run on the real build path, not only in
+// isolation. This builds a real DOCX and reads its text back.
+describe("pipeline notes on the build path (RES-114)", () => {
+  const mammoth = require("mammoth");
+  const { buildDocxWithDiagramReliability } = require("../../src/resources");
+  const { buildResourceDocx } = require("../../src/resources/builder");
+
+  it("keeps notes out of the built document and the saved resource", async () => {
+    const parsed = {
+      title: "Pythagoras",
+      subject: "maths",
+      year: 8,
+      topic: "Pythagoras",
+      totalMarks: 2,
+      questions: [{ number: 1, stem: "Find the hypotenuse of a right-angled triangle with legs 6 cm and 8 cm.", marks: 2, workingLines: 2, parts: null }],
+      answers: [{ questionNumber: 1, answer: "10 cm", workingOut: "Not confirmed: two independent solves disagreed with the book's answer, which is shown. Check before use.\nAdd the squares of the two legs, then take the square root." }],
+    };
+    const built = await buildDocxWithDiagramReliability({
+      resourceType: "worksheet",
+      parsed,
+      options: { studentName: "Test Student", subject: "maths", year: 8, answerMode: "worked" },
+      buildDocx: buildResourceDocx,
+    });
+    const { value: text } = await mammoth.extractRawText({ buffer: built.buffer });
+    assert.doesNotMatch(text, /Not confirmed|Check before use|independent solves/);
+    assert.match(text, /Add the squares of the two legs, then take the square root\./);
+    assert.doesNotMatch(JSON.stringify(built.resource), /Not confirmed/);
+    assert.match(parsed.answers[0].workingOut, /^Not confirmed/, "the caller's copy isn't changed");
+  });
+
+  it("tells the generator not to write such notes", () => {
+    const { AUTHORSHIP_RULES } = require("../../src/resources/humanStyle");
+    assert.match(AUTHORSHIP_RULES, /Never put notes about how the resource was made/);
+  });
+});

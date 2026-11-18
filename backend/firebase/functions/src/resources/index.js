@@ -25,6 +25,7 @@ const {
   includesWorking,
 } = require("./answerMode");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
+const { stripPipelineNotes } = require("./pipelineNotes");
 const { normaliseQuestionShape } = require("./builder/questionShape");
 const { isDiagramRenderError, optionalDiagramOmittedWarning } = require("./builder/diagrams");
 const { classifyResourceFailure, describeResourceFailure } = require("./failure");
@@ -1463,6 +1464,11 @@ async function buildDocxWithDiagramReliability({
   const shapeFixes = normaliseQuestionShape(resource, { subject: options?.subject });
   if (shapeFixes.placeholderOptions || shapeFixes.englishDiagramFlags) {
     logger.info("Normalised question shape before build", shapeFixes);
+  }
+  // RES-114: notes about how the resource was made never reach the student.
+  const notesRemoved = stripPipelineNotes(resource);
+  if (notesRemoved.length) {
+    logger.info("Removed pipeline notes before build", { count: notesRemoved.length, notes: notesRemoved.slice(0, 5) });
   }
   const warnings = [];
   let mathRepairRounds = 0;

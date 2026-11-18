@@ -245,3 +245,17 @@ describe("resume keeps the run's own request list", () => {
     } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 });
+
+describe("run lock guards the request list (Codex review on #372)", () => {
+  it("leaves run.json alone when another live process holds the run", async () => {
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "res113-lockorder-"));
+    try {
+      const manifest = { requestIds: ["m01-y5-fractions-worksheet"], startedAt: "earlier" };
+      fs.writeFileSync(path.join(runDir, "run.json"), JSON.stringify(manifest));
+      fs.writeFileSync(path.join(runDir, ".lock"), String(process.ppid));
+      const deps = { keys: { ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o" }, client: {}, replay: async () => { throw new Error("must not run"); } };
+      await assert.rejects(bench.runBenchmark(bench.parseArgs(["--output", runDir, "--only", "e01-y5-figurative-language-worksheet"]), deps), /in use/);
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8")), manifest);
+    } finally { fs.rmSync(runDir, { recursive: true, force: true }); }
+  });
+});
