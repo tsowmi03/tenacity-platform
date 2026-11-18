@@ -46,7 +46,7 @@ const {
   isCancellationError,
   throwIfCancelled,
 } = require("./cancellation");
-const { diagramOwnerLabel, repairDiagrams } = require("./diagramRepair");
+const { diagramOwnerLabel, questionTextFor, repairDiagrams, withDiagramBrief } = require("./diagramRepair");
 const { createProviderBudget, queuePolicy } = require("./providerBudget");
 const { QUESTION_BANK_MODES, applyQuestionBank, questionBankModeFor } = require("./questionBankFill");
 const { cloneWithSourceImages, loadSourceImages, withoutSourceImageBytes } = require("./sourceImages");
@@ -2549,11 +2549,29 @@ function diagramTargetLabels(parsed) {
   return labels;
 }
 
-function describeDiagramTargets(targets) {
+// RES-117. The question each diagram target belongs to, so a part ("Find x")
+// is described with its question's stem and diagram brief.
+function diagramTargetContexts(parsed) {
+  const contexts = new Map();
+  const walk = (node, context) => {
+    if (Array.isArray(node)) return node.forEach((child) => walk(child, context));
+    if (!node || typeof node !== "object") return;
+    const nested = Number.isFinite(node.number)
+      ? { questionNumber: node.number, questionStem: questionTextFor(node), questionBrief: typeof node.diagramBrief === "string" ? node.diagramBrief.replace(/\s+/g, " ").trim() : "" }
+      : context;
+    if (typeof node.diagramType === "string") contexts.set(node, nested);
+    for (const value of Object.values(node)) walk(value, nested);
+  };
+  walk(parsed, {});
+  return contexts;
+}
+
+function describeDiagramTargets(targets, contexts = new Map()) {
   return targets
     .map((target, index) => {
-      const stem = String(target.stem || target.instruction || "").replace(/\s+/g, " ");
-      return `${index + 1}. (${target.marks} marks) ${stem}`;
+      const context = contexts.get(target) || {};
+      const text = withDiagramBrief(questionTextFor(target, context), target, context).replace(/\n/g, " | ");
+      return `${index + 1}. (${target.marks} marks) ${text}`;
     })
     .join("\n");
 }
@@ -2580,6 +2598,7 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
   const omitted = [];
   const omissionDetail = new Map();
   const labels = diagramTargetLabels(parsed);
+  const contexts = diagramTargetContexts(parsed);
   const byType = new Map();
   for (const target of wanted) {
     if (!byType.has(target.diagramType)) byType.set(target.diagramType, []);
@@ -2614,7 +2633,7 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
         systemPrompt: buildDiagramFillPrompt({ job, type, definition, constrained: Boolean(schema) }),
         userMessage: [
           `Produce one "${type}" diagram for each of these ${group.length} item(s), using the matching index.`,
-          describeDiagramTargets(group),
+          describeDiagramTargets(group, contexts),
         ].join("\n\n"),
         signal,
         responseSchema: schema,

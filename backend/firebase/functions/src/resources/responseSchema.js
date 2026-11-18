@@ -92,9 +92,11 @@ const ANSWER_SPACE_FIELD = enumOf(["lines", "blank"]);
 // in both subjects: English questions never have one, and maths fills it in
 // after generation rather than during it. `skill` (RES-80) is the broad skill a
 // diagram question tests; the question bank finds a textbook diagram for it.
+// `diagramBrief` (RES-117) is what the diagram must show, never printed, so
+// the stem need not repeat it.
 function diagramProperties(subject) {
   return subject === "maths"
-    ? { diagram: NO_DIAGRAM, diagramType: DIAGRAM_TYPE_FIELD, diagramRequired: bool, difficulty: DIFFICULTY_FIELD, skill: str, answerSpace: ANSWER_SPACE_FIELD }
+    ? { diagram: NO_DIAGRAM, diagramType: DIAGRAM_TYPE_FIELD, diagramRequired: bool, diagramBrief: str, difficulty: DIFFICULTY_FIELD, skill: str, answerSpace: ANSWER_SPACE_FIELD }
     : { diagram: NO_DIAGRAM, diagramRequired: bool };
 }
 
