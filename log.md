@@ -9067,6 +9067,19 @@ three original repositories.
 
 ## Operational notes
 
+- **2026-11-18 — Website contact form restored (SendGrid config was missing).**
+  Every contact-form enquiry since at least 2026-10-23 failed with a 500
+  (25 submitted, 0 delivered, 9 families), which fired the PostHog
+  "Website failure" alert. Cause: Vercel production (`tenacity-tutoring-tqi9`)
+  had no `SENDGRID_API_KEY`, `SENDER_EMAIL` or `RECIEVER_EMAIL`, so
+  `/api/send-email` refused to send. The same gap silently skipped the
+  admin emails for Year 11 interest, parent feedback and `send-notification`.
+  Added all three to production (key copied from the Functions'
+  `SENDGRID_API_KEY` secret; sender `no-reply@`, recipient `enquiries@`),
+  redeployed main `2baf4b38` and confirmed a test enquiry returns 200. The
+  lost enquiries can't be recovered: the form keeps typed details out of
+  PostHog.
+
 - **2026-10-12 — Staging Remote Config has a Stripe test key.**
   `stripe_publishable_key` in `tenacity-tutoring-staging` Remote Config was
   empty, so staging builds disabled payments. Set to the Stripe test-mode
