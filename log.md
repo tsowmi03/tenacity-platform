@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-18 | [Classic poems source cleanly from Wikisource again (RES-116)](#2026-11-18--classic-poems-source-cleanly-from-wikisource-again-res-116) |
 | 2026-11-18 | [Quality benchmark for maths and English resources (RES-113)](#2026-11-18--quality-benchmark-for-maths-and-english-resources-res-113) |
 | 2026-11-12 | [Saved stages survive deploys; two-job pilot ready behind a flag (RES-110, RES-111, RES-112)](#2026-11-12--saved-stages-survive-deploys-two-job-pilot-ready-behind-a-flag-res-110-res-111-res-112) |
 | 2026-11-12 | [No-answers maths resources use the question bank again (RES-109)](#2026-11-12--no-answers-maths-resources-use-the-question-bank-again-res-109) |
@@ -250,6 +251,29 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-18 — Classic poems source cleanly from Wikisource again (RES-116)
+
+**What changed**
+- Poems on Wikisource editions built from scanned books (Ozymandias, for
+  example) are now read from the rendered page, so they can be verified and
+  printed instead of falling back to another poem or an invented text.
+- Formatting codes keep their words: Owen's "Gas! GAS!" had been printed as
+  "Gas!" with a gap, in poems that passed as verified.
+- Drafts and manuscripts are tried only after every published edition and are
+  never treated as verified; a poem that comes out cut short is never
+  verified; and a page must match every word of the requested title (the
+  Heavy Brigade could otherwise stand in for the Light Brigade).
+- Requests to Wikisource are spaced a second apart and wait as long as the
+  site asks when it rate-limits.
+- `node scripts/checkWikisourcePoems.js` checks six common school poems live.
+
+**Why:** Verified poem sourcing was failing for well-known poems, which led
+to an Ozymandias scaffold being given Blake's "The Tyger" (RES-113 baseline).
+
+**Status:** Live. The Functions change ships with the next production Functions deploy.
 
 ---
 

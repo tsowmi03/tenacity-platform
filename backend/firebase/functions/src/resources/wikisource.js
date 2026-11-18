@@ -22,7 +22,8 @@ const FETCH_TIMEOUT_MS = 20000;
 const USER_AGENT = "TenacityTutoring-PDText/1.0 (English resource sourcing)";
 // MediaWiki throttles bursty clients (HTTP 429). Space requests politely; the
 // BFS is serial so a pre-fetch delay is enough to stay under the limit.
-const WS_MIN_INTERVAL_MS = 350;
+// RES-116: 350ms still drew HTTP 429 after a few pages; one a second doesn't.
+let WS_MIN_INTERVAL_MS = 1000;
 let lastWsFetchAt = 0;
 
 async function wsFetchOnce(url) {
@@ -40,6 +41,7 @@ async function wsFetchOnce(url) {
     if (!res.ok) {
       const err = new Error(`HTTP ${res.status} fetching ${url}`);
       err.status = res.status;
+      err.retryAfter = res.headers?.get?.("retry-after") || null;
       throw err;
     }
     return res;
@@ -48,17 +50,17 @@ async function wsFetchOnce(url) {
   }
 }
 
-// Retry once on HTTP 429 (rate limit) after a longer pause — MediaWiki throttles
-// bursts, and a single backoff clears the transient case in practice.
+// On HTTP 429 (rate limit) wait as long as the server's Retry-After asks
+// (default 3s, at most 10s) and try again, up to twice.
 async function wsFetch(url) {
-  try {
-    return await wsFetchOnce(url);
-  } catch (err) {
-    if (err.status === 429) {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      return wsFetchOnce(url);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await wsFetchOnce(url);
+    } catch (err) {
+      if (err.status !== 429 || attempt >= 2) throw err;
+      const seconds = Math.min(10, Number(err.retryAfter) || 3);
+      await new Promise((resolve) => setTimeout(resolve, WS_MIN_INTERVAL_MS ? seconds * 1000 : 0));
     }
-    throw err;
   }
 }
 
@@ -88,8 +90,16 @@ const NON_WORK_NS = /^(Author|Category|Portal|Wikisource|Template|Help|File|Imag
 // clean published versions when one is available.
 const DRAFT_TITLE_RE = /\b(draft|manuscript|notebook)\b/i;
 
+// Judged on the page's own name (its last path segment and any bracketed
+// note), not the book it sits in: "…a new and verbatim text from the
+// manuscript…/The Tyger" is a published edition. RES-116.
+function isDraftTitle(title) {
+  const own = String(title || "").split("/").pop();
+  return DRAFT_TITLE_RE.test(own);
+}
+
 function qualityPenalty(title) {
-  return DRAFT_TITLE_RE.test(String(title || "")) ? 1 : 0;
+  return isDraftTitle(title) ? 1 : 0;
 }
 
 function pageUrl(pageTitle) {
@@ -139,18 +149,112 @@ async function resolveWikisourcePoem({ title, author }) {
  * can be tried for a real `<poem>` block.
  */
 function harvestVersionLinks(wikitext, wantTokens) {
-  const links = [...String(wikitext || "").matchAll(/\[\[([^\]|#]+)(?:\|[^\]]*)?\]\]/g)].map(
-    (m) => m[1].trim()
+  // The link's visible label counts as well as its target: an edition is often
+  // a subpage named for its place in a book ("…(1819)/Sonnet") and labelled
+  // with the poem's title ("Sonnet. Ozymandias"). RES-116.
+  const links = [...String(wikitext || "").matchAll(/\[\[([^\]|#]+)(?:\|([^\]]*))?\]\]/g)].map(
+    (m) => ({ t: m[1].trim(), label: (m[2] || "").trim() })
   );
   const scored = links
-    .filter((t) => !NON_WORK_NS.test(t))
-    .map((t) => {
-      const overlap = significantTokens(t).filter((x) => wantTokens.includes(x)).length;
-      return { t, overlap, score: overlap * 10 - qualityPenalty(t) };
+    .filter(({ t }) => !NON_WORK_NS.test(t))
+    .map(({ t, label }) => {
+      const tokens = new Set([...significantTokens(t), ...significantTokens(label)]);
+      const overlap = wantTokens.filter((x) => tokens.has(x)).length;
+      return { t, overlap, score: overlap * 10 - qualityPenalty(`${t} ${label}`) };
     })
     .filter((x) => x.overlap > 0)
     .sort((a, b) => b.score - a.score);
-  return [...new Set(scored.map((x) => x.t))].slice(0, 4);
+  return [...new Set(scored.map((x) => x.t))].slice(0, 8);
+}
+
+/** Each linked page's visible label, from a page's wikitext. */
+function linkLabels(wikitext) {
+  const labels = new Map();
+  for (const m of String(wikitext || "").matchAll(/\[\[([^\]|#]+)\|([^\]]*)\]\]/g)) {
+    if (!labels.has(m[1].trim())) labels.set(m[1].trim(), m[2].trim());
+  }
+  return labels;
+}
+
+/**
+ * Whether a page is the requested poem by name: every significant word of the
+ * title must appear in the page's own name or in the label of the link that
+ * led to it. Two words of three let "The Charge of the Heavy Brigade" pass for
+ * "The Charge of the Light Brigade". RES-116.
+ */
+function pageMatchesTitle(page, title, label = "") {
+  const own = String(page || "").split("/").pop();
+  const have = new Set([...significantTokens(own), ...significantTokens(label)]);
+  return significantTokens(title).every((t) => have.has(t));
+}
+
+/**
+ * The rendered HTML of a page. Proofread editions don't carry the poem in
+ * their own wikitext: they transclude scanned book pages
+ * (`<pages index="….djvu" include=106 />`), which only appear once rendered.
+ */
+async function fetchWikisourceRenderedHtml(pageTitle) {
+  const url =
+    `${WS_API}?action=parse&prop=text&formatversion=2&format=json&disableeditsection=1` +
+    `&page=${encodeURIComponent(pageTitle)}`;
+  const res = await wsFetch(url);
+  const data = await res.json();
+  const html = data?.parse?.text;
+  if (!html) throw new Error(`No rendered text for page "${pageTitle}"`);
+  return html;
+}
+
+/**
+ * The poem from rendered page HTML: MediaWiki renders every `<poem>` block as
+ * `<div class="poem">`, with `<br>` line breaks and `<p>` stanzas. Page
+ * numbers, footnote markers and other furniture inside the block are dropped.
+ * "high" when a poem block with text was found, as for the wikitext path.
+ */
+// Visible text in a stretch of rendered HTML, ignoring styles, page numbers
+// and other furniture.
+function visibleText(html) {
+  return decodeHtmlEntities(String(html || "")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, "")
+    .replace(/<span\b[^>]*\bclass="[^"]*\b(?:pagenum|ws-pagenum|ws-noexport)\b[^"]*"[^>]*>[\s\S]*?<\/span>/gi, "")
+    .replace(/<[^>]+>/g, " "))
+    .replace(/[\s\u200b]+/g, " ")
+    .trim();
+}
+
+function extractPoemFromHtml(html) {
+  const source = String(html || "");
+  const matches = [...source.matchAll(/<div\b[^>]*\bclass="[^"]*\bpoem\b[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)];
+  // A poem split across scanned pages renders as several blocks with only page
+  // furniture between them. Any real text between two blocks (the next poem's
+  // title, notes) means the page has moved on: stop there. RES-116.
+  const blocks = [];
+  for (const [i, m] of matches.entries()) {
+    if (i > 0) {
+      const prev = matches[i - 1];
+      if (/[A-Za-z]/.test(visibleText(source.slice(prev.index + prev[0].length, m.index)))) break;
+    }
+    blocks.push(m[1]);
+  }
+  const cut = blocks.length < matches.length;
+  const text = blocks
+    .map((block) => decodeHtmlEntities(
+      block
+        // Line breaks in the HTML source are only whitespace; <br> and <p> carry the layout.
+        .replace(/\s*\n\s*/g, " ")
+        .replace(/<style\b[\s\S]*?<\/style>/gi, "")
+        // Line numbers printed beside the verse ("1", "9", "13").
+        .replace(/<span\b[^>]*\bclass="[^"]*\b(?:wst-nr|wst-linenum|linenum|ws-linenum)\b[^"]*"[^>]*>[\s\S]*?<\/span>/gi, "")
+        .replace(/<span\b[^>]*\bclass="[^"]*\b(?:pagenum|ws-pagenum|ws-noexport)\b[^"]*"[^>]*>[\s\S]*?<\/span>/gi, "")
+        .replace(/<sup\b[^>]*\bclass="[^"]*\breference\b[^"]*"[^>]*>[\s\S]*?<\/sup>/gi, "")
+        .replace(/\s*<br\s*\/?>\s*/gi, "\n")
+        .replace(/<\/p>\s*<p\b[^>]*>/gi, "\n\n")
+        .replace(/<[^>]+>/g, "")
+    ).replace(/[ \t\u00a0]+$/gm, "").replace(/^[ \t\u00a0]+/gm, "").replace(/\n{3,}/g, "\n\n").trim())
+    .filter(Boolean)
+    .join("\n\n");
+  return text
+    ? { text, confidence: "high", cut, notes: `Extracted from ${blocks.length} of ${matches.length} rendered poem block(s).` }
+    : { text: null, confidence: "none", cut, notes: "No poem block in the rendered page." };
 }
 
 async function fetchWikisourceWikitext(pageTitle) {
@@ -231,12 +335,33 @@ function decodeHtmlEntities(text) {
   );
 }
 
+// RES-116. Formatting templates wrap words of the poem itself: Owen's
+// "Gas! {{sc|Gas!}} Quick, boys!" lost its second GAS! when every template was
+// deleted. These keep their text (the last positional argument; {{sic}} its
+// first); {{gap}} is a space; anything else (line numbers, page furniture) is
+// still removed.
+const TEXT_TEMPLATES = new Set([
+  "sc", "smallcaps", "small-caps", "small caps", "uc", "lc", "larger", "large", "x-larger", "xx-larger",
+  "smaller", "small", "x-smaller", "em", "strong", "i", "b", "u", "nowrap", "nobr", "lang", "serif",
+  "sans-serif", "fqm", "dhr", "hws", "hwe", "ls", "letter-spacing", "expanded", "spaced", "bold", "italic",
+]);
+function unwrapTextTemplate(match, body) {
+  const parts = body.split("|").map((p) => p.trim());
+  const name = parts[0].toLowerCase().replace(/_/g, " ");
+  const positional = parts.slice(1).filter((p) => !/^[a-z][a-z0-9 _-]*=/i.test(p));
+  if (name === "gap") return " ";
+  if (name === "sic") return positional[0] ?? "";
+  if (TEXT_TEMPLATES.has(name)) return positional.at(-1) ?? "";
+  return "";
+}
+
 /** Strip inline wiki markup and decode entities in a line of poem text. */
 function cleanWikiMarkup(text) {
   const stripped = String(text || "")
     .replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, "")
     .replace(/<ref[^>]*\/>/gi, "")
-    .replace(/\{\{[^{}]*\}\}/g, "") // simple templates
+    .replace(/\{\{([^{}]*)\}\}/g, unwrapTextTemplate) // keep text of formatting templates, drop the rest
+    .replace(/\{\{([^{}]*)\}\}/g, unwrapTextTemplate) // one level of nesting
     .replace(/\[\[(?:[^|\]]*\|)?([^\]]+)\]\]/g, "$1") // [[a|b]] -> b, [[a]] -> a
     .replace(/'''?/g, "") // bold/italic
     .replace(/<\/?[^>]+>/g, ""); // stray tags
@@ -321,23 +446,36 @@ function buildWikisourceResult({ pageTitle, title, author, passage, confidence, 
  * return the best low-confidence attempt with ok:false so the caller can fall
  * back rather than ship unreliable text.
  */
-async function sourceWikisourcePoem({ title, author, maxFetches = 6 }) {
+async function sourceWikisourcePoem({ title, author, approxWordCount = 0, maxFetches = 10 }) {
+  const expected = Number(approxWordCount) || 0;
   const resolution = await resolveWikisourcePoem({ title, author });
   if (!resolution.matched) {
     return { ok: false, source: "Wikisource", resolution, passage: null, tried: [] };
   }
 
   const wantTokens = significantTokens(title);
-  const queue = [...resolution.candidates];
   const visited = new Set();
   const tried = [];
   let fallback = null;
   let fetches = 0;
+  // RES-116: drafts, manuscripts and notebooks carry editorial marks and can
+  // differ from the published poem ("The Tyger (2nd draft)" was printed for a
+  // request). They are tried only after every published page, and a poem
+  // found in one is never treated as verified.
+  const published = [];
+  const drafts = [];
+  const labels = new Map();
+  const enqueue = (page) => {
+    if (visited.has(page) || published.includes(page) || drafts.includes(page)) return;
+    (isDraftTitle(page) ? drafts : published).push(page);
+  };
+  resolution.candidates.forEach(enqueue);
 
-  while (queue.length && fetches < maxFetches) {
-    const page = queue.shift();
+  while ((published.length || drafts.length) && fetches < maxFetches) {
+    const page = published.length ? published.shift() : drafts.shift();
     if (visited.has(page)) continue;
     visited.add(page);
+    const isDraft = isDraftTitle(page);
 
     let wikitext;
     try {
@@ -348,18 +486,43 @@ async function sourceWikisourcePoem({ title, author, maxFetches = 6 }) {
       continue;
     }
 
-    const ex = extractPoemFromWikitext(wikitext);
-    tried.push({ page, confidence: ex.confidence, words: countWords(ex.text) });
-
-    if (ex.confidence === "high" && ex.text) {
-      return buildWikisourceResult({ pageTitle: page, title, author, passage: ex.text, confidence: "high", tried });
-    }
-    if (/\{\{\s*(versions|similar)/i.test(wikitext)) {
-      for (const link of harvestVersionLinks(wikitext, wantTokens)) {
-        if (!visited.has(link)) queue.push(link);
+    let ex = extractPoemFromWikitext(wikitext);
+    // A proofread edition transcludes scanned pages; the poem is only in the
+    // rendered page.
+    if (ex.confidence !== "high" && /<pages\b[^>]*\bindex\s*=/i.test(wikitext) && fetches < maxFetches) {
+      try {
+        const html = await fetchWikisourceRenderedHtml(page);
+        fetches += 1;
+        const rendered = extractPoemFromHtml(html);
+        if (rendered.text) ex = rendered;
+      } catch (err) {
+        tried.push({ page, error: `rendered: ${err.message}` });
       }
     }
-    if (ex.text && !fallback) fallback = { page, passage: ex.text, confidence: ex.confidence };
+    // RES-116: a poem cut short is never verified. Under half the planner's
+    // expected length, or reading stopped early (notes or another poem came
+    // next) without reaching most of it, the text is only a fallback.
+    const words = countWords(ex.text);
+    if (ex.confidence === "high" && ((expected && words < expected * 0.5) || (ex.cut && !(expected && words >= expected * 0.7)))) {
+      ex = { ...ex, confidence: "partial" };
+    }
+    const named = pageMatchesTitle(page, title, labels.get(page));
+    if (ex.confidence === "high" && ex.text && !named) ex = { ...ex, confidence: "title-mismatch" };
+    tried.push({ page, confidence: ex.confidence, words, ...(isDraft ? { draft: true } : {}) });
+
+    if (ex.confidence === "high" && ex.text && !isDraft) {
+      return buildWikisourceResult({ pageTitle: page, title, author, passage: ex.text, confidence: "high", tried });
+    }
+    if (/\{\{\s*(versions|similar|other versions)/i.test(wikitext)) {
+      const found = linkLabels(wikitext);
+      for (const link of harvestVersionLinks(wikitext, wantTokens)) {
+        if (found.has(link) && !labels.has(link)) labels.set(link, found.get(link));
+        enqueue(link);
+      }
+    }
+    if (ex.text && (!fallback || (fallback.isDraft && !isDraft))) {
+      fallback = { page, passage: ex.text, confidence: isDraft ? "draft" : ex.confidence, isDraft };
+    }
   }
 
   if (fallback) {
@@ -371,11 +534,17 @@ async function sourceWikisourcePoem({ title, author, maxFetches = 6 }) {
 }
 
 module.exports = {
+  // Tests only: no spacing between requests.
+  _setMinIntervalForTests: (ms) => { WS_MIN_INTERVAL_MS = ms; },
   resolveWikisourcePoem,
   fetchWikisourceWikitext,
   cleanWikiMarkup,
   decodeHtmlEntities,
   extractPoemFromWikitext,
+  extractPoemFromHtml,
+  fetchWikisourceRenderedHtml,
+  harvestVersionLinks,
+  pageMatchesTitle,
   sourceWikisourcePoem,
   countWords,
 };
