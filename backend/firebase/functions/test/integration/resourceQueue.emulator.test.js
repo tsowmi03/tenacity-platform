@@ -105,6 +105,33 @@ describe("resource queue concurrency (firestore emulator)", () => {
     assert.equal((await claim()).jobId, "c");
   });
 
+  it("enables two turns for an unlisted tutor only with valid budgets and the global flag", async () => {
+    const config = db.doc("config/resourceQueue");
+    const jobs = db.collection("resourceJobs");
+    const tutor = "unlisted-tutor";
+    const claim = () => claimNextPendingJobForTutor({ db, createdBy: tutor, clock });
+    await config.set({ twoTurnsForAllTutors: true, providerLimits: { openai: providerLimits.openai } });
+    await Promise.all(["a", "b", "c"].map((id) => jobs.doc(id).set({
+      createdBy: tutor, status: "pending", createdAt: clock(),
+    })));
+
+    const first = await claim();
+    assert.equal(first.queueCap, 1);
+    assert.equal(await claim(), null);
+
+    await config.update({ providerLimits });
+    const second = await claim();
+    assert.equal(second.queueCap, 2);
+    assert.equal(second.extraTurn, true);
+    assert.equal(await claim(), null);
+
+    await config.update({ twoTurnsForAllTutors: false });
+    await finalizeResourceJobAttempt({ db, clock, jobId: first.jobId, attemptId: first.attemptId, patch: { status: "complete" } });
+    assert.equal(await claim(), null);
+    await finalizeResourceJobAttempt({ db, clock, jobId: second.jobId, attemptId: second.attemptId, patch: { status: "complete" } });
+    assert.equal((await claim()).queueCap, 1);
+  });
+
   it("skips a deferred or fallback job while filling both pilot turns in queue order", async () => {
     const jobs = db.collection("resourceJobs");
     await db.doc("config/resourceQueue").set({ twoTurnTutorUids: ["pilot"], providerLimits });

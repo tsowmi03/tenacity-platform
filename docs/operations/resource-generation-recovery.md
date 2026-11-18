@@ -367,6 +367,7 @@ per tutor. Configure these fields in the staging project first.
 | Field | Value |
 | --- | --- |
 | `twoTurnTutorUids` | Array of Firebase tutor UIDs eligible for two concurrent turns |
+| `twoTurnsForAllTutors` | Boolean. Set to `true` to allow two turns for every tutor account, including new accounts. |
 | `providerLimits.anthropic` | Map with integer `maxConcurrent` and `maxStartsPerMinute` |
 | `providerLimits.openai` | Map with integer `maxConcurrent` and `maxStartsPerMinute` |
 
@@ -396,6 +397,7 @@ with stable completion, document quality, other-tutor wait and cost per ready
 file. Keep the second turn restricted to the pilot cohort while collecting
 those results.
 
-To roll back concurrency, clear `twoTurnTutorUids` and leave the budget maps
-in place while current turns finish. New claims immediately use the one-turn
-cap. The two trigger functions read the same configuration.
+To roll back concurrency for everyone, set `twoTurnsForAllTutors` to `false`,
+clear `twoTurnTutorUids`, and leave the budget maps in place while current turns
+finish. New claims immediately use the one-turn cap. The two trigger functions
+read the same configuration.

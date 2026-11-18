@@ -77,7 +77,8 @@ function queuePolicy(config, tutor) {
   }
   // A bad or incomplete configuration cannot switch on a second turn.
   if (PROVIDERS.some((provider) => !providerLimits[provider])) return { maxTurns: 1, providerLimits: {} };
-  const twoTurns = Array.isArray(config?.twoTurnTutorUids) && config.twoTurnTutorUids.includes(tutor);
+  const twoTurns = config.twoTurnsForAllTutors === true ||
+    (Array.isArray(config.twoTurnTutorUids) && config.twoTurnTutorUids.includes(tutor));
   return { maxTurns: twoTurns ? 2 : 1, providerLimits };
 }
 
