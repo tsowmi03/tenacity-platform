@@ -156,3 +156,31 @@ describe("the page must be the requested poem by name (RES-116)", () => {
     assert.equal(ws.pageMatchesTitle("Poems by Ozymandias Smith/Spring", "Ozymandias"), false);
   });
 });
+
+describe("poem blocks with nested divs (RES-116, Codex review on #373)", () => {
+  it("reads to the poem block's own closing tag, keeping every stanza", () => {
+    const html = `<div class="poem"><div class="stanza"><p>First line,<br>second line.</p></div><div class="stanza"><p>Third line,<br>fourth line.</p></div><p>Fifth line.</p></div><div class="wst-center">NEXT POEM</div><div class="poem"><p>Other poem.</p></div>`;
+    const { text, cut } = ws.extractPoemFromHtml(html);
+    assert.equal(text, "First line,\nsecond line.\n\nThird line,\nfourth line.\nFifth line.");
+    assert.equal(cut, true, "stopped at the next poem");
+  });
+
+  it("doesn't verify a poem whose nested block hides most of it", async () => {
+    const before = globalThis.fetch;
+    ws._setMinIntervalForTests(0);
+    const line = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
+    const html = `<div class="poem"><div class="indent"><p>${line(60)}</p></div><p>${line(40)}</p></div>`;
+    globalThis.fetch = async (url) => {
+      const u = new URL(url);
+      const body = u.searchParams.get("list") === "search" ? { query: { search: [{ title: "Book/Test Poem" }] } }
+        : u.searchParams.get("prop") === "wikitext" ? { parse: { wikitext: '<pages index="Book.djvu" include=1 />' } }
+        : { parse: { text: html } };
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => body };
+    };
+    try {
+      const r = await ws.sourceWikisourcePoem({ title: "Test Poem", author: "A", approxWordCount: 100 });
+      assert.equal(r.ok, true);
+      assert.equal(r.wordCount, 100, "all hundred words, not just the nested sixty");
+    } finally { globalThis.fetch = before; ws._setMinIntervalForTests(1000); }
+  });
+});

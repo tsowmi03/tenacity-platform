@@ -221,9 +221,35 @@ function visibleText(html) {
     .trim();
 }
 
+// Every rendered poem block, as { index, end, inner }. Blocks can contain
+// their own <div>s (stanza layout, indents), so each block runs to the </div>
+// that matches its opening tag, not the first one after it. A block left
+// unclosed runs to the end of the page.
+function findPoemBlocks(source) {
+  const blocks = [];
+  const open = /<div\b[^>]*\bclass="[^"]*\bpoem\b[^"]*"[^>]*>/gi;
+  let m;
+  while ((m = open.exec(source))) {
+    const start = m.index + m[0].length;
+    const tag = /<div\b[^>]*>|<\/div\s*>/gi;
+    tag.lastIndex = start;
+    let depth = 1;
+    let end = source.length;
+    let close = source.length;
+    let t;
+    while ((t = tag.exec(source))) {
+      depth += t[0][1] === "/" ? -1 : 1;
+      if (depth === 0) { close = t.index; end = t.index + t[0].length; break; }
+    }
+    blocks.push({ index: m.index, end, 1: source.slice(start, close) });
+    open.lastIndex = end;
+  }
+  return blocks;
+}
+
 function extractPoemFromHtml(html) {
   const source = String(html || "");
-  const matches = [...source.matchAll(/<div\b[^>]*\bclass="[^"]*\bpoem\b[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)];
+  const matches = findPoemBlocks(source);
   // A poem split across scanned pages renders as several blocks with only page
   // furniture between them. Any real text between two blocks (the next poem's
   // title, notes) means the page has moved on: stop there. RES-116.
@@ -231,7 +257,7 @@ function extractPoemFromHtml(html) {
   for (const [i, m] of matches.entries()) {
     if (i > 0) {
       const prev = matches[i - 1];
-      if (/[A-Za-z]/.test(visibleText(source.slice(prev.index + prev[0].length, m.index)))) break;
+      if (/[A-Za-z]/.test(visibleText(source.slice(prev.end, m.index)))) break;
     }
     blocks.push(m[1]);
   }
@@ -248,6 +274,10 @@ function extractPoemFromHtml(html) {
         .replace(/<sup\b[^>]*\bclass="[^"]*\breference\b[^"]*"[^>]*>[\s\S]*?<\/sup>/gi, "")
         .replace(/\s*<br\s*\/?>\s*/gi, "\n")
         .replace(/<\/p>\s*<p\b[^>]*>/gi, "\n\n")
+        // Nested divs (stanza or indent wrappers) end a line; back-to-back
+        // ones separate stanzas.
+        .replace(/<\/div>\s*<div\b[^>]*>/gi, "\n\n")
+        .replace(/\s*<\/?div\b[^>]*>\s*/gi, "\n")
         .replace(/<[^>]+>/g, "")
     ).replace(/[ \t\u00a0]+$/gm, "").replace(/^[ \t\u00a0]+/gm, "").replace(/\n{3,}/g, "\n\n").trim())
     .filter(Boolean)
