@@ -103,9 +103,10 @@ const SAME_SCHEMA = {
   properties: { same: { type: "boolean" } },
 };
 
-// RES-63: shown in the tutor copy when the book and two independent solves
-// all disagree, and the book's answer is printed anyway.
-const UNCONFIRMED_NOTE = "Not confirmed: two independent solves disagreed with the book's answer, which is shown. Check before use.";
+// RES-114: when the book and two independent solves all disagree, the crop is
+// not used. Its slot tries another crop, then keeps the drawn question; the
+// question is flagged for review. (RES-63 printed the book's answer with an
+// "unconfirmed" note, which reached students.)
 
 const CHECK_SCHEMA = {
   type: "object",
@@ -619,11 +620,12 @@ async function applyQuestionBank({
     .sort((a, b) => (HARDEST_FIRST[a.plan.difficulty] ?? 1) - (HARDEST_FIRST[b.plan.difficulty] ?? 1) || a.index - b.index);
   const chosen = new Set();
   const outcomes = new Array(plans.length);
+  const unconfirmedFlags = [];
   while (queue.length) {
     const wave = queue.splice(0, CONCURRENCY);
     for (const entry of wave) {
       entry.tries += 1;
-      entry.plan.candidates = entry.plan.pool.filter((c) => !chosen.has(questionFamily(c))).slice(0, CANDIDATES);
+      entry.plan.candidates = entry.plan.pool.filter((c) => !chosen.has(questionFamily(c)) && !entry.excluded?.has(questionFamily(c))).slice(0, CANDIDATES);
     }
     // A capacity yield in one slot must not leave sibling provider calls
     // running after the worker releases its claim.
@@ -634,6 +636,14 @@ async function applyQuestionBank({
     const again = [];
     wave.forEach((entry, i) => {
       const out = results[i];
+      // RES-114: an answer nobody could confirm rules that crop out for this
+      // slot; the slot tries again without it while it has crops left.
+      if (out?.skip === "answer_unconfirmed") {
+        if (out.flag) unconfirmedFlags.push(out.flag);
+        entry.excluded = new Set([...(entry.excluded || []), out.rejectedFamily]);
+        const left = entry.plan.pool.some((c) => !chosen.has(questionFamily(c)) && !entry.excluded.has(questionFamily(c)));
+        if (left && entry.tries < CONCURRENCY) { again.push(entry); return; }
+      }
       if (out?.candidate && chosen.has(questionFamily(out.candidate))) {
         if (entry.tries < CONCURRENCY) { again.push(entry); return; }
         outcomes[entry.index] = { skip: "crop_taken" };
@@ -716,8 +726,8 @@ async function applyQuestionBank({
       if (secondAnswer && await agree(secondAnswer, first.answer, stem)) {
         return { ...base, answer: first.answer, workingOut: first.workingOut, answerSource: "solves", flag: `Two independent solves gave ${first.answer}; the book's answer is ${book}. Likely a misprint or a wrong answer link.` };
       }
-      return { ...base, answer: book, workingOut: [UNCONFIRMED_NOTE, secondWorking || first.workingOut].filter(Boolean).join("\n"), answerSource: "book_unconfirmed",
-        flag: `The book's answer (${book}) and two independent solves (${first.answer}; ${secondAnswer || "none"}) all disagree.` };
+      const note = `The book's answer (${book}) and two independent solves (${first.answer}; ${secondAnswer || "none"}) all disagree.`;
+      return { skip: "answer_unconfirmed", reason: note, rejectedFamily: questionFamily(candidate), flag: { questionId: candidate.id, note } };
     };
     try {
       if (now() >= deadline) return { skip: "out_of_time" };
@@ -729,7 +739,7 @@ async function applyQuestionBank({
     }
   }
 
-  const flags = [];
+  const flags = [...unconfirmedFlags];
   plans.forEach((plan, index) => {
     const out = outcomes[index];
     if (!out || out.skip) {
@@ -740,8 +750,6 @@ async function applyQuestionBank({
       return;
     }
     const rows = applySwap(plan.slot, out);
-    // Without a working column, the answer itself says it is unconfirmed.
-    if (out.answerSource === "book_unconfirmed") for (const row of rows) if (typeof row.workingOut !== "string") row.answer = `${row.answer} (book's answer, not confirmed)`;
     result.answerRows.push(...rows);
     // "new" keeps the value the portal already shows as a new question on a
     // textbook diagram.
