@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "note": "RES-113 quality benchmark request set. Keep ids stable: summaries are compared by id across runs. Years are 5-10 because that is what the portal accepts. `checks` are extra things the grader must look at for that request; they never change the rubric.",
+  "requests": [
+    {
+      "id": "m01-y5-fractions-worksheet",
+      "subject": "maths", "year": 5, "resourceType": "worksheet", "answerMode": "answers", "showMarks": false,
+      "customPrompt": "Worksheet on adding and subtracting fractions with the same denominator, then with related denominators (halves, quarters, eighths). 12 questions, getting harder, including two short word problems.",
+      "checks": ["Fractions are typeset as stacked fractions, not 1/2 text.", "Difficulty suits a Year 5 student."]
+    },
+    {
+      "id": "m02-y6-area-perimeter-diagnostic",
+      "subject": "maths", "year": 6, "resourceType": "diagnostic-test", "answerMode": "worked", "showMarks": true,
+      "customPrompt": "Diagnostic test on area and perimeter of rectangles, triangles and composite shapes made of rectangles. About 10 questions, most with a labelled diagram.",
+      "checks": ["Each diagram's labelled lengths match the question and the worked answer.", "Diagrams are legible in black and white."]
+    },
+    {
+      "id": "m03-y7-parallel-lines-worksheet",
+      "subject": "maths", "year": 7, "resourceType": "worksheet", "answerMode": "worked", "showMarks": false,
+      "customPrompt": "Worksheet on angles formed by parallel lines and a transversal: corresponding, alternate and co-interior angles. 10 questions, each with a diagram, asking students to find a marked angle and give a reason.",
+      "checks": ["The angle asked for is marked on the diagram.", "Worked answers name the correct angle relationship."]
+    },
+    {
+      "id": "m04-y8-pythagoras-booklet",
+      "subject": "maths", "year": 8, "resourceType": "topic-booklet", "answerMode": "worked", "showMarks": true,
+      "customPrompt": "Topic booklet on Pythagoras' theorem: finding the hypotenuse, finding a shorter side, and simple word problems (ladders, diagonals). Three sub-topics with practice questions, then an end-of-topic quiz.",
+      "checks": ["Right-angle markers and side labels on every triangle.", "Surds or rounding are stated consistently in answers."]
+    },
+    {
+      "id": "m05-y8-mixed-review",
+      "subject": "maths", "year": 8, "resourceType": "mixed-review", "answerMode": "answers", "showMarks": true,
+      "customPrompt": "Mixed review covering solving linear equations, simplifying ratios, and percentage increase and decrease. 15 questions.",
+      "checks": ["All three topics are covered in roughly equal measure."]
+    },
+    {
+      "id": "m06-y9-trig-practice-paper",
+      "subject": "maths", "year": 9, "resourceType": "practice-paper", "answerMode": "worked", "showMarks": true,
+      "customPrompt": "Practice paper on right-angled trigonometry: finding sides and angles with sin, cos and tan, plus angles of elevation and depression. 45 minutes.",
+      "checks": ["Triangles show which angle and sides are given.", "Answers are rounded as the question asks."]
+    },
+    {
+      "id": "m07-y9-linear-graphs-worksheet",
+      "subject": "maths", "year": 9, "resourceType": "worksheet", "answerMode": "worked", "showMarks": false,
+      "customPrompt": "Worksheet on linear graphs: gradient and y-intercept, finding the equation of a line from its graph, and sketching lines from y = mx + c. 10 questions with coordinate-plane diagrams.",
+      "checks": ["Graph axes are labelled and the plotted lines match the equations in the answers."]
+    },
+    {
+      "id": "m08-y10-quadratics-booklet",
+      "subject": "maths", "year": 10, "resourceType": "topic-booklet", "answerMode": "worked", "showMarks": true,
+      "customPrompt": "Topic booklet on quadratics: factorising, solving by factorising and by the quadratic formula, and sketching parabolas with intercepts and turning point. Three sub-topics and an end-of-topic quiz.",
+      "checks": ["Parabola sketches match the stated intercepts and turning point.", "Quadratic formula working is correct."]
+    },
+    {
+      "id": "m09-y10-probability-venn-paper",
+      "subject": "maths", "year": 10, "resourceType": "practice-paper", "answerMode": "worked", "showMarks": true,
+      "customPrompt": "Practice paper on probability: two-way tables, Venn diagrams with set notation (union, intersection, complement), and tree diagrams for two-step experiments. 45 minutes.",
+      "checks": ["Set symbols (∪, ∩, ξ, complement) render correctly in questions and diagrams; no ξ where x is meant.", "Venn diagram region counts add up and match the answers."]
+    },
+    {
+      "id": "m10-y10-statistics-study-guide",
+      "subject": "maths", "year": 10, "resourceType": "study-guide", "answerMode": "none", "showMarks": false,
+      "customPrompt": "Study guide on statistics: five-number summary, box plots, comparing data sets, and reading histograms. Four sections with worked examples.",
+      "checks": ["Box plots and histograms match the data in the worked examples."]
+    },
+    {
+      "id": "e01-y5-figurative-language-worksheet",
+      "subject": "english", "year": 5, "resourceType": "worksheet", "answerMode": "answers", "showMarks": false,
+      "customPrompt": "Worksheet on similes, metaphors and personification, built around a short poem suitable for Year 5. Students identify each technique and explain its effect in a sentence.",
+      "checks": ["The poem is real, attributed, and suitable for Year 5.", "Questions refer to lines that actually appear in the poem."]
+    },
+    {
+      "id": "e02-y6-comprehension-diagnostic",
+      "subject": "english", "year": 6, "resourceType": "diagnostic-test", "answerMode": "answers", "showMarks": true,
+      "customPrompt": "Reading comprehension diagnostic with one prose extract: literal, inferential and vocabulary-in-context questions. About 10 questions.",
+      "checks": ["Answers can be found in or inferred from the extract.", "Question types cover literal, inferential and vocabulary."]
+    },
+    {
+      "id": "e03-y7-poem-annotation",
+      "subject": "english", "year": 7, "resourceType": "annotation-task", "answerMode": "worked", "showMarks": false,
+      "customPrompt": "Annotation task on a narrative poem suitable for Year 7, focusing on imagery, sound devices and structure.",
+      "checks": ["The full poem text is printed with line numbers and correct attribution.", "Model annotations quote the poem accurately."]
+    },
+    {
+      "id": "e04-y8-persuasive-booklet",
+      "subject": "english", "year": 8, "resourceType": "topic-booklet", "answerMode": "worked", "showMarks": true,
+      "customPrompt": "Topic booklet on persuasive writing: persuasive techniques, structuring an argument, and writing a persuasive speech. Three sub-topics with a stimulus to analyse and an end-of-topic quiz.",
+      "checks": ["Each stimulus is near the questions that use it.", "Sections open with clear student instructions."]
+    },
+    {
+      "id": "e05-y9-reading-practice-paper",
+      "subject": "english", "year": 9, "resourceType": "practice-paper", "answerMode": "worked", "showMarks": true,
+      "customPrompt": "Reading practice paper with one prose fiction extract and one poem, short-answer analysis questions on each, and one extended response comparing them. 60 minutes.",
+      "checks": ["Both texts are real and attributed, and the extract matches its stated source.", "The marking guide gives criteria, not only a model answer."]
+    },
+    {
+      "id": "e06-y10-story-in-collection-paper",
+      "subject": "english", "year": 10, "resourceType": "practice-paper", "answerMode": "worked", "showMarks": true,
+      "customPrompt": "Practice paper using an extract from Katherine Mansfield's short story \"The Garden Party\" (from the collection The Garden Party and Other Stories). Short-answer analysis questions and one extended response on class and perspective. 60 minutes.",
+      "checks": ["The extract is really from \"The Garden Party\" itself, not another story in the collection (RES-101).", "The printed title matches the story extracted."]
+    },
+    {
+      "id": "e07-y10-ozymandias-essay-scaffold",
+      "subject": "english", "year": 10, "resourceType": "essay-scaffold", "answerMode": "worked", "showMarks": false,
+      "customPrompt": "Essay scaffold for an analytical essay on how Shelley's \"Ozymandias\" presents power and time. Thesis, body paragraph plans with evidence, and a conclusion.",
+      "checks": ["Quotations match the poem's actual text.", "The scaffold guides an analytical essay, with a clear thesis."]
+    },
+    {
+      "id": "e08-y9-visual-text-worksheet",
+      "subject": "english", "year": 9, "resourceType": "worksheet", "answerMode": "answers", "showMarks": true,
+      "customPrompt": "Worksheet analysing a visual text (a poster, painting or photograph): composition, salience, vectors, colour and how they create meaning. About 8 questions.",
+      "checks": ["An image is actually printed and the questions match what is visible in it.", "Image is attributed."]
+    },
+    {
+      "id": "e09-y10-narrative-study-guide",
+      "subject": "english", "year": 10, "resourceType": "study-guide", "answerMode": "none", "showMarks": false,
+      "customPrompt": "Study guide on writing a short narrative under exam conditions: planning, building character and setting, structure and a satisfying ending. Four sections.",
+      "checks": ["Narrative writing is not taught with analytical-essay structures (no thesis or TETAL paragraphs)."]
+    },
+    {
+      "id": "e10-y8-grammar-mixed-review",
+      "subject": "english", "year": 8, "resourceType": "mixed-review", "answerMode": "answers", "showMarks": true,
+      "customPrompt": "Mixed review covering punctuation (apostrophes, commas, direct speech), sentence types, and a short comprehension passage. 15 questions.",
+      "checks": ["Grammar answers are correct and unambiguous."]
+    }
+  ]
+}

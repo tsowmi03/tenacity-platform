@@ -62,8 +62,10 @@ async function runReplay(options) {
   const stateFile = path.join(output, "job.json");
   if (fs.existsSync(stateFile)) throw new Error("Output already contains a replay; choose a new output directory");
   const input = JSON.parse(await fs.promises.readFile(options.input, "utf8"));
-  const keys = loadLocalSecrets().values;
-  if (options.firebaseSecrets) {
+  // The RES-113 benchmark passes keys it has already loaded, so twenty
+  // replays don't each shell out to Secret Manager.
+  const keys = options.keys ? { ...options.keys } : loadLocalSecrets().values;
+  if (!options.keys && options.firebaseSecrets) {
     const missing = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"].filter((key) => !keys[key]);
     Object.assign(keys, loadFirebaseSecrets({ secretNames: missing }));
   }

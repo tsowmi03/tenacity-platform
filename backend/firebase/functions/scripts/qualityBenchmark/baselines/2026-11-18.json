@@ -1,0 +1,400 @@
+{
+  "meta": {
+    "rubricVersion": 2,
+    "runId": "baseline-2026-11-18",
+    "graderModel": "claude-opus-5-5",
+    "startedAt": "2026-11-18T02:54:41.780Z",
+    "elapsedMs": 475117,
+    "gradeOnly": false,
+    "resumed": true
+  },
+  "counts": {
+    "requests": 20,
+    "graded": 20,
+    "failed": 0
+  },
+  "overall": 3.74,
+  "bySubject": {
+    "maths": 3.57,
+    "english": 3.91
+  },
+  "byCriterion": {
+    "accuracy": 4.05,
+    "yearFit": 4.4,
+    "visuals": 3.29,
+    "layout": 3.2,
+    "answers": 3.22,
+    "requestFit": 3.95
+  },
+  "cost": {
+    "grader": 3.22,
+    "generationKnown": 1.19,
+    "unpricedModels": [
+      "gpt-6.1-sol",
+      "gpt-5.6-terra"
+    ]
+  },
+  "comparison": null,
+  "rows": [
+    {
+      "id": "m01-y5-fractions-worksheet",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 4.8,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 5,
+        "visuals": 0,
+        "layout": 4,
+        "answers": 5,
+        "requestFit": 5
+      },
+      "majorIssues": 0,
+      "minorIssues": 2,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "m02-y6-area-perimeter-diagnostic",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 2.83,
+      "scores": {
+        "accuracy": 3,
+        "yearFit": 4,
+        "visuals": 2,
+        "layout": 2,
+        "answers": 2,
+        "requestFit": 4
+      },
+      "majorIssues": 2,
+      "minorIssues": 11,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "m03-y7-parallel-lines-worksheet",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 2.5,
+      "scores": {
+        "accuracy": 2,
+        "yearFit": 4,
+        "visuals": 2,
+        "layout": 2,
+        "answers": 2,
+        "requestFit": 3
+      },
+      "majorIssues": 5,
+      "minorIssues": 7,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "m04-y8-pythagoras-booklet",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 2.83,
+      "scores": {
+        "accuracy": 2,
+        "yearFit": 4,
+        "visuals": 2,
+        "layout": 3,
+        "answers": 2,
+        "requestFit": 4
+      },
+      "majorIssues": 4,
+      "minorIssues": 9,
+      "warnings": 1,
+      "error": null
+    },
+    {
+      "id": "m05-y8-mixed-review",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 4.8,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 5,
+        "visuals": 0,
+        "layout": 4,
+        "answers": 5,
+        "requestFit": 5
+      },
+      "majorIssues": 0,
+      "minorIssues": 2,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "m06-y9-trig-practice-paper",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 3.33,
+      "scores": {
+        "accuracy": 2,
+        "yearFit": 5,
+        "visuals": 4,
+        "layout": 3,
+        "answers": 2,
+        "requestFit": 4
+      },
+      "majorIssues": 2,
+      "minorIssues": 6,
+      "warnings": 1,
+      "error": null
+    },
+    {
+      "id": "m07-y9-linear-graphs-worksheet",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 3.5,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 5,
+        "visuals": 2,
+        "layout": 2,
+        "answers": 4,
+        "requestFit": 3
+      },
+      "majorIssues": 3,
+      "minorIssues": 7,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "m08-y10-quadratics-booklet",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 4.33,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 5,
+        "visuals": 4,
+        "layout": 4,
+        "answers": 4,
+        "requestFit": 4
+      },
+      "majorIssues": 0,
+      "minorIssues": 6,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "m09-y10-probability-venn-paper",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 3.17,
+      "scores": {
+        "accuracy": 4,
+        "yearFit": 4,
+        "visuals": 3,
+        "layout": 2,
+        "answers": 2,
+        "requestFit": 4
+      },
+      "majorIssues": 2,
+      "minorIssues": 11,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "m10-y10-statistics-study-guide",
+      "subject": "maths",
+      "status": "graded",
+      "overall": 3.6,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 4,
+        "visuals": 2,
+        "layout": 3,
+        "answers": 0,
+        "requestFit": 4
+      },
+      "majorIssues": 2,
+      "minorIssues": 4,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "e01-y5-figurative-language-worksheet",
+      "subject": "english",
+      "status": "graded",
+      "overall": 3.17,
+      "scores": {
+        "accuracy": 3,
+        "yearFit": 3,
+        "visuals": 4,
+        "layout": 3,
+        "answers": 3,
+        "requestFit": 3
+      },
+      "majorIssues": 0,
+      "minorIssues": 8,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "e02-y6-comprehension-diagnostic",
+      "subject": "english",
+      "status": "graded",
+      "overall": 4,
+      "scores": {
+        "accuracy": 4,
+        "yearFit": 4,
+        "visuals": 5,
+        "layout": 4,
+        "answers": 3,
+        "requestFit": 4
+      },
+      "majorIssues": 0,
+      "minorIssues": 7,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "e03-y7-poem-annotation",
+      "subject": "english",
+      "status": "graded",
+      "overall": 4,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 5,
+        "visuals": 3,
+        "layout": 3,
+        "answers": 4,
+        "requestFit": 4
+      },
+      "majorIssues": 0,
+      "minorIssues": 7,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "e04-y8-persuasive-booklet",
+      "subject": "english",
+      "status": "graded",
+      "overall": 4,
+      "scores": {
+        "accuracy": 4,
+        "yearFit": 4,
+        "visuals": 3,
+        "layout": 4,
+        "answers": 5,
+        "requestFit": 4
+      },
+      "majorIssues": 0,
+      "minorIssues": 10,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "e05-y9-reading-practice-paper",
+      "subject": "english",
+      "status": "graded",
+      "overall": 4.17,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 4,
+        "visuals": 4,
+        "layout": 4,
+        "answers": 3,
+        "requestFit": 5
+      },
+      "majorIssues": 1,
+      "minorIssues": 4,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "e06-y10-story-in-collection-paper",
+      "subject": "english",
+      "status": "graded",
+      "overall": 3,
+      "scores": {
+        "accuracy": 3,
+        "yearFit": 4,
+        "visuals": 4,
+        "layout": 3,
+        "answers": 3,
+        "requestFit": 1
+      },
+      "majorIssues": 2,
+      "minorIssues": 3,
+      "warnings": 2,
+      "error": null
+    },
+    {
+      "id": "e07-y10-ozymandias-essay-scaffold",
+      "subject": "english",
+      "status": "graded",
+      "overall": 3.5,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 5,
+        "visuals": 3,
+        "layout": 4,
+        "answers": 1,
+        "requestFit": 3
+      },
+      "majorIssues": 2,
+      "minorIssues": 4,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "e08-y9-visual-text-worksheet",
+      "subject": "english",
+      "status": "graded",
+      "overall": 4.33,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 5,
+        "visuals": 4,
+        "layout": 3,
+        "answers": 4,
+        "requestFit": 5
+      },
+      "majorIssues": 0,
+      "minorIssues": 5,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "e09-y10-narrative-study-guide",
+      "subject": "english",
+      "status": "graded",
+      "overall": 4.75,
+      "scores": {
+        "accuracy": 5,
+        "yearFit": 5,
+        "visuals": 0,
+        "layout": 4,
+        "answers": 0,
+        "requestFit": 5
+      },
+      "majorIssues": 0,
+      "minorIssues": 1,
+      "warnings": 0,
+      "error": null
+    },
+    {
+      "id": "e10-y8-grammar-mixed-review",
+      "subject": "english",
+      "status": "graded",
+      "overall": 4.17,
+      "scores": {
+        "accuracy": 4,
+        "yearFit": 4,
+        "visuals": 5,
+        "layout": 3,
+        "answers": 4,
+        "requestFit": 5
+      },
+      "majorIssues": 0,
+      "minorIssues": 5,
+      "warnings": 1,
+      "error": null
+    }
+  ]
+}

@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-18 | [Quality benchmark for maths and English resources (RES-113)](#2026-11-18--quality-benchmark-for-maths-and-english-resources-res-113) |
 | 2026-11-12 | [Saved stages survive deploys; two-job pilot ready behind a flag (RES-110, RES-111, RES-112)](#2026-11-12--saved-stages-survive-deploys-two-job-pilot-ready-behind-a-flag-res-110-res-111-res-112) |
 | 2026-11-12 | [No-answers maths resources use the question bank again (RES-109)](#2026-11-12--no-answers-maths-resources-use-the-question-bank-again-res-109) |
 | 2026-11-12 | [Question totals come from the planner, not a regex (RES-108)](#2026-11-12--question-totals-come-from-the-planner-not-a-regex-res-108) |
@@ -249,6 +250,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-18 — Quality benchmark for maths and English resources (RES-113)
+
+**What changed**
+- New `npm run benchmark:resources` (in `backend/firebase/functions`): 20 fixed
+  requests (10 maths, 10 English, Years 5–10, every resource type) are
+  generated with the real pipeline, converted to PDF and scored by a Claude
+  grader on six criteria: accuracy, year fit, diagrams and stimuli, layout,
+  answers, and request fit.
+- Each run writes a summary by subject and criterion, lists issues by page,
+  and can compare against an earlier run (`--compare`). `--grade-only`
+  re-grades an existing run, and `--resume` finishes an interrupted one in
+  the same folder.
+- The local replay runner accepts preloaded keys so a run reads Secret Manager
+  once.
+- How to run it and read it: `docs/operations/resource-quality-benchmark.md`.
+
+**Why:** Quality fixes were checked by eye on one or two jobs. A fixed set
+scored the same way each time shows whether a change actually helped.
+
+- Baseline recorded on 2026-11-18 (rubric v2): 3.74 overall (maths 3.57,
+  English 3.91). Weakest areas are layout (3.20), answers and marking guides
+  (3.22), and diagrams and stimuli (3.29). Its summary is kept at
+  `scripts/qualityBenchmark/baselines/2026-11-18.json` for `--compare`. The
+  run took 112 minutes, $3.19 of grading and about $3 more to re-grade.
+- Rubric v2: an English "Marking guide" is written for students and leaves
+  the answers out on purpose, so the grader no longer marks that down.
+- Findings went into RES-114, RES-115, RES-101 and RES-40.
+
+**Status:** Merged. A local tool only; nothing deployed.
 
 ---
 
