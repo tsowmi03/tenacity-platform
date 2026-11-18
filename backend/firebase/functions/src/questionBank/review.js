@@ -20,7 +20,7 @@ const admin = require("firebase-admin");
 const QUESTIONS_COLLECTION = "questionBank";
 const { DIAGRAM_TYPES, skillsFor } = require("./taxonomy");
 const { yearsOf } = require("./search");
-const { ADMIN_ACTIONS, FLAGS_COLLECTION, audit, closeOpenFlags, editStamp } = require("./admin");
+const { ADMIN_ACTIONS, FLAGS_COLLECTION, FLAG_HIDDEN_REASON, audit, closeOpenFlags, editStamp, releaseFlagHold } = require("./admin");
 const { validateUpdates } = require("./banks");
 const { id, invalid, oneOf, requireAdmin, requireStaff, text } = require("./validate");
 
@@ -96,6 +96,11 @@ async function flag({ db, actor, payload, now }) {
   }
   const reason = oneOf(payload.reason, "reason", FLAG_REASONS);
   const note = payload.note ? text(payload.note, "note", MAX_NOTE) : "";
+  // RES-103. The tutor chooses whether the question stops being used now or
+  // stays in use until an admin reviews it.
+  const stopUsing = payload.stopUsing === true;
+  const questionRef = db.collection(QUESTIONS_COLLECTION).doc(questionId);
+  const takeOut = stopUsing && (await questionRef.get()).get("status") === "live";
   const flagRef = db.collection(FLAGS_COLLECTION).doc();
   const batch = db.batch();
   batch.set(flagRef, {
@@ -107,16 +112,18 @@ async function flag({ db, actor, payload, now }) {
     createdBy: actor.uid,
     createdByName: actor.name,
     createdAt: now(),
+    stopUsing,
     resolvedBy: null,
     resolvedAt: null,
     resolution: null,
   });
-  batch.update(db.collection(QUESTIONS_COLLECTION).doc(questionId), {
+  batch.update(questionRef, {
     flagCount: admin.firestore.FieldValue.increment(1),
     lastFlaggedAt: now(),
+    ...(takeOut ? { status: "hidden", hiddenBy: actor.uid, hiddenAt: now(), hiddenWith: null, hiddenReason: FLAG_HIDDEN_REASON } : {}),
   });
   await batch.commit();
-  return { flagId: flagRef.id };
+  return { flagId: flagRef.id, stoppedUsing: takeOut };
 }
 
 /**
@@ -157,6 +164,7 @@ async function listFlags({ db, bucket, actor }) {
         jobId: f.jobId,
         reason: f.reason,
         note: f.note,
+        stopUsing: f.stopUsing === true,
         createdByName: f.createdByName || null,
         createdAt: f.createdAt?.toDate ? f.createdAt.toDate().toISOString() : f.createdAt || null,
       }))
@@ -181,13 +189,17 @@ async function resolve({ db, actor, payload, now }) {
   const writes = db.batch();
   const fields = action === "update" ? validateUpdates(questionSnap.data(), payload.updates) : null;
   if (action === "hide") {
-    writes.update(questionRef, { status: "hidden", hiddenBy: actor.uid, hiddenAt: at });
+    writes.update(questionRef, { status: "hidden", hiddenBy: actor.uid, hiddenAt: at, hiddenReason: null });
+  } else if (action === "dismiss") {
+    // RES-103. The flag was wrong: a question it took out of use goes back.
+    releaseFlagHold(writes, questionRef, questionSnap.data(), { actor, at });
   } else if (action === "update") {
     // Years follow the year level, because search filters on them. A changed
     // question is re-embedded by the next questionBankEmbed run, because its
     // embeddingHash no longer matches its text.
     if (Object.hasOwn(fields, "yearLevel")) fields.years = yearsOf(fields.yearLevel, questionSnap.get("sourcePath"));
     writes.update(questionRef, { ...fields, ...editStamp(questionSnap.data(), fields, actor, at) });
+    releaseFlagHold(writes, questionRef, questionSnap.data(), { actor, at });
   }
   const closed = await closeOpenFlags(db, writes, { questionId, resolution: action, actor, at });
   audit(db, writes, { name: "maths", recordId: questionId, action: action === "update" ? "edit" : action, fields: fields ? Object.keys(fields) : [], actor, at });

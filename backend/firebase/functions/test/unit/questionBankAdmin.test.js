@@ -204,6 +204,35 @@ describe("hiding and restoring (RES-104)", () => {
     assert.equal(saved.restoredBy, "a1");
   });
 
+  // RES-103. A question a tutor's flag took out of use.
+  it("lets an admin keep a flag-held question hidden, or put it back", async () => {
+    const held = () => question({ status: "hidden", hiddenBy: "t1", hiddenReason: "flagged" });
+    let db = fakeDb({ "questionBank/a": held(), "questionBankFlags/f1": { questionId: "a", status: "open", stopUsing: true } });
+    const detail = await call(db, { action: "bankRecord", bank: "maths", id: "a" });
+    assert.equal(detail.record.heldByFlag, true);
+    assert.equal(detail.flags[0].stopUsing, true);
+    await call(db, { action: "hideRecord", bank: "maths", id: "a" });
+    assert.equal(db.store.get("questionBank/a").hiddenBy, "a1");
+    assert.equal(db.store.get("questionBank/a").hiddenReason, null);
+    assert.equal(db.store.get("questionBankFlags/f1").resolution, "hide");
+
+    db = fakeDb({ "questionBank/a": held(), "questionBankFlags/f1": { questionId: "a", status: "open" } });
+    await call(db, { action: "restoreRecord", bank: "maths", id: "a" });
+    assert.equal(db.store.get("questionBank/a").status, "live");
+    assert.equal(db.store.get("questionBankFlags/f1").resolution, "restore");
+
+    db = fakeDb({ "questionBank/a": held(), "questionBankFlags/f1": { questionId: "a", status: "open" } });
+    await call(db, { action: "editRecord", bank: "maths", id: "a", updates: { difficulty: "hard" } });
+    assert.equal(db.store.get("questionBank/a").status, "live");
+    assert.equal(db.store.get("questionBank/a").difficulty, "hard");
+  });
+
+  it("leaves a question an admin hid hidden when it is corrected", async () => {
+    const db = fakeDb({ "questionBank/a": question({ status: "hidden", hiddenBy: "a1" }) });
+    await call(db, { action: "editRecord", bank: "maths", id: "a", updates: { difficulty: "hard" } });
+    assert.equal(db.store.get("questionBank/a").status, "hidden");
+  });
+
   it("will not touch a merged duplicate", async () => {
     const db = fakeDb({ "questionBank/a": question({ status: "duplicate" }) });
     await assert.rejects(call(db, { action: "restoreRecord", bank: "maths", id: "a" }), { code: "failed-precondition" });

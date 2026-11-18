@@ -245,7 +245,7 @@ export default function BankDrawer({ bank, onChanged, onClose, options, recordId
       const result = await getBankRecord({ bank: bank.id, id: recordId });
       setDetail(result);
       onChanged(result.record);
-      toast.success("Flags dismissed", "The question stays in use.");
+      toast.success("Flags dismissed", detail?.record?.heldByFlag ? "The question is back in use." : "The question stays in use.");
     } catch (err) {
       setActionError(err?.userMessage || err?.message || "Could not dismiss that flag.");
     } finally {
@@ -324,6 +324,11 @@ export default function BankDrawer({ bank, onChanged, onClose, options, recordId
                     </div>
                   </section>
                 ) : null}
+                {record.heldByFlag ? (
+                  <div className="bank-note">
+                    Out of use because of a flag. Hide it to keep it out, or edit, restore or dismiss the flag to put it back.
+                  </div>
+                ) : null}
                 {record.hiddenBecauseOfStimulus && record.status === "hidden" ? (
                   <div className="bank-note">Hidden along with its stimulus. Restoring the stimulus brings this back too.</div>
                 ) : null}
@@ -333,7 +338,7 @@ export default function BankDrawer({ bank, onChanged, onClose, options, recordId
                 {record.status === "live" || record.status === "hidden" ? (
                   <Button disabled={busy} icon="edit" onClick={() => setEditing(true)} variant="secondary">Edit</Button>
                 ) : null}
-                {record.status === "live" ? (
+                {record.status === "live" || record.heldByFlag ? (
                   <Button
                     icon="eye-off"
                     loading={busy}

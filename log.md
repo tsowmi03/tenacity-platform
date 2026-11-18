@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-18 | [Flagging a textbook question can take it out of use until an admin reviews it (RES-103)](#2026-11-18--flagging-a-textbook-question-can-take-it-out-of-use-until-an-admin-reviews-it-res-103) |
 | 2026-11-18 | [Diagram questions don't repeat what the diagram shows (RES-117)](#2026-11-18--diagram-questions-dont-repeat-what-the-diagram-shows-res-117) |
 | 2026-11-18 | [Stories inside collections print the right story; a missing named text asks the tutor (RES-101)](#2026-11-18--stories-inside-collections-print-the-right-story-a-missing-named-text-asks-the-tutor-res-101) |
 | 2026-11-18 | [Two resource jobs per account (RES-112)](#2026-11-18--two-resource-jobs-per-account-res-112) |
@@ -256,6 +257,19 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-18 — Flagging a textbook question can take it out of use until an admin reviews it (RES-103)
+
+**What changed**
+- The "Flag a problem" form on a resource's textbook questions asks what happens until an admin reviews it: "Keep using this question" (the default, as before) or "Stop using this question".
+- "Stop using" hides the question straight away, marked as held by a flag, so the generator won't pick it for new resources.
+- In the admin question bank, a held question says it is out of use because of a flag. Hiding it keeps it out for good; editing it, restoring it or dismissing the flag puts it back in use. A question an admin hid is never brought back by a flag decision.
+
+**Why:** Not every flagged diagram is unusable, so taking a question out of use should be the flagger's choice rather than all or nothing.
+
+**Status:** Live. Functions deployed to production; the portal deployed on merge.
 
 ---
 
