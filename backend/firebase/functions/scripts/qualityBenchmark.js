@@ -268,6 +268,15 @@ async function runBenchmark(options, deps = {}) {
   const replay = deps.replay || require("./replayResourceLocally").runReplay;
   const started = Date.now();
   const results = [];
+  // The run's request list is saved when it starts, so --resume finishes the
+  // same set rather than the whole benchmark.
+  const manifestFile = path.join(runDir, "run.json");
+  if (options.resume && !options.only && !options.subject && fs.existsSync(manifestFile)) {
+    const ids = readJson(manifestFile).requestIds || [];
+    requests = selectRequests(loadRequests(), { only: ids });
+  } else if (!options.resume && !options.gradeOnly) {
+    writeJson(manifestFile, { requestIds: requests.map((r) => r.id), startedAt: new Date().toISOString() });
+  }
   const releaseLock = acquireLock(runDir);
   try {
     for (const [index, request] of requests.entries()) {

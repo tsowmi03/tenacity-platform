@@ -105,13 +105,17 @@ describe("scoring and summary", () => {
     assert.equal(s.overall, 4);
     assert.deepEqual(s.bySubject, { maths: 5, english: 3 });
     assert.equal(s.byCriterion.answers, 5);
-    assert.equal(s.comparison.overall, 0.5);
+    // Only m1 was graded in both runs, so the averages compare m1 with m1.
+    assert.equal(s.comparison.matchedRequests, 1);
+    assert.equal(s.comparison.overall, 1);
+    assert.equal(s.comparison.bySubject.english, null);
     assert.equal(s.comparison.rows.m1, 1);
     assert.equal(s.comparison.rows.e2, null);
     assert.equal(s.rows.find((r) => r.id === "e1").majorIssues, 1);
     assert.deepEqual(s.cost, { grader: 0.5, generationKnown: 0.5, unpricedModels: ["gpt-x"] });
     const md = rubric.renderMarkdown(s);
-    assert.match(md, /\*\*Overall\*\* \| \*\*4\.00\*\* \(\+0\.50\)/);
+    assert.match(md, /\*\*Overall\*\* \| \*\*4\.00\*\* \(\+1\.00\)/);
+    assert.match(md, /over the 1 request graded in both/);
     assert.match(md, /e2 \| generation_failed: RESOURCE_LOCAL_BUDGET/);
     assert.match(md, /not priced: gpt-x/);
   });
@@ -217,5 +221,27 @@ describe("answer modes", () => {
     assert.match(answers.guide, /deliberately does NOT give the answers/);
     const params = rubric.buildGraderParams({ request: { id: "e", subject: "english", year: 8, resourceType: "worksheet", answerMode: "answers", customPrompt: "p" }, pdfBase64: "QQ==" });
     assert.match(params.messages[0].content[1].text, /Marking guide, for students/);
+  });
+});
+
+describe("resume keeps the run's own request list", () => {
+  it("finishes only the requests the interrupted run started with", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "res113-manifest-"));
+    const runDir = path.join(root, "run");
+    try {
+      const calls = { generated: 0 };
+      const replay = async ({ output }) => {
+        calls.generated++;
+        fs.mkdirSync(output, { recursive: true });
+        fs.writeFileSync(path.join(output, "summary.json"), JSON.stringify({ status: "failed", errorCode: "X" }));
+      };
+      const deps = { keys: { ANTHROPIC_API_KEY: "a", OPENAI_API_KEY: "o" }, client: {}, replay };
+      await bench.runBenchmark(bench.parseArgs(["--output", runDir, "--only", "m01-y5-fractions-worksheet,e01-y5-figurative-language-worksheet"]), deps);
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(runDir, "run.json"), "utf8")).requestIds, ["m01-y5-fractions-worksheet", "e01-y5-figurative-language-worksheet"]);
+      calls.generated = 0;
+      const summary = await bench.runBenchmark(bench.parseArgs(["--resume", runDir]), deps);
+      assert.equal(calls.generated, 2, "only the two original requests are generated again");
+      assert.equal(summary.counts.requests, 2);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 });
