@@ -51,3 +51,43 @@ describe("bank crop fit check (RES-115)", () => {
     assert.deepEqual(readFit({ fits: false, problems: ["made_up", "no_diagram"], note: "" }).problems, ["no_diagram"]);
   });
 });
+
+describe("sketch blanking keeps what the question needs (Codex review on #374)", () => {
+  const crop = () => ({ type: "source-image", image: Buffer.from("png"), width: 300, height: 200 });
+  it("doesn't treat geometric constructions as graphs", () => {
+    for (const t of ["Draw the perpendicular bisector of line AB shown in the diagram.", "Draw a circle with centre O and radius 3 cm.", "Construct and draw the line through P parallel to QR."]) assert.equal(asksForSketch(t), false, t);
+    const resource = { questions: [{ stem: "Draw the perpendicular bisector of line AB.", diagram: crop() }] };
+    blankSketchDiagrams(resource);
+    assert.equal(resource.questions[0].diagram.type, "source-image");
+  });
+
+  it("keeps given points the line must pass through", () => {
+    const plane = { type: "coordinate-plane", minX: -5, maxX: 5, minY: -5, maxY: 5, points: [{ x: 1, y: 2, label: "A(1, 2)" }, { x: 3, y: 4, label: "B" }] };
+    const resource = { questions: [{ stem: "Draw a straight line through the points A and B on the grid.", diagram: { ...plane } }] };
+    blankSketchDiagrams(resource);
+    assert.equal(resource.questions[0].diagram.points.length, 2);
+  });
+
+  it("keeps a reference graph needed for a transformation or marked as given", () => {
+    const graph = () => ({ type: "function-plot", minX: -5, maxX: 5, minY: -5, maxY: 5, functions: [{ type: "quadratic", a: 1, b: 0, c: 0, label: "y = x^2" }], points: [] });
+    for (const stem of ["On the same axes, sketch y = x^2 + 3, a translation of the graph.", "Sketch the reflection of the graph shown in the x-axis.", "The graph of y = x^2 is given. Sketch y = (x - 2)^2 on the same grid."]) {
+      const resource = { questions: [{ stem, diagram: graph() }] };
+      blankSketchDiagrams(resource);
+      assert.equal(resource.questions[0].diagram.type, "function-plot", stem);
+    }
+  });
+
+  it("still blanks the baseline's sketch questions", () => {
+    for (const stem of ["On the axes, sketch the graph of $y = 2x - 3$.", "Sketch the line $y = \\frac{2x}{3} + 4$ on the number plane.", "Sketch the lines $x + y - 6 = 0$ and $y = 2x - 6$ on the number plane."]) {
+      const resource = { questions: [{ stem, diagram: crop() }] };
+      blankSketchDiagrams(resource);
+      assert.equal(resource.questions[0].diagram.type, "coordinate-plane", stem);
+    }
+  });
+});
+
+it("blanks points the question asks students to plot from given coordinates", () => {
+  const resource = { questions: [{ stem: "Plot the points A(1, 2) and B(3, 4) on the number plane.", diagram: { type: "coordinate-plane", minX: -5, maxX: 5, minY: -5, maxY: 5, points: [{ x: 1, y: 2, label: "A" }, { x: 3, y: 4, label: "B" }] } }] };
+  blankSketchDiagrams(resource);
+  assert.deepEqual(resource.questions[0].diagram.points, []);
+});
