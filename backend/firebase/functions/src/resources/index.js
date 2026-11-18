@@ -26,6 +26,7 @@ const {
 } = require("./answerMode");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
 const { stripPipelineNotes } = require("./pipelineNotes");
+const { blankSketchDiagrams } = require("./sketchQuestions");
 const { normaliseQuestionShape } = require("./builder/questionShape");
 const { isDiagramRenderError, optionalDiagramOmittedWarning } = require("./builder/diagrams");
 const { classifyResourceFailure, describeResourceFailure } = require("./failure");
@@ -1470,6 +1471,9 @@ async function buildDocxWithDiagramReliability({
   if (notesRemoved.length) {
     logger.info("Removed pipeline notes before build", { count: notesRemoved.length, notes: notesRemoved.slice(0, 5) });
   }
+  // RES-115: a sketch question gets an empty number plane, never the answer.
+  const sketchBlanked = blankSketchDiagrams(resource);
+  if (sketchBlanked.length) logger.info("Blanked graphs on sketch questions", { count: sketchBlanked.length, where: sketchBlanked.slice(0, 5) });
   const warnings = [];
   let mathRepairRounds = 0;
   let mathFieldsRepaired = 0;

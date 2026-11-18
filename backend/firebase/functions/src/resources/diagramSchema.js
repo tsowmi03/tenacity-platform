@@ -309,10 +309,17 @@ const BESPOKE = Object.freeze({
       { optional: [] }
     ),
 
+  // RES-115: angles are placed by line and corner, so a label never has to
+  // say where it is. Saved resources may still carry the old top/bottom pair;
+  // the validator and renderer accept both, but the model is offered this.
   "parallel-lines": () =>
     obj({
       type: constType("parallel-lines"),
-      angles: obj({ top: str, bottom: str }),
+      marked: arr(obj({
+        line: { type: "string", enum: ["line1", "line2"] },
+        position: { type: "string", enum: ["above-left", "above-right", "below-left", "below-right"] },
+        label: str,
+      })),
       labels: obj({ line1: str, line2: str, transversal: str }),
     }),
 

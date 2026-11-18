@@ -470,6 +470,57 @@ describe("question bank fill: diagram first", () => {
   const shownIds = (request) => [...request.userMessage.at(-1).text.matchAll(/^Candidate \d+ \(image \d+\): .*$/gm)].length;
   const pickFirst = () => ({ ...fits(), choice: 1 });
 
+  // RES-115: every crop is checked against its final question text before use.
+  function withFitCheck(env, verdicts) {
+    let n = 0;
+    const inner = env.callAi;
+    const fitCalls = [];
+    env.callAi = async (request) => {
+      if (request.responseSchema.required.includes("fits")) {
+        fitCalls.push(request);
+        const v = verdicts[Math.min(n++, verdicts.length - 1)];
+        if (v instanceof Error) throw v;
+        return { parsed: v };
+      }
+      return inner(request);
+    };
+    return fitCalls;
+  }
+  const unfit = { fits: false, problems: ["labels_differ", "value_missing"], note: "The question asks for b; the diagram labels the side y and gives one length." };
+  const fine = { fits: true, problems: [], note: "" };
+
+  it("swaps a crop that doesn't fit its question for the next one (RES-115)", async () => {
+    const env = sharedBank({ choose: pickFirst });
+    const fitCalls = withFitCheck(env, [unfit, fine]);
+    const parsed = worksheet(1);
+    const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    assert.equal(fitCalls.length, 2);
+    assert.match(fitCalls[0].userMessage.at(-1).text, /Question: Find the length of the hypotenuse\./);
+    assert.equal(fitCalls[0].userMessage[0].type, "image");
+    assert.equal(result.used.length, 1);
+    assert.equal(result.used[0].questionId, "crop2", "the unfit crop1 was ruled out");
+  });
+
+  it("keeps the drawn question when no crop fits (RES-115)", async () => {
+    const env = sharedBank({ choose: pickFirst, crops: 2 });
+    withFitCheck(env, [unfit]);
+    const parsed = worksheet(1);
+    const before = JSON.stringify(parsed.questions[0]);
+    const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    assert.equal(result.used.length, 0);
+    assert.equal(result.skipped[0].reason, "crop_unfit");
+    assert.match(result.skipped[0].detail, /labels_differ, value_missing/);
+    assert.equal(JSON.stringify(parsed.questions[0]), before);
+  });
+
+  it("uses the crop when the fit check itself fails (RES-115)", async () => {
+    const env = sharedBank({ choose: pickFirst });
+    withFitCheck(env, [new Error("provider down")]);
+    const result = await applyQuestionBank({ job, parsed: worksheet(1), ...env, embed, logger: {} });
+    assert.equal(result.used.length, 1);
+    assert.equal(result.used[0].questionId, "crop1");
+  });
+
   it("searches on the skill and diagram type, and writes the question from the diagram, not the generated one", async () => {
     const parsed = worksheet(1);
     parsed.questions[0].skill = "lengths in right-angled triangles";

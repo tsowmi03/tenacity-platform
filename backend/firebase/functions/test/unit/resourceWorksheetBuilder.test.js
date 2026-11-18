@@ -701,7 +701,8 @@ describe("worksheet DOCX builder", () => {
 
     await assert.rejects(
       () => buildWorksheetDocx(worksheet, { studentName: "Mei Tanaka" }),
-      /rectangle diagram layout failed for width label/
+      // RES-115: a label this long is now refused at validation, before layout.
+      /width is too long for a diagram label|rectangle diagram layout failed for width label/
     );
   });
 

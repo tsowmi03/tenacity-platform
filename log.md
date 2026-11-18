@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-18 | [Maths diagrams match their questions (RES-115)](#2026-11-18--maths-diagrams-match-their-questions-res-115) |
 | 2026-11-18 | [Internal generator notes kept out of resources (RES-114)](#2026-11-18--internal-generator-notes-kept-out-of-resources-res-114) |
 | 2026-11-18 | [Classic poems source cleanly from Wikisource again (RES-116)](#2026-11-18--classic-poems-source-cleanly-from-wikisource-again-res-116) |
 | 2026-11-18 | [Quality benchmark for maths and English resources (RES-113)](#2026-11-18--quality-benchmark-for-maths-and-english-resources-res-113) |
@@ -252,6 +253,33 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-18 — Maths diagrams match their questions (RES-115)
+
+**What changed**
+- Parallel-line diagrams mark each angle by line and corner, so any of the
+  eight angles can be shown, labels are just the value ("52°", "x"), and a
+  numbered angle is drawn at its true size.
+- On geometry and shape diagrams, a label that says where it is ("above l
+  and to the right of t") or is too long is rejected and the diagram is
+  repaired.
+- A question that asks students to sketch, draw or plot a graph gets a blank
+  number plane, never the finished graph.
+- Each textbook crop is checked against its final question before use (same
+  labels, every value given, same figure, answer not shown, no extra labels
+  or stray page content). A crop that fails is swapped for another, then for
+  a drawn diagram. About $0.004 a check.
+
+**Why:** Diagrams were the main cause of the lowest RES-113 scores: an
+unsolvable question, a missing length, the answer already drawn, labels
+written as sentences.
+
+**Status:** Live. The Functions change ships with the next production Functions deploy.
+
+**Results:** on the four diagram-heavy maths benchmark requests, overall
+2.92 → 3.96, diagrams 2.0 → 3.0, major issues 14 → 0.
 
 ---
 

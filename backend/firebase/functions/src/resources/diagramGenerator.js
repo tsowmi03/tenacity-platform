@@ -1881,12 +1881,34 @@ GENERATORS["parallel-lines"] = (spec) => {
 
   const y1 = h * 0.32, y2 = h * 0.68;
   const lx = PAD, rx = w - PAD;
-  const t1x = w * 0.3, t1y = PAD - 10;
-  const t2x = w * 0.7, t2y = h - PAD + 10;
+  const top = PAD - 10, bottom = h - PAD + 10;
 
-  const slope = (t2y - t1y) / (t2x - t1x);
-  const ix1 = t1x + (y1 - t1y) / slope;
-  const ix2 = t1x + (y2 - t1y) / slope;
+  // RES-115: the transversal is drawn so a numbered angle appears at its true
+  // size. Its direction t (degrees clockwise from the right-hand ray, SVG y
+  // down) is the below-right angle; above-left equals it, and below-left and
+  // above-right are 180 - t. Without a number, the old slope (about 60°).
+  const markedSpec = Array.isArray(spec.marked) ? spec.marked : [];
+  const numbered = markedSpec
+    .map((a) => ({ position: a?.position, value: Number(String(a?.label ?? "").match(/^\s*(\d+(?:\.\d+)?)\s*(?:°|degrees?)?\s*$/i)?.[1]) }))
+    .find((a) => a.value > 0 && a.value < 180);
+  const defaultT = Math.atan2(bottom - top, w * 0.4) * 180 / Math.PI;
+  const wantT = numbered
+    ? (["below-right", "above-left"].includes(numbered.position) ? numbered.value : 180 - numbered.value)
+    : defaultT;
+  const tDeg = Math.min(140, Math.max(40, wantT));
+  const tRad = tDeg * Math.PI / 180;
+  const cx = w / 2, cy = (y1 + y2) / 2;
+  const xAt = (y) => cx + (y - cy) * Math.cos(tRad) / Math.sin(tRad);
+  // Clip the transversal to the drawing.
+  const clipX = (x, y) => {
+    if (x >= lx + 10 && x <= rx - 10) return [x, y];
+    const edge = x < lx + 10 ? lx + 10 : rx - 10;
+    return [edge, cy + (edge - cx) * Math.sin(tRad) / Math.cos(tRad)];
+  };
+  const [t1x, t1y] = clipX(xAt(top), top);
+  const [t2x, t2y] = clipX(xAt(bottom), bottom);
+  const ix1 = xAt(y1);
+  const ix2 = xAt(y2);
 
   let svg = svgOpen(w, h);
 
@@ -1901,12 +1923,12 @@ GENERATORS["parallel-lines"] = (spec) => {
 
   svg += text(lx - 22, y1, labels.line1 || "l", { italic: true, size: 22 });
   svg += text(lx - 22, y2, labels.line2 || "m", { italic: true, size: 22 });
-  svg += text(t2x + 18, t2y - 5, labels.transversal || "t", { italic: true, size: 22 });
+  svg += text(t2x + (tDeg <= 90 ? 18 : -30), t2y - 5, labels.transversal || "t", { italic: true, size: 22 });
 
   // Transversal direction (from its upper end to its lower end) — both angles
   // are drawn in the lower-right sector at each intersection. Labels are
   // scored against the drawn lines so long labels do not sit on the transversal.
-  const transAng = Math.atan2(t2y - t1y, t2x - t1x);
+  const transAng = tRad;
   const arcR = 26;
   const lineObstacles = [
     { type: "segment", segment: layoutSegment(lx, y1, rx, y1) },
@@ -1915,12 +1937,12 @@ GENERATORS["parallel-lines"] = (spec) => {
   ];
   const placedLabelObstacles = [];
 
-  const placeAngleLabel = (cx, cy, label) => {
+  const placeAngleLabel = (cx, cy, label, midDeg = transAng * 90 / Math.PI) => {
     const displayLabel = formatAngleLabelForDisplay(label);
     const candidates = angleLabelCandidates(
       cx,
       cy,
-      transAng * 90 / Math.PI,
+      midDeg,
       arcR,
       { svgDegrees: true }
     );
@@ -1933,13 +1955,27 @@ GENERATORS["parallel-lines"] = (spec) => {
     return text(placed.x, placed.y, displayLabel, { color: S.angle, size: 20, anchor: placed.anchor });
   };
 
-  if (angles.top) {
-    svg += arcOpen(ix1, y1, arcR, 0, transAng * 180 / Math.PI, { color: S.angle, width: 1.6 });
-    svg += placeAngleLabel(ix1, y1, angles.top);
-  }
-  if (angles.bottom) {
-    svg += arcOpen(ix2, y2, arcR, 0, transAng * 180 / Math.PI, { color: S.angle, width: 1.6 });
-    svg += placeAngleLabel(ix2, y2, angles.bottom);
+  // RES-115: each angle sits in one of the four corners at its crossing.
+  // Going clockwise in SVG from the right-hand ray: below-right (to the
+  // transversal's lower arm), below-left, above-left, above-right. The old
+  // top/bottom pair (saved resources) meant below-right on each line.
+  const t = transAng * 180 / Math.PI;
+  const SECTORS = {
+    "below-right": [0, t],
+    "below-left": [t, 180],
+    "above-left": [180, 180 + t],
+    "above-right": [180 + t, 360],
+  };
+  const marked = Array.isArray(spec.marked) ? spec.marked : [
+    ...(angles.top ? [{ line: "line1", position: "below-right", label: angles.top }] : []),
+    ...(angles.bottom ? [{ line: "line2", position: "below-right", label: angles.bottom }] : []),
+  ];
+  for (const angle of marked) {
+    const sector = SECTORS[angle?.position];
+    if (!sector) continue;
+    const [cx, cy] = angle.line === "line2" ? [ix2, y2] : [ix1, y1];
+    svg += arcOpen(cx, cy, arcR, sector[0], sector[1], { color: S.angle, width: 1.6 });
+    svg += placeAngleLabel(cx, cy, angle.label, (sector[0] + sector[1]) / 2);
   }
 
   svg += svgClose;

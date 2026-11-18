@@ -1,0 +1,93 @@
+"use strict";
+const { it, describe } = require("node:test");
+const assert = require("node:assert/strict");
+const { asksForSketch, blankSketchDiagrams } = require("../../src/resources/sketchQuestions");
+
+describe("sketch questions get an empty number plane (RES-115)", () => {
+  it("recognises an instruction to sketch, draw or plot, not a mention of a graph", () => {
+    for (const t of ["Sketch the graph of y = 2/5x − 3 using the gradient-intercept method.", "Plot the points A(1, 2) and B(3, 4).", "Draw the line y = x + 1 on the axes.", "Graph y = −2x − 1."]) assert.equal(asksForSketch(t), true, t);
+    for (const t of ["The graph shows the line y = 2x + 1. Find its gradient.", "Use the graph to estimate x when y = 3.", "Find the equation of the line."]) assert.equal(asksForSketch(t), false, t);
+  });
+
+  it("blanks the textbook crop seen in the RES-113 baseline (m07 Q6)", () => {
+    const resource = { questions: [{ number: 6, stem: "Sketch the graph of y = 2/5x − 3 using the gradient-intercept method.", diagram: { type: "source-image", image: Buffer.from("png"), width: 300, height: 200 } }] };
+    const changed = blankSketchDiagrams(resource);
+    assert.deepEqual(resource.questions[0].diagram, { type: "coordinate-plane", minX: -6, maxX: 6, minY: -6, maxY: 6, points: [] });
+    assert.equal(changed[0].from, "source-image");
+  });
+
+  it("keeps a drawn graph's axes but removes the lines and points", () => {
+    const resource = { questions: [{ stem: "Plot y = x^2 − 4.", diagram: { type: "function-plot", minX: -3, maxX: 3, minY: -5, maxY: 6, functions: [{ type: "quadratic", a: 1, b: 0, c: -4 }], points: [] } }] };
+    blankSketchDiagrams(resource);
+    assert.deepEqual(resource.questions[0].diagram, { type: "coordinate-plane", minX: -3, maxX: 3, minY: -5, maxY: 6, points: [] });
+  });
+
+  it("decides per part and leaves reading questions and answers alone", () => {
+    const graph = () => ({ type: "function-plot", minX: -5, maxX: 5, minY: -5, maxY: 5, functions: [{ type: "linear", m: 2, b: 1 }], points: [] });
+    const resource = {
+      questions: [{ stem: "The graph shows a line.", diagram: graph(), parts: [{ label: "a", stem: "Find its gradient.", diagram: graph() }, { label: "b", stem: "Sketch a parallel line through (0, 3).", diagram: graph() }] }],
+      answers: [{ questionNumber: 1, answer: "Sketch shown", diagram: graph() }],
+    };
+    blankSketchDiagrams(resource);
+    assert.equal(resource.questions[0].diagram.type, "function-plot");
+    assert.equal(resource.questions[0].parts[0].diagram.type, "function-plot");
+    assert.equal(resource.questions[0].parts[1].diagram.type, "coordinate-plane");
+    assert.equal(resource.answers[0].diagram.type, "function-plot", "an answer may show the finished graph");
+  });
+});
+
+describe("bank crop fit check (RES-115)", () => {
+  const { readFit, fitPrompt, FIT_SCHEMA } = require("../../src/resources/questionBankFit");
+  it("asks about every failure seen in the RES-113 baseline", () => {
+    const prompt = fitPrompt({ stem: "Sketch the graph of y = 2x + 1.", options: [] });
+    for (const phrase of [/same letter or label/, /needs is on the diagram/, /same figure, scenario and numbers/, /must not already show it/, /no other questions/, /not a fragment of text/, /labels, values or symbols the question doesn't use/]) assert.match(prompt, phrase);
+    assert.deepEqual(FIT_SCHEMA.required, ["fits", "problems", "note"]);
+  });
+  it("treats listed problems as a failure and a missing verdict as a fit", () => {
+    assert.equal(readFit({ fits: true, problems: ["answer_shown"], note: "" }).fits, false);
+    assert.equal(readFit({ fits: false, problems: [], note: "x" }).fits, false);
+    assert.equal(readFit({ fits: true, problems: [], note: "" }).fits, true);
+    assert.equal(readFit(null).fits, true);
+    assert.deepEqual(readFit({ fits: false, problems: ["made_up", "no_diagram"], note: "" }).problems, ["no_diagram"]);
+  });
+});
+
+describe("sketch blanking keeps what the question needs (Codex review on #374)", () => {
+  const crop = () => ({ type: "source-image", image: Buffer.from("png"), width: 300, height: 200 });
+  it("doesn't treat geometric constructions as graphs", () => {
+    for (const t of ["Draw the perpendicular bisector of line AB shown in the diagram.", "Draw a circle with centre O and radius 3 cm.", "Construct and draw the line through P parallel to QR."]) assert.equal(asksForSketch(t), false, t);
+    const resource = { questions: [{ stem: "Draw the perpendicular bisector of line AB.", diagram: crop() }] };
+    blankSketchDiagrams(resource);
+    assert.equal(resource.questions[0].diagram.type, "source-image");
+  });
+
+  it("keeps given points the line must pass through", () => {
+    const plane = { type: "coordinate-plane", minX: -5, maxX: 5, minY: -5, maxY: 5, points: [{ x: 1, y: 2, label: "A(1, 2)" }, { x: 3, y: 4, label: "B" }] };
+    const resource = { questions: [{ stem: "Draw a straight line through the points A and B on the grid.", diagram: { ...plane } }] };
+    blankSketchDiagrams(resource);
+    assert.equal(resource.questions[0].diagram.points.length, 2);
+  });
+
+  it("keeps a reference graph needed for a transformation or marked as given", () => {
+    const graph = () => ({ type: "function-plot", minX: -5, maxX: 5, minY: -5, maxY: 5, functions: [{ type: "quadratic", a: 1, b: 0, c: 0, label: "y = x^2" }], points: [] });
+    for (const stem of ["On the same axes, sketch y = x^2 + 3, a translation of the graph.", "Sketch the reflection of the graph shown in the x-axis.", "The graph of y = x^2 is given. Sketch y = (x - 2)^2 on the same grid."]) {
+      const resource = { questions: [{ stem, diagram: graph() }] };
+      blankSketchDiagrams(resource);
+      assert.equal(resource.questions[0].diagram.type, "function-plot", stem);
+    }
+  });
+
+  it("still blanks the baseline's sketch questions", () => {
+    for (const stem of ["On the axes, sketch the graph of $y = 2x - 3$.", "Sketch the line $y = \\frac{2x}{3} + 4$ on the number plane.", "Sketch the lines $x + y - 6 = 0$ and $y = 2x - 6$ on the number plane."]) {
+      const resource = { questions: [{ stem, diagram: crop() }] };
+      blankSketchDiagrams(resource);
+      assert.equal(resource.questions[0].diagram.type, "coordinate-plane", stem);
+    }
+  });
+});
+
+it("blanks points the question asks students to plot from given coordinates", () => {
+  const resource = { questions: [{ stem: "Plot the points A(1, 2) and B(3, 4) on the number plane.", diagram: { type: "coordinate-plane", minX: -5, maxX: 5, minY: -5, maxY: 5, points: [{ x: 1, y: 2, label: "A" }, { x: 3, y: 4, label: "B" }] } }] };
+  blankSketchDiagrams(resource);
+  assert.deepEqual(resource.questions[0].diagram.points, []);
+});
