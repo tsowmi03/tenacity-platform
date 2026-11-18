@@ -100,29 +100,32 @@ async function flag({ db, actor, payload, now }) {
   // stays in use until an admin reviews it.
   const stopUsing = payload.stopUsing === true;
   const questionRef = db.collection(QUESTIONS_COLLECTION).doc(questionId);
-  const takeOut = stopUsing && (await questionRef.get()).get("status") === "live";
   const flagRef = db.collection(FLAGS_COLLECTION).doc();
-  const batch = db.batch();
-  batch.set(flagRef, {
-    questionId,
-    jobId: payload.jobId,
-    reason,
-    note,
-    status: "open",
-    createdBy: actor.uid,
-    createdByName: actor.name,
-    createdAt: now(),
-    stopUsing,
-    resolvedBy: null,
-    resolvedAt: null,
-    resolution: null,
+  // The status read and the write share one transaction, so an admin hiding
+  // the question in between cannot have their hide metadata overwritten.
+  const takeOut = await db.runTransaction(async (tx) => {
+    const take = stopUsing && (await tx.get(questionRef)).get("status") === "live";
+    tx.set(flagRef, {
+      questionId,
+      jobId: payload.jobId,
+      reason,
+      note,
+      status: "open",
+      createdBy: actor.uid,
+      createdByName: actor.name,
+      createdAt: now(),
+      stopUsing,
+      resolvedBy: null,
+      resolvedAt: null,
+      resolution: null,
+    });
+    tx.update(questionRef, {
+      flagCount: admin.firestore.FieldValue.increment(1),
+      lastFlaggedAt: now(),
+      ...(take ? { status: "hidden", hiddenBy: actor.uid, hiddenAt: now(), hiddenWith: null, hiddenReason: FLAG_HIDDEN_REASON } : {}),
+    });
+    return take;
   });
-  batch.update(questionRef, {
-    flagCount: admin.firestore.FieldValue.increment(1),
-    lastFlaggedAt: now(),
-    ...(takeOut ? { status: "hidden", hiddenBy: actor.uid, hiddenAt: now(), hiddenWith: null, hiddenReason: FLAG_HIDDEN_REASON } : {}),
-  });
-  await batch.commit();
   return { flagId: flagRef.id, stoppedUsing: takeOut };
 }
 

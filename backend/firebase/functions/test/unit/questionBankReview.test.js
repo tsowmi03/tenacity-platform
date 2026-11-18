@@ -51,6 +51,16 @@ function fakeDb(seed = {}) {
     store,
     collection: (name) => collection(name),
     getAll: async (...refs) => refs.map((ref) => snap(ref.path)),
+    runTransaction: async (fn) => {
+      const ops = [];
+      const result = await fn({
+        get: async (ref) => snap(ref.path),
+        set: (ref, data) => ops.push(() => apply(ref.path, data, false)),
+        update: (ref, data) => ops.push(() => apply(ref.path, data, true)),
+      });
+      ops.forEach((op) => op());
+      return result;
+    },
     batch: () => {
       const ops = [];
       return {
