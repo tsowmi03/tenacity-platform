@@ -298,6 +298,7 @@ omitted, and open follow-ups are tracked at the bottom.
 - When a text the tutor named can't be found in the English bank or the archives, the job stops before anything is written and shows "Needs your input": choose another real text, write an original, or (for papers) leave it out because students have their own copy. The job waits for the tutor's answer.
 - With another text or an original, the writer is told not to name the missing text anywhere, and a resource title that still names it is renamed after the text actually printed.
 - Resource portal: this question takes exactly one choice (radio buttons).
+- Follow-up from Codex review: a leading article is ignored only when one side has none, so "A Little Boy Lost" is never taken for "The Little Boy Lost". If the tutor chose another real text and none can be verified, the job asks again (an original, or leave it out) instead of quietly writing an original.
 
 **Why:** A Year 10 paper planned on "The Garden Party" printed a different story, then (in the RES-113 benchmark) an invented text under Mansfield's title. Request fit scored 1/5.
 

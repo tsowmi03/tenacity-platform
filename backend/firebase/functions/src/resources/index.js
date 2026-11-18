@@ -749,18 +749,33 @@ const MISSING_TEXT_OPTIONS = Object.freeze({
   leaveOut: "Leave it out (students have their own copy)",
 });
 
+// The tutor's latest answer wins: after "Choose another real text" found
+// nothing, the request carries that answer and the next one.
 function missingTextChoice(prompt) {
   const text = String(prompt || "").toLowerCase();
-  const found = Object.entries(MISSING_TEXT_OPTIONS).find(([, label]) => text.includes(label.toLowerCase()));
-  return found ? found[0] : null;
+  let latest = null;
+  let at = -1;
+  for (const [key, label] of Object.entries(MISSING_TEXT_OPTIONS)) {
+    const index = text.lastIndexOf(label.toLowerCase());
+    if (index > at) {
+      latest = key;
+      at = index;
+    }
+  }
+  return latest;
 }
 
-function missingTextClarification(titles, { leaveOut = true } = {}) {
+// `noAlternative`: the tutor chose another real text and none could be
+// verified either, so that choice isn't offered again (Codex review on #380).
+function missingTextClarification(titles, { leaveOut = true, noAlternative = false } = {}) {
   const list = titles.map((t) => `"${t}"`).join(" and ");
-  const options = [MISSING_TEXT_OPTIONS.another, MISSING_TEXT_OPTIONS.original];
+  const options = noAlternative ? [MISSING_TEXT_OPTIONS.original] : [MISSING_TEXT_OPTIONS.another, MISSING_TEXT_OPTIONS.original];
   if (leaveOut) options.push(MISSING_TEXT_OPTIONS.leaveOut);
+  const message = noAlternative
+    ? `We couldn't find another real text to use instead of ${list} either. How should we go on?`
+    : `We couldn't find a copy of ${list} that we can print. How should we go on?`;
   return Object.assign(
-    controlError("RESOURCE_SCOPE_CLARIFICATION", `We couldn't find a copy of ${list} that we can print. How should we go on?`),
+    controlError("RESOURCE_SCOPE_CLARIFICATION", message),
     { clarificationOptions: options, clarificationKind: "missing-text" }
   );
 }
@@ -1823,6 +1838,8 @@ async function maybeSourcePassageLogged({
       : "close reading, inference, tone and language analysis",
     theme: null,
   };
+  // Set once a named passage is missing and the tutor chose another real text.
+  let lookingForAnother = null;
   try {
     const presetSelection = Array.isArray(job.sourceSelections)
       ? job.sourceSelections[0]
@@ -1845,6 +1862,7 @@ async function maybeSourcePassageLogged({
     const choice = named ? missingTextChoice(job.customPrompt) : null;
     if (named && !choice) throw missingTextClarification([sourced.selection.title], { leaveOut: false });
     const replacedNamedTexts = named ? [sourced.selection.title] : [];
+    if (named && choice === "another") lookingForAnother = sourced.selection.title;
     if (sourced?.selection?.title && (!named || choice === "another")) {
       const alternative = await selectAlternative({
         anthropicApiKey,
@@ -1872,6 +1890,8 @@ async function maybeSourcePassageLogged({
         alternateWorkRequired: true,
       };
       if (sourced?.ok && sourced.passage) return { used: true, sourced, planner, replacedNamedTexts };
+      // The tutor asked for a real text: never an original in its place.
+      if (lookingForAnother) throw missingTextClarification([lookingForAnother], { leaveOut: false, noAlternative: true });
     }
     return {
       used: false,
@@ -1883,6 +1903,7 @@ async function maybeSourcePassageLogged({
     };
   } catch (err) {
     if (isCancellationError(err) || err?.resourceControl) throw err;
+    if (lookingForAnother) throw missingTextClarification([lookingForAnother], { leaveOut: false, noAlternative: true });
     return { used: false, sourced: null, warning: `Public-domain sourcing failed: ${err.message}` };
   }
 }
@@ -2118,6 +2139,8 @@ async function maybeSourceStimulusSetLogged({
   // many of them become originals.
   const choice = missingTextChoice(job.customPrompt);
   const replacedNamedTexts = [];
+  // Named texts whose "another real text" couldn't be verified either.
+  const noAlternative = [];
   let originalsForNamed = 0;
   // A named text that can't be found: left out after the tutor said so,
   // replaced as they chose, or (with no answer yet) queued for the question.
@@ -2183,16 +2206,22 @@ async function maybeSourceStimulusSetLogged({
         alternateWorkRequired: true,
       };
       if (sourced?.ok && sourced.passage) texts.push(sourced);
+      else if (namedInRequest(selection, job)) noAlternative.push(selection.title);
     } catch (err) {
       if (isCancellationError(err) || err?.resourceControl) throw err;
       // best-effort: a single failed text must not sink the whole booklet.
       // A named text that errored is settled like one that wasn't found.
-      if (namedInRequest(selection, job)) settleNamed(selection.title);
+      if (namedInRequest(selection, job)) {
+        settleNamed(selection.title);
+        if (choice === "another" && !noAlternative.includes(selection.title)) noAlternative.push(selection.title);
+      }
     }
   }
 
   // RES-101. Stop before anything else is fetched or written, and ask.
   if (namedMissing.length && !choice) throw missingTextClarification(namedMissing);
+  // The tutor asked for real texts: never an original in their place.
+  if (noAlternative.length) throw missingTextClarification(noAlternative, { noAlternative: true });
 
   // Visuals are sourced after the texts so a resource that is meant to be
   // mostly reading is not held up by an image lookup. Each sourced image adds

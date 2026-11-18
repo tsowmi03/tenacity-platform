@@ -1031,21 +1031,32 @@ function normalizeHeading(s) {
 
 // RES-101. Headings and planned names differ in punctuation and spacing: the
 // planner says "The Garden Party", the book's heading is "The Garden-Party".
-// Compared with every non-letter removed, and without a leading article.
-function compactHeading(s) {
+// They are compared with every non-letter removed. A leading article is
+// ignored only when one side has none ("Garden Party"); two different
+// articles name different pieces ("A Little Boy Lost" is not "The Little Boy
+// Lost", Codex review on #380).
+const LEADING_ARTICLE = /^(?:the|a|an) /;
+function headingWords(s) {
   return String(s || "")
     .toLowerCase()
-    .replace(/[‘’']/g, "")
+    .replace(/[\u2018\u2019']/g, "")
     .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/^(?:the|a|an) /, "")
-    .replace(/ /g, "");
+    .trim();
+}
+function compactHeading(s) {
+  return headingWords(s).replace(LEADING_ARTICLE, "").replace(/ /g, "");
 }
 
 function headingMatches(line, pieceTitle) {
   const target = normalizeHeading(pieceTitle);
   if (!target) return false;
   if (normalizeHeading(line) === target) return true;
+  const a = headingWords(line);
+  const b = headingWords(pieceTitle);
+  if (a.replace(/ /g, "") === b.replace(/ /g, "")) return b.replace(/ /g, "").length >= 4;
+  const articleA = a.match(LEADING_ARTICLE)?.[0];
+  const articleB = b.match(LEADING_ARTICLE)?.[0];
+  if (articleA && articleB && articleA !== articleB) return false;
   const compact = compactHeading(pieceTitle);
   return compact.length >= 4 && compactHeading(line) === compact;
 }
@@ -1125,11 +1136,15 @@ function extractNamedPiece(body, pieceTitle, { shortForm = false } = {}) {
     return { text: null, confidence: "none", notes: "No piece title supplied." };
   }
 
-  let matches = [];
+  // An exact heading wins over a loose one: "A Little Boy Lost" is a
+  // different poem from "The Little Boy Lost" (Codex review on #380).
+  const exact = [];
+  const loose = [];
   lines.forEach((line, i) => {
-    if (headingMatches(line, pieceTitle)) matches.push(i);
+    if (normalizeHeading(line) === target) exact.push(i);
+    else if (headingMatches(line, pieceTitle)) loose.push(i);
   });
-  if (!matches.length) {
+  if (!exact.length && !loose.length) {
     return {
       text: null,
       confidence: "none",
@@ -1137,24 +1152,43 @@ function extractNamedPiece(body, pieceTitle, { shortForm = false } = {}) {
     };
   }
 
-  // RES-101. For prose, a heading followed by the story itself is preferred to
-  // the title page and the contents entry, which share its name.
-  if (!shortForm) {
-    const opensStory = matches.filter((idx) => openingReadsAsProse(lines, idx));
-    if (opensStory.length) matches = opensStory;
-  }
-
-  let best = "";
-  for (const idx of matches) {
-    let slice = sliceFromHeading(lines, idx, { storyBreaks: !shortForm });
-    const next = (lines[idx + 1] || "").trim();
-    // Keep the line's original indent: verse callers dedent by the common
-    // indent, which only lines up when the first line still carries its own.
-    if (next && slice) slice = `${lines[idx].replace(/[ \t]+$/, "")}\n${slice}`;
-    if (countWords(slice) > countWords(best)) best = slice;
-  }
-
+  // RES-101. Candidates in order of preference. For prose, a heading followed
+  // by the story itself comes before the title page and the contents entry,
+  // which share its name; then an exact heading before a loose one. A group
+  // whose best slice is too short gives way to the next, so an exact contents
+  // entry never hides the real heading ("The Sea Wind" in the contents, "THE
+  // SEA-WIND" over the poem; Codex review on #382).
   const minWords = shortForm ? 24 : 40;
+  const opensStory = (indexes) => indexes.filter((idx) => openingReadsAsProse(lines, idx));
+  const groups = (shortForm ? [exact, loose] : [opensStory(exact), opensStory(loose), exact, loose])
+    .filter((group) => group.length);
+  const longestSlice = (indexes) => {
+    let longest = "";
+    for (const idx of indexes) {
+      let slice = sliceFromHeading(lines, idx, { storyBreaks: !shortForm });
+      const next = (lines[idx + 1] || "").trim();
+      // Keep the line's original indent: verse callers dedent by the common
+      // indent, which only lines up when the first line still carries its own.
+      if (next && slice) slice = `${lines[idx].replace(/[ \t]+$/, "")}\n${slice}`;
+      if (countWords(slice) > countWords(longest)) longest = slice;
+    }
+    return longest;
+  };
+  let matches = groups[0];
+  let best = "";
+  for (const group of groups) {
+    const slice = longestSlice(group);
+    if (countWords(slice) > countWords(best)) {
+      best = slice;
+      matches = group;
+    }
+    if (countWords(slice) >= minWords) {
+      best = slice;
+      matches = group;
+      break;
+    }
+  }
+
   const mediumWords = shortForm ? 48 : 120;
   const words = countWords(best);
   const confidence = words >= mediumWords ? "medium" : words >= minWords ? "low" : "none";
