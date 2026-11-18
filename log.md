@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-18 | [Two resource jobs per account (RES-112)](#2026-11-18--two-resource-jobs-per-account-res-112) |
 | 2026-11-18 | [Maths diagrams match their questions (RES-115)](#2026-11-18--maths-diagrams-match-their-questions-res-115) |
 | 2026-11-18 | [Internal generator notes kept out of resources (RES-114)](#2026-11-18--internal-generator-notes-kept-out-of-resources-res-114) |
 | 2026-11-18 | [Classic poems source cleanly from Wikisource again (RES-116)](#2026-11-18--classic-poems-source-cleanly-from-wikisource-again-res-116) |
@@ -253,6 +254,15 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-18 — Two resource jobs per account (RES-112)
+
+- Added a production flag that lets all Resource Generator accounts run two jobs at a time. It also covers future accounts.
+- The shared provider limits and first-turn reservation still apply. Turning off the flag and clearing the pilot list returns accounts to one job at a time as the extra turns finish.
+
+**Status:** Requires the Functions deploy, then enabling the production flag.
 
 ---
 
