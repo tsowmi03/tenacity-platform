@@ -53,7 +53,9 @@ describe("Wikisource poems on transcluded pages (RES-116)", () => {
     const r = await ws.sourceWikisourcePoem({ title: "Ozymandias", author: "Percy Bysshe Shelley" });
     assert.equal(r.ok, true);
     assert.equal(r.confidence, "high");
-    assert.equal(r.title, "Rosalind and Helen, A Modern Eclogue (1819)/Sonnet");
+    assert.equal(r.title, "Ozymandias", "the poem's name, not the edition's path or its 'Sonnet' label");
+    assert.equal(r.sourceName, "Wikisource — Rosalind and Helen, A Modern Eclogue (1819)");
+    assert.match(r.sourceUrl, /Rosalind_and_Helen/);
     assert.match(r.passage, /Look on my works, ye mighty, and despair!/);
     assert.ok(!requested.includes("wikitext:Ozymandias (draft manuscript)"), "the draft is never fetched when a published edition works");
   });

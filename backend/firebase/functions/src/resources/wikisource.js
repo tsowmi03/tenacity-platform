@@ -414,12 +414,19 @@ function buildWikisourceResult({ pageTitle, title, author, passage, confidence, 
   const titlePresent = significantTokens(title).some((t) =>
     String(pageTitle || "").toLowerCase().includes(t)
   );
+  // An edition is a subpage of its book ("<book>/Ozymandias"): the poem's
+  // title is the page's own name, and the book goes in the source line. RES-116.
+  const parts = String(pageTitle || "").split("/");
+  const ownName = parts.pop().replace(/^["'“‘]+|["'”’]+$/g, "").trim();
+  const book = parts.join("/");
   return {
     ok: !!passage,
     source: "Wikisource",
-    title: pageTitle,
+    // "…(1819)/Sonnet" is the edition's own name for Ozymandias: use the
+    // requested title when the page's name doesn't carry it.
+    title: ownName && pageMatchesTitle(ownName, title) ? ownName : (title || ownName || pageTitle),
     author,
-    sourceName: `Wikisource — ${pageTitle}`,
+    sourceName: book ? `Wikisource — ${book}` : `Wikisource — ${pageTitle}`,
     sourceUrl: pageUrl(pageTitle),
     passage,
     wordCount,
