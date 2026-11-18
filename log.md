@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-18 | [Internal generator notes kept out of resources (RES-114)](#2026-11-18--internal-generator-notes-kept-out-of-resources-res-114) |
 | 2026-11-18 | [Classic poems source cleanly from Wikisource again (RES-116)](#2026-11-18--classic-poems-source-cleanly-from-wikisource-again-res-116) |
 | 2026-11-18 | [Quality benchmark for maths and English resources (RES-113)](#2026-11-18--quality-benchmark-for-maths-and-english-resources-res-113) |
 | 2026-11-12 | [Saved stages survive deploys; two-job pilot ready behind a flag (RES-110, RES-111, RES-112)](#2026-11-12--saved-stages-survive-deploys-two-job-pilot-ready-behind-a-flag-res-110-res-111-res-112) |
@@ -251,6 +252,32 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-18 — Internal generator notes kept out of resources (RES-114)
+
+**What changed**
+- A textbook question whose printed answer two independent solves can't
+  confirm is no longer used with a "Not confirmed… Check before use" note
+  in the answers. Its slot tries another textbook diagram, then keeps the
+  generated question, and the question is flagged for review in the bank.
+- Every resource is checked before it is built: sentences that are notes
+  about how it was made (answer checks, "the supplied poem", "the requested
+  essay", the question bank or the generator) are removed. The writing rules
+  forbid them as well.
+- When the tutor names a text and it can't be sourced, another work is no
+  longer swapped in (an Ozymandias scaffold had been given Blake's "The
+  Tyger"). A stimulus set leaves it out and the tutor is told students need
+  their own copy.
+- Benchmark follow-up from the Codex review on #371: `--compare` averages
+  only the requests graded in both runs, and `--resume` finishes the run's
+  own request list.
+
+**Why:** The RES-113 baseline found these notes printed in 3 of 20 resources,
+which students would see.
+
+**Status:** Live. The Functions change ships with the next production Functions deploy.
 
 ---
 

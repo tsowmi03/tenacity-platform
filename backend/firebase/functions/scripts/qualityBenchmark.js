@@ -268,8 +268,19 @@ async function runBenchmark(options, deps = {}) {
   const replay = deps.replay || require("./replayResourceLocally").runReplay;
   const started = Date.now();
   const results = [];
+  // The lock comes first: a second process must be turned away before it can
+  // read or overwrite this run's request list.
   const releaseLock = acquireLock(runDir);
   try {
+    // The run's request list is saved when it starts, so --resume finishes
+    // the same set rather than the whole benchmark.
+    const manifestFile = path.join(runDir, "run.json");
+    if (options.resume && !options.only && !options.subject && fs.existsSync(manifestFile)) {
+      const ids = readJson(manifestFile).requestIds || [];
+      requests = selectRequests(loadRequests(), { only: ids });
+    } else if (!options.resume && !options.gradeOnly) {
+      writeJson(manifestFile, { requestIds: requests.map((r) => r.id), startedAt: new Date().toISOString() });
+    }
     for (const [index, request] of requests.entries()) {
       const action = options.resume ? resumeAction(request, runDir, options) : (options.gradeOnly ? "grade" : "generate");
       console.log(`[${index + 1}/${requests.length}] ${request.id}${options.resume ? ` (${action})` : ""}`);

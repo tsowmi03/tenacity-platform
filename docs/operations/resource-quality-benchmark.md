@@ -30,9 +30,12 @@ becomes the reference.
   (use it after a rubric or grader change).
 - `--resume <runDir>` finishes an interrupted run in the same folder: saved
   grades are kept, finished resources without a grade are graded, and
-  anything half-generated or failed is generated again. The summary covers
-  the whole run. A run folder can only be used by one benchmark process at a
-  time.
+  anything half-generated or failed is generated again. It finishes the
+  requests the run started with (saved in `run.json`), not the whole set. A
+  run folder can only be used by one benchmark process at a time.
+- With `--compare`, the bracketed averages compare only the requests graded
+  in both runs, so a partial run (`--only`, `--subject` or failures) is
+  measured like for like.
 - `--firebase-secrets` reads both provider keys from Secret Manager
   (read-only), so the run uses the production provider accounts. The run also reads the maths and English banks and
   public-domain text sources, as production does. Nothing is written to

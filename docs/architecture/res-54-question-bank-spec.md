@@ -297,9 +297,9 @@ a sectioned paper question never takes another section's answer.
 When the generator restates a question as printed and it has a book answer,
 it solves it once (an adapted question is checked as in section 10). Agreement uses the book answer with that working; else a
 second solve; if both solves agree against the book, their answer is used and
-the question is flagged; if all three differ, the book answer is used with the
-working marked unconfirmed, the question is flagged, and the job warns
-`BOOK_ANSWER_UNCONFIRMED`.
+the question is flagged; if all three differ, the crop isn't used (RES-114):
+the question is flagged, the slot tries another crop, and keeps the drawn
+question if none can be confirmed. Nothing about the check is printed.
 
 **Backfill (2026-11-06):** `scripts/questionBankAnswers.js plan|run|write`
 linked 30,100 of 56,763 numbered live questions from 1,820 books for $18.

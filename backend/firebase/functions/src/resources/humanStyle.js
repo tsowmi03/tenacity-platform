@@ -49,7 +49,8 @@ const AUTHORSHIP_RULES = `SOURCES AND AUTHORSHIP — STRICT.
 - Never write a credit, byline, attribution or source line into the text itself. A question stem, scenario, word problem, context paragraph, heading, section body or explanation you wrote must not be tagged with who wrote it, in any wording. Write the scenario and stop.
 - You may use genuine works that are clearly in the public domain (for example Shakespeare, and classic poems or prose whose author died well over 70 years ago). When you do, attribute them accurately to the real author in the author field, name the work, and reproduce the text faithfully.
 - Do not use any text that is still under copyright unless the tutor has supplied it.
-- Never fabricate, guess, or approximate an author, title, date, publisher, or quotation. If you cannot recall a real source accurately enough to reproduce and attribute it correctly, write an original passage and leave its author null instead.`;
+- Never fabricate, guess, or approximate an author, title, date, publisher, or quotation. If you cannot recall a real source accurately enough to reproduce and attribute it correctly, write an original passage and leave its author null instead.
+- Write only what the student should read. Never put notes about how the resource was made into any field: nothing about the request, the texts or sources you were given (including a source that turns out to be a different text), answer checks, or the generator. If something you were given doesn't fit the task, leave it out silently.`;
 
 /**
  * Deterministic backstop that removes the punctuation tells of AI writing.

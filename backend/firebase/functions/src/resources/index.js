@@ -25,6 +25,7 @@ const {
   includesWorking,
 } = require("./answerMode");
 const { buildResourceDocx, buildOutputFileName } = require("./builder");
+const { stripPipelineNotes } = require("./pipelineNotes");
 const { normaliseQuestionShape } = require("./builder/questionShape");
 const { isDiagramRenderError, optionalDiagramOmittedWarning } = require("./builder/diagrams");
 const { classifyResourceFailure, describeResourceFailure } = require("./failure");
@@ -718,6 +719,24 @@ function createTrackedAiCaller({ job, deps, callAi, usageByProvider }) {
       throw err;
     }
   };
+}
+
+// RES-114. A text the tutor named in their instructions is the text they
+// want: when it can't be sourced, another work is never swapped in for it
+// (an Ozymandias scaffold was given "The Tyger"). Titles of four letters or
+// fewer aren't matched, so a short common word can't count as a name.
+function namedInRequest(selection, job) {
+  const norm = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const prompt = ` ${norm(job?.customPrompt)} `;
+  return [selection?.title, selection?.pieceTitle]
+    .map(norm)
+    .filter((title) => title.length > 4)
+    .some((title) => prompt.includes(` ${title} `));
+}
+
+function namedTextMissingWarning(titles) {
+  const list = titles.map((t) => `"${t}"`).join(" and ");
+  return `A verified copy of ${list} couldn't be found, so it isn't printed. Students will need their own copy.`;
 }
 
 function sanitizedSourceSelection(selection) {
@@ -1446,6 +1465,11 @@ async function buildDocxWithDiagramReliability({
   if (shapeFixes.placeholderOptions || shapeFixes.englishDiagramFlags) {
     logger.info("Normalised question shape before build", shapeFixes);
   }
+  // RES-114: notes about how the resource was made never reach the student.
+  const notesRemoved = stripPipelineNotes(resource);
+  if (notesRemoved.length) {
+    logger.info("Removed pipeline notes before build", { count: notesRemoved.length, notes: notesRemoved.slice(0, 5) });
+  }
   const warnings = [];
   let mathRepairRounds = 0;
   let mathFieldsRepaired = 0;
@@ -1786,7 +1810,9 @@ async function maybeSourcePassageLogged({
     let planner = sourced?.selection?._planner || job.sourcePlanner || null;
     if (sourced?.ok && sourced.passage) return { used: true, sourced, planner };
 
-    if (sourced?.selection?.title) {
+    // RES-114: no other work is swapped in for a text the tutor named. The
+    // annotation task then falls back as it does when nothing is found.
+    if (sourced?.selection?.title && !namedInRequest(sourced.selection, job)) {
       const alternative = await selectAlternative({
         anthropicApiKey,
         openaiApiKey,
@@ -2024,6 +2050,7 @@ async function maybeSourceStimulusSetLogged({
   const fromBank = await sourceSetFromBank({
     job, plannedTexts, plannedVisuals, persisted, maxWords, bank, callAi, anthropicApiKey, openaiApiKey, signal, judge,
   });
+  const namedMissing = [];
   for (const [index, selection] of plannedTexts.entries()) {
     if (fromBank.texts.has(index)) {
       texts.push(fromBank.texts.get(index));
@@ -2044,6 +2071,10 @@ async function maybeSourceStimulusSetLogged({
       });
       if (sourced?.ok && sourced.passage) {
         texts.push(sourced);
+        continue;
+      }
+      if (namedInRequest(selection, job)) {
+        namedMissing.push(selection.title);
         continue;
       }
 
@@ -2076,7 +2107,9 @@ async function maybeSourceStimulusSetLogged({
       if (sourced?.ok && sourced.passage) texts.push(sourced);
     } catch (err) {
       if (isCancellationError(err) || err?.resourceControl) throw err;
-      // best-effort: a single failed text must not sink the whole booklet
+      // best-effort: a single failed text must not sink the whole booklet.
+      // A named text that errored is still left out, not written (RES-114).
+      if (namedInRequest(selection, job) && !namedMissing.includes(selection.title)) namedMissing.push(selection.title);
     }
   }
 
@@ -2111,12 +2144,15 @@ async function maybeSourceStimulusSetLogged({
     // its own text for the missing ones. When none was, the field is withheld
     // entirely — so nothing is model-written, and the resource simply ships with
     // the images alone.
-    const missingTexts = plannedTexts.length - texts.length;
-    const warning = missingTexts <= 0
+    // Named texts that couldn't be found are left out, never written as
+    // originals (RES-114), so they don't count as texts to write.
+    const missingTexts = plannedTexts.length - texts.length - namedMissing.length;
+    const shortfall = missingTexts <= 0
       ? null
       : texts.length
         ? "Some planned stimulus texts could not be verified and were replaced with model-written text."
         : "No planned stimulus text could be verified, so the reading texts are original (labelled Tenacity Original).";
+    const warning = [namedMissing.length ? namedTextMissingWarning(namedMissing) : null, shortfall].filter(Boolean).join(" ") || null;
     return {
       used: true,
       texts,
@@ -2128,18 +2164,22 @@ async function maybeSourceStimulusSetLogged({
       // them: it put the passage inside Question 1's stem, where later stages
       // could not see it and no source line was printed. It now writes them
       // into the booklet as originals instead.
-      originalTextsAllowed: texts.length === 0 && plannedTexts.length > 0,
+      originalTextsAllowed: texts.length === 0 && missingTexts > 0,
       ...(warning ? { warning } : {}),
     };
   }
+  const unnamedMissing = plannedTexts.length - namedMissing.length;
   return {
     used: false,
     texts: [],
     visuals: [],
     planner,
     bankUsage: fromBank.usage,
-    originalTextsAllowed: plannedTexts.length > 0,
-    warning: "Planned stimulus texts could not be verified, so the reading texts are original (labelled Tenacity Original).",
+    originalTextsAllowed: unnamedMissing > 0,
+    warning: [
+      namedMissing.length ? namedTextMissingWarning(namedMissing) : null,
+      unnamedMissing > 0 ? "Planned stimulus texts could not be verified, so the reading texts are original (labelled Tenacity Original)." : null,
+    ].filter(Boolean).join(" "),
   };
 }
 
@@ -2850,13 +2890,6 @@ async function runGenerationPipelineLogged(job, deps) {
     logger.warn("[resource] question bank skipped", { jobId: job.jobId, error: errorMessage(err).slice(0, 300) });
   }
   if (questionBank.used?.length) raw = JSON.stringify(parsed, withoutSourceImageBytes, 2);
-  // RES-63: a textbook answer the book and two solves disagreed on is printed
-  // as the book's, and named to the tutor here as well as in the tutor copy.
-  for (const used of questionBank.used || []) {
-    if (used.answerSource !== "book_unconfirmed") continue;
-    const place = `${used.section ? `${used.section}, ` : ""}Question ${used.questionNumber}${used.partLabel ? ` part ${used.partLabel}` : ""}`;
-    contentWarnings.push({ code: "BOOK_ANSWER_UNCONFIRMED", message: `${place}: the textbook's answer may be wrong. Check it before printing.` });
-  }
   // Keyed by what the row answers rather than by object, so the set survives
   // the draft fallback below swapping in a copy of the document.
   const answerRowKey = (row) => JSON.stringify([row?.questionNumber, row?.partLabel || null, row?.subTopicTitle || null, row?.section || null]);

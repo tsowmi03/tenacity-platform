@@ -597,10 +597,15 @@ describe("question bank fill: the book's answer", () => {
       },
       batch: () => ({ set: (_ref, data) => flags.push(data), update: () => {}, commit: async () => {} }),
     };
+    let chooseCalls = 0;
     const callAi = async (request) => {
       calls.push(request);
       const fields = request.responseSchema.required.join();
-      if (fields.includes("choice")) return { parsed: { choice: 1, reason: "fits", stem: "Find x.", options: [], answer: first, workingOut: "first working" } };
+      // `first` may list one answer per crop tried, in order (RES-114).
+      if (fields.includes("choice")) {
+        const answer = Array.isArray(first) ? first[Math.min(chooseCalls++, first.length - 1)] : first;
+        return { parsed: { choice: 1, reason: "fits", stem: "Find x.", options: [], answer, workingOut: "first working" } };
+      }
       if (fields === "answer,workingOut") return { parsed: { answer: second, workingOut: "second working" } };
       if (fields === "same") return { parsed: { same: false } };
       throw new Error("no plain check when the book has the answer");
@@ -612,7 +617,6 @@ describe("question bank fill: the book's answer", () => {
     { name: "first solve agrees with the book", first: "13 cm", second: null, answer: "13 cm", working: "first working", source: "book", flagged: false },
     { name: "second solve agrees with the book", first: "12 cm", second: "13", answer: "13 cm", working: "second working", source: "book", flagged: false },
     { name: "the two solves agree against the book", first: "12 cm", second: "12", answer: "12 cm", working: "first working", source: "solves", flagged: true },
-    { name: "all three disagree", first: "12 cm", second: "11 cm", answer: "13 cm", working: /^Not confirmed:.*\nsecond working$/s, source: "book_unconfirmed", flagged: true },
   ]) {
     it(name, async () => {
       const { env, flags } = bookSetup({ first, second });
@@ -627,4 +631,33 @@ describe("question bank fill: the book's answer", () => {
       if (flagged) assert.equal(flags[0].reason, "answer");
     });
   }
+
+  // RES-114: when the book and both solves disagree, nothing unconfirmed is
+  // printed. The slot tries the next crop, and keeps the drawn question if no
+  // crop can be confirmed. Every crop ruled out is flagged for review.
+  it("all three disagree: tries the next crop and uses it when it checks out", async () => {
+    const { env, flags } = bookSetup({ first: ["12 cm", "13 cm"], second: "11 cm" });
+    const parsed = worksheet(1);
+    const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    assert.equal(result.used.length, 1);
+    assert.equal(result.used[0].questionId, "b2");
+    assert.equal(result.used[0].answerSource, "book");
+    assert.equal(parsed.answers[0].answer, "13 cm");
+    assert.doesNotMatch(JSON.stringify(parsed), /Not confirmed|not confirmed|Check before use/);
+    assert.equal(flags.length, 1, "the ruled-out crop is flagged");
+  });
+
+  it("all three disagree on every crop: keeps the drawn question and prints no note", async () => {
+    const { env, flags } = bookSetup({ first: "12 cm", second: "11 cm" });
+    const parsed = worksheet(1);
+    const before = JSON.stringify(parsed.answers);
+    const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    assert.equal(result.used.length, 0);
+    assert.equal(result.skipped[0].reason, "answer_unconfirmed");
+    assert.match(result.skipped[0].detail, /all disagree/);
+    assert.equal(JSON.stringify(parsed.answers), before, "the generator's own question and answer stay");
+    assert.doesNotMatch(JSON.stringify(parsed), /Not confirmed|not confirmed|Check before use/);
+    assert.equal(flags.length, 2, "both ruled-out crops are flagged");
+    assert.ok(flags.every((f) => f.reason === "answer"));
+  });
 });

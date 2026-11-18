@@ -253,11 +253,23 @@ function summariseRun(results, { previous = null, meta = {} } = {}) {
   if (previous) {
     const prevRows = new Map((previous.rows || []).map((r) => [r.id, r]));
     const delta = (a, b) => (a === null || a === undefined || b === null || b === undefined ? null : round2(a - b));
+    // Averages are compared only over requests graded in both runs, so a
+    // partial run (--only, --subject, or failures) isn't measured against a
+    // different set of requests.
+    const both = rows.filter((r) => r.overall !== null && prevRows.get(r.id)?.overall != null);
+    const aggregate = (list) => ({
+      overall: mean(list.map((r) => r.overall)),
+      bySubject: Object.fromEntries(["maths", "english"].map((s) => [s, mean(list.filter((r) => r.subject === s).map((r) => r.overall))])),
+      byCriterion: Object.fromEntries(CRITERION_IDS.map((id) => [id, mean(list.map((r) => r.scores?.[id]).filter((v) => v > 0))])),
+    });
+    const now = aggregate(both);
+    const then = aggregate(both.map((r) => ({ ...prevRows.get(r.id), subject: r.subject })));
     comparison = {
       previousRunId: previous.meta?.runId || null,
-      overall: delta(overall, previous.overall),
-      bySubject: Object.fromEntries(Object.keys(bySubject).map((s) => [s, delta(bySubject[s], previous.bySubject?.[s])])),
-      byCriterion: Object.fromEntries(CRITERION_IDS.map((id) => [id, delta(byCriterion[id], previous.byCriterion?.[id])])),
+      matchedRequests: both.length,
+      overall: delta(now.overall, then.overall),
+      bySubject: Object.fromEntries(Object.keys(bySubject).map((s) => [s, delta(now.bySubject[s], then.bySubject[s])])),
+      byCriterion: Object.fromEntries(CRITERION_IDS.map((id) => [id, delta(now.byCriterion[id], then.byCriterion[id])])),
       rows: Object.fromEntries(rows.map((r) => [r.id, delta(r.overall, prevRows.get(r.id)?.overall)])),
     };
   }
@@ -290,7 +302,7 @@ function renderMarkdown(summary) {
     `# Resource quality benchmark — ${summary.meta.runId || "run"}`,
     "",
     `Rubric v${summary.meta.rubricVersion} · grader ${summary.meta.graderModel || GRADER_MODEL} · ${summary.counts.graded}/${summary.counts.requests} graded`,
-    c ? `Compared with ${c.previousRunId || "previous run"}.` : "",
+    c ? `Compared with ${c.previousRunId || "previous run"} over the ${c.matchedRequests} request${c.matchedRequests === 1 ? "" : "s"} graded in both (bracketed figures).` : "",
     "",
     "| | Score |",
     "|---|---|",
