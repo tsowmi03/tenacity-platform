@@ -19,6 +19,7 @@ const FIT_PROBLEMS = Object.freeze([
   "value_missing",      // a length, angle or value needed to answer isn't on the crop or in the question
   "different_figure",   // the crop shows a different shape, scenario or numbers from the question
   "answer_shown",       // the crop gives away the answer (a finished graph for a sketch, the value asked for)
+  "extra_labels",       // labels, values or symbols the question never uses (an angle θ on a Pythagoras question)
   "other_content",      // other questions, answer options or text from the page are in the crop
   "no_diagram",         // the crop is a text fragment or blank, not a diagram
 ]);
@@ -44,6 +45,7 @@ It fits only if all of these hold:
 - Every length, angle or value a student needs is on the diagram or in the question.
 - The diagram shows the same figure, scenario and numbers as the question.
 - The diagram doesn't give away the answer. If the question asks the student to sketch, draw or plot something, the diagram must not already show it.
+- The diagram has no labels, values or symbols the question doesn't use (for example an angle θ or a 38° on a question that only uses side lengths, or a letter for a side the question never mentions).
 - The diagram has nothing else from the page: no other questions, answer options or stray text.
 - It is a diagram, not a fragment of text.
 

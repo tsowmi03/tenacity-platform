@@ -40,7 +40,7 @@ describe("bank crop fit check (RES-115)", () => {
   const { readFit, fitPrompt, FIT_SCHEMA } = require("../../src/resources/questionBankFit");
   it("asks about every failure seen in the RES-113 baseline", () => {
     const prompt = fitPrompt({ stem: "Sketch the graph of y = 2x + 1.", options: [] });
-    for (const phrase of [/same letter or label/, /needs is on the diagram/, /same figure, scenario and numbers/, /must not already show it/, /no other questions/, /not a fragment of text/]) assert.match(prompt, phrase);
+    for (const phrase of [/same letter or label/, /needs is on the diagram/, /same figure, scenario and numbers/, /must not already show it/, /no other questions/, /not a fragment of text/, /labels, values or symbols the question doesn't use/]) assert.match(prompt, phrase);
     assert.deepEqual(FIT_SCHEMA.required, ["fits", "problems", "note"]);
   });
   it("treats listed problems as a failure and a missing verdict as a fit", () => {
