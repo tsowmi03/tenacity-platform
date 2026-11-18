@@ -113,14 +113,14 @@ function collectDiagramOwners(parsed) {
     // with the object and its measurements given once by the parent question,
     // so a part's diagram cannot be repaired or judged from its own text alone.
     const nested = Number.isFinite(node.number)
-      ? { questionNumber: node.number, questionStem: questionTextFor(node) }
+      ? { questionNumber: node.number, questionStem: questionTextFor(node), questionBrief: briefOf(node) }
       : context;
 
     if (node.diagram && typeof node.diagram === "object" && !Array.isArray(node.diagram)) {
       owners.push({
         owner: node,
         label: diagramOwnerLabel(node, nested),
-        question: questionTextFor(node, nested),
+        question: withDiagramBrief(questionTextFor(node, nested), node, nested),
         marks: Number.isFinite(node.marks) ? node.marks : null,
         required: node.diagramRequired !== false,
       });
@@ -141,6 +141,24 @@ function diagramOwnerLabel(node, context) {
   if (node.label) return `Part ${node.label}`;
   if (context.questionNumber) return `Question ${context.questionNumber}`;
   return "a question";
+}
+
+// RES-117. What a diagram must show, written beside the question and never
+// printed. The stem doesn't repeat it, so every step that draws, repairs or
+// checks a diagram reads it too.
+function briefOf(node) {
+  return typeof node?.diagramBrief === "string" ? node.diagramBrief.replace(/\s+/g, " ").trim() : "";
+}
+
+/**
+ * The question text with its diagram brief, and for a part its question's
+ * brief as well ("Diagram brief: …"). Unchanged when there is none.
+ */
+function withDiagramBrief(text, node, context = {}) {
+  const own = briefOf(node);
+  const parent = context.questionBrief && context.questionBrief !== own ? context.questionBrief : "";
+  const brief = [parent, own].filter(Boolean).join(" ");
+  return brief ? `${text}\nDiagram brief: ${brief}` : text;
 }
 
 function questionTextFor(node, context = {}) {
@@ -614,6 +632,8 @@ module.exports = {
   OUTCOME,
   collectDiagramOwners,
   diagramOwnerLabel,
+  questionTextFor,
+  withDiagramBrief,
   judgeDiagram,
   repairDiagrams,
   verifyDiagram,

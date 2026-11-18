@@ -174,7 +174,7 @@ function reviewContext({ job, images = [], scope, trimmedForTime = false }) {
     lines.push("This paper was too long for the sitting, so tasks in it were deliberately shortened. Do not report a task as too short or ask for it to be longer.");
   }
   if (job.subject !== "english") {
-    lines.push('Diagrams are added after this check, so you cannot see them. A question or part whose diagramType is not "none" will have its diagram, graph or grid when printed: never report one as missing or unsupplied. Do report a question that depends on a diagram when its diagramType is "none".');
+    lines.push('Diagrams are added after this check, so you cannot see them. A question or part whose diagramType is not "none" will have its diagram, graph or grid when printed: never report one as missing or unsupplied. Its diagramBrief lists what that diagram will show, so the stem does not repeat those values: treat them as given, and never report them as missing from the question. Do report a question that depends on a diagram when its diagramType is "none".');
   }
   if (job.subject === "english") {
     lines.push("Reading texts come from verified sources. Their exact wording, title, author and source are inserted after this check, so the copy you see may differ in punctuation or leave those details out: do not report that.");

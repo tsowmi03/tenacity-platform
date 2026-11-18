@@ -51,7 +51,7 @@ Whenever "diagramType" is not "none", set "skill" on the same question or part t
 Choose the type whose shape matches what the question needs. The examples below show what each type depicts:
 ${buildDiagramPromptExamples()}
 
-${DISABLED_DIAGRAM_SENTENCE}Do not use diagrams for pure algebra or linear equations questions. Write the question stem so it stands on its own: refer to "the diagram" rather than to specific values only the diagram would show, because the diagram is drawn after the question is written.
+${DISABLED_DIAGRAM_SENTENCE}Do not use diagrams for pure algebra or linear equations questions. Whenever "diagramType" is not "none", set "diagramBrief" on the same question or part: every value, label, marking and position the diagram must show, in plain words (e.g. "Parallel lines l (above) and m cut by transversal t. Angle below l, left of t: 52°. Angle above m, right of t: x."). The brief is never printed; the diagram is drawn from it, after the question is written. The student sees the diagram, so the stem does not repeat what it shows: no values, labels or positions that are on the diagram. Keep in the stem only the task and what a diagram cannot show: the context or story, the units to answer in, rounding, and any condition such as "not to scale". For example "Find x. Give a reason." rather than restating the lines and angles. A part's brief can rely on its question's. When "diagramType" is "none", set "diagramBrief" to "" and write the question so it is complete in words. A question asking the student to sketch, draw or plot a graph keeps every given (the equation, points or table) in its stem, because its diagram is empty axes.
 
 Maths formatting rules — STRICT: the document renderer only supports the constructs listed below. Using anything else will produce broken output in the final document.
 ALLOWED constructs:
@@ -111,6 +111,7 @@ function diagramFields(subject) {
       "diagram": null,
       "diagramType": ${DIAGRAM_TYPE_ENUM},
       "diagramRequired": boolean,
+      "diagramBrief": string (never printed: what the diagram must show; "" when "diagramType" is "none"),
       "difficulty": "easy" | "medium" | "hard",
       "skill": string,
       "answerSpace": "lines" | "blank" ("lines" when the student writes working: calculations, algebra, equations, explanations; "blank" when they draw or write on the page itself: plotting or sketching a graph, a construction or geometric drawing, completing a table or diagram. Multiple choice gets no space either way),`
@@ -725,7 +726,7 @@ function buildDiagramFillPrompt({ job, type, definition, constrained }) {
 
 Each item below is a question that needs one diagram. Return one diagram per item, using the item's index.
 
-The diagram must depict exactly what its question refers to, using values consistent with the question — a student reading the question and the diagram together must find them in agreement.
+Each item may carry a "Diagram brief": the values, labels and positions the diagram must show, which the question itself does not repeat. Show everything in the brief. The diagram must depict exactly what its question refers to, using values consistent with the question — a student reading the question and the diagram together must find them in agreement.
 
 Use only the semantic fields shown in this example of a valid ${type}:
 ${definition.promptExample}
@@ -758,7 +759,7 @@ function buildDiagramRepairPrompt({ job, type, definition, constrained }) {
 
 A previous specification for this question could not be used. You will be shown the question, the specification that failed, and the reason it failed. Return a corrected "${type}" specification for the same question.
 
-The question is fixed. It is not yours to change, improve, or reinterpret, and you are not being asked for its answer. Produce the diagram the question already refers to, using values consistent with it — a student reading the question and the diagram together must find them in agreement. If the question names a measurement, the diagram carries that measurement, not a rounder or tidier one.
+The question is fixed. It is not yours to change, improve, or reinterpret, and you are not being asked for its answer. Produce the diagram the question already refers to, using values consistent with it — a student reading the question and the diagram together must find them in agreement. If the question names a measurement, the diagram carries that measurement, not a rounder or tidier one. When the question comes with a "Diagram brief", the diagram shows everything in it: the question does not repeat what the diagram shows.
 
 Keep the diagram type "${type}". Do not substitute a different kind of visual.
 
@@ -790,7 +791,7 @@ ${shapeRules}`;
 function buildDiagramJudgePrompt({ job, type }) {
   return `You are checking whether a diagram matches the question it belongs to, for a Year ${job.year} ${job.subject} teaching resource at Tenacity Tutoring.
 
-You will be shown a question and the "${type}" diagram specification that is about to be printed beside it. Decide one thing: would a student reading them together find them in agreement?
+You will be shown a question and the "${type}" diagram specification that is about to be printed beside it. Decide one thing: would a student reading them together find them in agreement? The question may come with a "Diagram brief" (never printed): the values, labels and positions the diagram must show, because the question does not repeat them. Reject a diagram that leaves out or contradicts anything in the brief.
 
 Reject the diagram when:
 - a value, length, angle, count, or coordinate in the diagram contradicts the question;

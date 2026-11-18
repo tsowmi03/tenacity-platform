@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-18 | [Diagram questions don't repeat what the diagram shows (RES-117)](#2026-11-18--diagram-questions-dont-repeat-what-the-diagram-shows-res-117) |
 | 2026-11-18 | [Stories inside collections print the right story; a missing named text asks the tutor (RES-101)](#2026-11-18--stories-inside-collections-print-the-right-story-a-missing-named-text-asks-the-tutor-res-101) |
 | 2026-11-18 | [Two resource jobs per account (RES-112)](#2026-11-18--two-resource-jobs-per-account-res-112) |
 | 2026-11-18 | [Maths diagrams match their questions (RES-115)](#2026-11-18--maths-diagrams-match-their-questions-res-115) |
@@ -255,6 +256,22 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-18 — Diagram questions don't repeat what the diagram shows (RES-117)
+
+**What changed**
+- Each maths question or part with a diagram now carries a `diagramBrief`, never printed: every value, label and position the diagram must show. The stem keeps only the task and what a diagram can't show (context, units, rounding), so "In the diagram, horizontal lines l and m are parallel… 52°… Find x" becomes "Find x. Give a reason."
+- The diagram fill, repair and faithfulness check read the brief, and a part is described with its question's stem and brief.
+- When a diagram can't be made, the question is rewritten to stand alone from its brief. The safety check accepts numbers from the brief and rejects any that are in neither the stem nor the brief.
+- The content review treats brief values as given. Questions written for textbook crops don't repeat what the crop shows, and a crop clears the brief it replaces.
+- Sketch, draw and plot questions keep every given in the stem, because their diagram is empty axes.
+- Checkpoints: kept at version 1. The new field changes the saved-question key, so questions saved before this are not reused; saved plans, answers and reviews still are.
+
+**Why:** Diagram questions restated everything the diagram showed (RES-115 benchmark, m03 Q4), which made them long for no reason.
+
+**Status:** Live. Functions deployed to production.
 
 ---
 

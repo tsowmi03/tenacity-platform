@@ -258,13 +258,24 @@ function stemHoldsPassage(question) {
 
 const TEXT_WORDS_GRACE = 1.25;
 
+// RES-117. Diagram questions may share a stem ("Find x. Give a reason.") and
+// differ only in what their diagrams show, so a question is identified by its
+// stem with its diagram briefs and those of its parts (Codex review on #381).
+function questionIdentity(q) {
+  const brief = (node) => (typeof node?.diagramBrief === "string" ? node.diagramBrief.trim() : "");
+  const briefs = [brief(q), ...(Array.isArray(q?.parts) ? q.parts.map(brief) : [])].filter(Boolean);
+  const stem = String(q?.stem || "");
+  return briefs.length ? `${stem} [diagram: ${briefs.join(" / ")}]` : stem;
+}
+const normalIdentity = (value) => String(value).toLowerCase().replace(/\s+/g, " ").trim();
+
 function validateQuestions(result, specs, type, prior = [], { english = false, existingTexts = null, maxTextWords = null, sourcedCount = 0 } = {}) {
   const rows = questionRows(result?.parsed, type);
   if (!Array.isArray(rows) || rows.length !== specs.length || rows.some((q, i) =>
     !q || q.number !== specs[i].number || q.marks !== specs[i].marks || (q.parts?.length && q.parts.reduce((n, p) => n + (Number(p.marks) || 0), 0) !== q.marks) || typeof q.stem !== "string" || !q.stem.trim())) {
     throw controlError("RESOURCE_BATCH_INVALID", "A question batch did not match its saved plan. Retry this stage.");
   }
-  const stems = [...prior, ...rows.map((q) => q.stem)].map((v) => v.toLowerCase().replace(/\s+/g, " ").trim());
+  const stems = [...prior, ...rows.map(questionIdentity)].map(normalIdentity);
   if (new Set(stems).size !== stems.length) throw controlError("RESOURCE_BATCH_INVALID", "Repeated questions were detected in a question batch. Retry this stage.");
   checkStimulusUse(result?.parsed, rows, { english, existingTexts, maxTextWords, sourcedCount });
 }
@@ -462,7 +473,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
   const stimulusRules = () => ({ english, existingTexts: textCheck(), maxTextWords, sourcedCount });
 
   async function batch(specs, path) {
-    const prior = chunks.flatMap((p) => questionRows(p, job.resourceType)).map((q) => q.stem);
+    const prior = chunks.flatMap((p) => questionRows(p, job.resourceType)).map(questionIdentity);
     let result;
     try {
       result = await callAi({ ...request, stageId: `questions.${path}`,
@@ -526,8 +537,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
   for (let i = 0; i < plan.questions.length; i += batchSize) await batch(plan.questions.slice(i, i + batchSize), String(i / batchSize + 1));
   const assembled = await resourceStage(job, "assembly.validation", async () => {
     const rows = chunks.flatMap((p) => questionRows(p, job.resourceType));
-    const normal = (stem) => stem.toLowerCase().replace(/\s+/g, " ").trim();
-    if (new Set(rows.map((q) => normal(q.stem))).size !== rows.length) throw controlError("RESOURCE_BATCH_INVALID", "Repeated questions were detected. Review the scope and retry.");
+    if (new Set(rows.map((q) => normalIdentity(questionIdentity(q)))).size !== rows.length) throw controlError("RESOURCE_BATCH_INVALID", "Repeated questions were detected. Review the scope and retry.");
     const parsed = { ...chunks[0], title: plan.title, totalMarks: plan.questions.reduce((n, q) => n + q.marks, 0),
       [answerKey]: chunks.flatMap((p) => p[answerKey] || []) };
     if (fixedStimulus) parsed.stimulus = fixedStimulus;
@@ -597,4 +607,4 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
     warnings: [...planChecks, ...review.warnings] };
 }
 
-module.exports = { MAX_CONTENT_REPAIRS, statedTotal, validateRepair, PLAN_SCHEMA, stemHoldsPassage, clarificationMessage, clarificationOptions, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, validateQuestions, validateAnswers };
+module.exports = { MAX_CONTENT_REPAIRS, questionIdentity, statedTotal, validateRepair, PLAN_SCHEMA, stemHoldsPassage, clarificationMessage, clarificationOptions, questionRows, sectionTitle, answerClaimsMissingContext, usesPlannedGeneration, generatePlannedResource, perTopicCount, plannedTimeAllowed, validatePlan, reconcilePlanTopics, unmatchedEvidenceTopics, validateQuestions, validateAnswers };
