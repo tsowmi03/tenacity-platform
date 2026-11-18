@@ -703,6 +703,15 @@ describe("maybeSourceStimulusSet", () => {
     assert.doesNotMatch(r.warning, /Tenacity Original/);
   });
 
+  it("treats a named text whose sourcing errors the same way", async () => {
+    const named = { ...job, customPrompt: "Essay scaffold on Shelley's Ozymandias." };
+    const planStimulus = async () => ({ needed: true, texts: [{ title: "Ozymandias", author: "Percy Bysshe Shelley", type: "poem" }] });
+    const sourceText = async () => { throw Object.assign(new Error("HTTP 429"), { status: 429 }); };
+    const r = await maybeSourceStimulusSet({ job: named, planStimulus, sourceText, selectAlternative: async () => ({ title: "The Tyger" }) });
+    assert.equal(r.originalTextsAllowed, false);
+    assert.match(r.warning, /"Ozymandias" couldn't be found/);
+  });
+
   it("still finds another work for a text the tutor didn't name", async () => {
     const unnamed = { ...job, customPrompt: "A practice paper on poems about power." };
     const planStimulus = async () => ({ needed: true, texts: [{ title: "Ozymandias", author: "Percy Bysshe Shelley", type: "poem" }] });

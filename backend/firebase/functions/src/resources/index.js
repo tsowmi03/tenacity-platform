@@ -2101,7 +2101,9 @@ async function maybeSourceStimulusSetLogged({
       if (sourced?.ok && sourced.passage) texts.push(sourced);
     } catch (err) {
       if (isCancellationError(err) || err?.resourceControl) throw err;
-      // best-effort: a single failed text must not sink the whole booklet
+      // best-effort: a single failed text must not sink the whole booklet.
+      // A named text that errored is still left out, not written (RES-114).
+      if (namedInRequest(selection, job) && !namedMissing.includes(selection.title)) namedMissing.push(selection.title);
     }
   }
 
