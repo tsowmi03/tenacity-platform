@@ -369,7 +369,7 @@ ${listing}
 
 Choose the candidate whose diagram best carries that question. The question must stay on that skill and the resource's topic: extra steps may add a context, a cost, a unit conversion or working backwards, but must not bring in a different topic (no algebra, circles or trigonometry unless the skill or the topic calls for them). It must refer only to the diagram, never to a table, row or other question on the textbook page. Its content must be taught by Year ${job.year}: a diagram printed for the year above is fine only if a Year ${job.year} student has learned what the question needs. The diagram must be complete: every label, measurement and marking the question needs is visible, and nothing from a neighbouring question is in the crop. Return choice 0 only if no candidate can carry such a question; with choice 0, leave the other fields empty.
 
-${task}${format} The stem must not describe the diagram, because the student sees it. Pitch it at ${marks} mark(s). Solve it from the diagram with clear working.`;
+${task}${format} The stem must not describe the diagram or repeat any value, label or position printed on it, because the student sees it (RES-117). Pitch it at ${marks} mark(s). Solve it from the diagram with clear working.`;
 }
 
 // It shows only the question and one proposed answer. Measured 2026-11-05: a
@@ -450,6 +450,8 @@ function applySwap(slot, out) {
   if (owner.type === "multiple-choice" && !owner.options) owner.type = "short-answer";
   owner.diagram = { type: SOURCE_IMAGE, image: out.png, width, height, storagePath: out.candidate.figures[0].storagePath, questionBankId: out.candidate.id };
   delete owner.diagramType;
+  // RES-117. The brief described the drawn diagram this crop replaces.
+  delete owner.diagramBrief;
   owner.diagramRequired = true;
   if (slot.kind === "whole") {
     owner.marks = slotMarks(slot);

@@ -37,11 +37,12 @@ const SCHEMA = {
 
 const SYSTEM_PROMPT = `Each item below is a whole exam question, with any parts and options. The diagrams listed in missingDiagrams could not be made, so they will print without them. Diagrams marked hasDiagram are still there. Judge every part, not just the first line.
 - "fine": every part reads correctly and can be answered as printed. A student being asked to draw or sketch something themselves is fine. Leave stem empty and parts empty.
-- "reworded": something refers to a missing diagram, but the words already give everything needed to answer every part. Return the new stem, and an entry in parts for each part you change, with only that reference changed so the question stands alone. Keep every number, name, unit, LaTeX expression and instruction, and the same answers. Leave stem empty if it needs no change, and leave out parts that need no change.
-- "needs_diagram": any part can't be answered without a missing diagram. Leave stem empty and parts empty.
+- "reworded": something refers to a missing diagram, but the words, together with the diagramBrief of the missing diagrams (what each diagram was going to show), give everything needed to answer every part. Return the new stem, and an entry in parts for each part you change, rewritten so the question stands alone: replace the reference to the diagram with the facts from its diagramBrief that the question needs, in plain words. Keep every number, name, unit, LaTeX expression and instruction, and the same answers. Add nothing that isn't in the question or the brief. Leave stem empty if it needs no change, and leave out parts that need no change.
+- "needs_diagram": any part can't be answered without a missing diagram, even with its diagramBrief written out. Leave stem empty and parts empty.
 Return one entry per item, using its index.`;
 
 const FIELD = (node) => (typeof node?.stem === "string" ? "stem" : "instruction");
+const BRIEF = (node) => (typeof node?.diagramBrief === "string" ? node.diagramBrief.trim() : "");
 const NUMBER = /\d+(?:\.\d+)?/g;
 const MENTIONS_DIAGRAM = /\bdiagram\b/i;
 const partKey = (label) => String(label ?? "").replace(/[()\s]/g, "").toLowerCase();
@@ -77,18 +78,23 @@ function describeQuestion({ question, members }, index) {
     missingDiagrams: members.map(({ owner }) => (owner === question ? "the question" : `part ${owner.label}`)),
     stem: question[FIELD(question)],
     hasDiagram: Boolean(question.diagram),
+    diagramBrief: BRIEF(question) || undefined,
     options: question.options || undefined,
-    parts: parts.map((part) => ({ label: part.label, stem: part[FIELD(part)], options: part.options || undefined, hasDiagram: Boolean(part.diagram) })),
+    parts: parts.map((part) => ({ label: part.label, stem: part[FIELD(part)], options: part.options || undefined, hasDiagram: Boolean(part.diagram), diagramBrief: BRIEF(part) || undefined })),
   });
 }
 
-// A rewording may only remove the reference. Losing a number could change the
-// answer, and a leftover mention leaves the problem in place.
-function safeRewording(before, after) {
+// A rewording keeps every number it had: losing one could change the answer,
+// and a leftover mention leaves the problem in place. RES-117: it may bring in
+// facts from the diagram brief, since the stem no longer repeats them, but no
+// number that is in neither the stem nor the brief.
+function safeRewording(before, after, brief = "") {
   const text = String(after || "").trim();
   if (!text || MENTIONS_DIAGRAM.test(text)) return false;
   const kept = text.match(NUMBER) || [];
-  return (String(before || "").match(NUMBER) || []).every((n) => kept.includes(n));
+  const known = [...(String(before || "").match(NUMBER) || []), ...(String(brief || "").match(NUMBER) || [])];
+  return (String(before || "").match(NUMBER) || []).every((n) => kept.includes(n)) &&
+    kept.every((n) => known.includes(n));
 }
 
 function applyRewording({ question }, item) {
@@ -102,8 +108,10 @@ function applyRewording({ question }, item) {
     changes.set(part, row.stem);
   }
   if (!changes.size) return false;
+  // A part may use its question's brief, and the question its parts' briefs.
+  const briefs = [question, ...parts].map(BRIEF).filter(Boolean).join(" ");
   for (const [node, after] of changes) {
-    if (node.diagram || !safeRewording(node[FIELD(node)], after)) return false;
+    if (node.diagram || !safeRewording(node[FIELD(node)], after, briefs)) return false;
   }
   // Nothing left may point at a picture that isn't printed. A part can still
   // refer to a diagram the question itself keeps.
