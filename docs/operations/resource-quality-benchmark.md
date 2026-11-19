@@ -36,6 +36,9 @@ becomes the reference.
 - With `--compare`, the bracketed averages compare only the requests graded
   in both runs, so a partial run (`--only`, `--subject` or failures) is
   measured like for like.
+- `--visual-check` gives each replay a LibreOffice converter, so the RES-49
+  visual check runs and its fixes reach the graded PDF, as in production.
+  Without it the replays have no converter and the check is skipped.
 - `--firebase-secrets` reads both provider keys from Secret Manager
   (read-only), so the run uses the production provider accounts. The run also reads the maths and English banks and
   public-domain text sources, as production does. Nothing is written to

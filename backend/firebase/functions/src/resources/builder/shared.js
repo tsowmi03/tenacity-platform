@@ -1179,6 +1179,8 @@ function makeResponseLines(count, opts = {}) {
 function responseLineCount(question) {
   if (Array.isArray(question?.options) && question.options.length > 0) return 0;
   if (question?.type === "multiple-choice") return 0;
+  // RES-49. The visual check's adjustment, when the printed space didn't fit.
+  if (Number.isInteger(question?.answerLines) && question.answerLines >= 0) return question.answerLines;
   const marks = Number(question?.marks);
   if (!Number.isFinite(marks) || marks <= 0) return 0;
   return Math.round(marks * 2 * 1.5);

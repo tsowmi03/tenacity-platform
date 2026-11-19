@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-19 | [Visual check of the printed pages before delivery (RES-49)](#2026-11-19--visual-check-of-the-printed-pages-before-delivery-res-49) |
 | 2026-11-18 | [Flagging a textbook question can take it out of use until an admin reviews it (RES-103)](#2026-11-18--flagging-a-textbook-question-can-take-it-out-of-use-until-an-admin-reviews-it-res-103) |
 | 2026-11-18 | [Diagram questions don't repeat what the diagram shows (RES-117)](#2026-11-18--diagram-questions-dont-repeat-what-the-diagram-shows-res-117) |
 | 2026-11-18 | [Stories inside collections print the right story; a missing named text asks the tutor (RES-101)](#2026-11-18--stories-inside-collections-print-the-right-story-a-missing-named-text-asks-the-tutor-res-101) |
@@ -257,6 +258,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-19 — Visual check of the printed pages before delivery (RES-49)
+
+**What changed**
+- After the DOCX is built, it is converted to PDF (the preview converter) and
+  Claude reads the pages for layout faults: blank pages, content cut off,
+  clipped, oversized, tiny or missing diagrams, broken numbering, raw LaTeX,
+  and answer space that doesn't fit the question.
+- Faults with a fix are applied once and the document is rebuilt: a diagram
+  prints smaller or larger, a question gets more or fewer answer lines, lines
+  swap for blank space on drawing questions (maths), and raw notation goes
+  through the maths repair. Anything else becomes a tutor warning naming the
+  page and question.
+- The checked PDF is stored as the preview, so a completed job no longer needs
+  a separate conversion. Without a converter, a model or a reply, the resource
+  is delivered as before (staging has no converter, so the check is off there).
+- The quality benchmark has a `--visual-check` flag that runs the check in its
+  replays.
+
+**Why:** Every earlier check read the resource's content, not the printed
+page, so layout faults reached tutors unnoticed.
+
+**Status:** Merged, not deployed. Functions need a deploy before it runs in
+production. In live tests it caught every seeded fault (blank page, clipped
+diagram, raw LaTeX, short answer space), taking 4–8 s and $0.02–0.06 per
+resource. The RES-113 benchmark was not run.
+
+**Next steps**
+- Deploy functions, then update the Resource catalogue page in Confluence (warnings
+  now include layout faults by page).
 
 ---
 

@@ -144,6 +144,19 @@ describe("runOne", () => {
       assert.ok(fs.existsSync(path.join(runDir, request.id, "grade.json")));
     } finally { fs.rmSync(runDir, { recursive: true, force: true }); }
   });
+  it("gives the replay a converter only with --visual-check (RES-49)", async () => {
+    assert.equal(bench.parseArgs([]).visualCheck, false);
+    assert.equal(bench.parseArgs(["--visual-check"]).visualCheck, true);
+    const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "res113-test-"));
+    try {
+      const seen = [];
+      const replay = async ({ output, pdfConverter }) => { seen.push(pdfConverter); fs.mkdirSync(output, { recursive: true }); fs.writeFileSync(path.join(output, "summary.json"), JSON.stringify({ status: "failed" })); };
+      await bench.runOne(bench.loadRequests()[0], { runDir, gradeOnly: false, keys: {}, client: null, graderModel: "m", maxCalls: 5, replay });
+      await bench.runOne(bench.loadRequests()[1], { runDir, gradeOnly: false, keys: {}, client: null, graderModel: "m", maxCalls: 5, replay, visualCheck: true });
+      assert.equal(seen[0], undefined);
+      assert.equal(typeof seen[1].convert, "function");
+    } finally { fs.rmSync(runDir, { recursive: true, force: true }); }
+  });
   it("reports a failed generation without grading", async () => {
     const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "res113-test-"));
     try {
