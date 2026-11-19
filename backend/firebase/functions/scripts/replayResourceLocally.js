@@ -97,6 +97,8 @@ async function runReplay(options) {
   };
   const deps = { db, storage, durableStages: true, questionBankDb: options.questionBank ? admin.firestore() : null, enableFailover: true, enablePdTextSourcing: options.pdSourcing,
     anthropicApiKey: keys.ANTHROPIC_API_KEY, openaiApiKey: keys.OPENAI_API_KEY, resourceLogSink: sink,
+    // RES-49: the benchmark's --visual-check passes a local converter.
+    ...(options.pdfConverter ? { pdfConverter: options.pdfConverter } : {}),
     callAi: async (request) => {
       if (calls >= options.maxCalls || Date.now() - started > 45 * 60_000) throw Object.assign(new Error("Local replay budget reached"), { code: "RESOURCE_LOCAL_BUDGET", resourceControl: true });
       calls++;

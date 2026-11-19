@@ -142,8 +142,8 @@ function columnCount(lead, follow, width, target) {
   return count;
 }
 
-function sideBySide(image, lead, follow, alignBefore) {
-  const size = sideColumnSize(image);
+function sideBySide(image, lead, follow, alignBefore, factor = 1) {
+  const size = scaled(sideColumnSize(image), factor);
   const imageWidth = Math.round((size.width / PX_PER_CM) * TWIPS_PER_CM);
   const imageHeight = Math.round((size.height / PX_PER_CM) * TWIPS_PER_CM);
   const textWidth = PAGE.CONTENT_WIDTH - imageWidth - COLUMN_GUTTER;
@@ -199,23 +199,41 @@ function centredSize(image) {
   );
 }
 
-function centred(image, lead, follow) {
+function centred(image, lead, follow, size = centredSize(image)) {
   return [
     ...renderItems(lead, PAGE.CONTENT_WIDTH),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       keepNext: true,
       spacing: { before: DIAGRAM_GAP, after: DIAGRAM_GAP },
-      children: [diagramImageRun(image, centredSize(image))],
+      children: [diagramImageRun(image, size)],
     }),
     ...renderItems(follow, PAGE.CONTENT_WIDTH),
   ];
 }
 
+// RES-49. The visual check can ask for a diagram to print smaller (it was cut
+// off, or pushed its question onto the next page) or larger (too small to
+// read). Smaller keeps its placement at two thirds of the size; larger centres
+// it under the question at up to the full text width.
+const SMALLER_SCALE = 2 / 3;
+const LARGER_MAX_WIDTH_CM = 14;
+const LARGER_MAX_HEIGHT_CM = 9;
+
+function scaled(size, factor) {
+  return { width: size.width * factor, height: size.height * factor };
+}
+
+function largerSize(image) {
+  const maxWidth = Math.min(PAGE.CONTENT_WIDTH / TWIPS_PER_CM, LARGER_MAX_WIDTH_CM) * PX_PER_CM;
+  return fitSize(image, maxWidth, LARGER_MAX_HEIGHT_CM * PX_PER_CM, 0);
+}
+
 // Lays out one block: lead items (the stem the diagram belongs to), its
 // diagram, and the items that follow (answer lines, later parts).
 async function layoutDiagramBlock({ lead, follow, diagram, context, alignBefore }) {
-  const resolved = await renderDiagramImage(diagram, context);
+  const { printSize = null, ...spec } = diagram && typeof diagram === "object" ? diagram : {};
+  const resolved = await renderDiagramImage(diagram && typeof diagram === "object" ? spec : diagram, context);
   if (!resolved) return renderItems([...lead, ...follow], PAGE.CONTENT_WIDTH);
   if (resolved.blocks) {
     return [
@@ -224,9 +242,11 @@ async function layoutDiagramBlock({ lead, follow, diagram, context, alignBefore 
       ...renderItems(follow, PAGE.CONTENT_WIDTH),
     ];
   }
+  if (printSize === "larger") return centred(resolved.image, lead, follow, largerSize(resolved.image));
+  const factor = printSize === "smaller" ? SMALLER_SCALE : 1;
   return placement(resolved.image, lead) === "side"
-    ? sideBySide(resolved.image, lead, follow, alignBefore)
-    : centred(resolved.image, lead, follow);
+    ? sideBySide(resolved.image, lead, follow, alignBefore, factor)
+    : centred(resolved.image, lead, follow, scaled(centredSize(resolved.image), factor));
 }
 
 module.exports = {

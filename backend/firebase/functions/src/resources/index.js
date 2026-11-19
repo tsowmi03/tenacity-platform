@@ -32,7 +32,7 @@ const { isDiagramRenderError, optionalDiagramOmittedWarning } = require("./build
 const { classifyResourceFailure, describeResourceFailure } = require("./failure");
 const { extractTextFromBuffer } = require("./fileExtractor");
 const { mathFallbackWarning } = require("./mathNotation");
-const { MATH_REPAIR_ROUNDS, repairMathFallbacks, unresolvedMathError } = require("./mathRepair");
+const { MATH_REPAIR_ROUNDS, affectedFields, repairMathFallbacks, unresolvedMathError } = require("./mathRepair");
 const {
   buildResponseSchema,
   buildSplitResponseSchemas,
@@ -65,6 +65,8 @@ const {
   sourceVisualStimulus,
 } = require("./sourcedText");
 const { createPdfPreviewConverter } = require("./pdfPreview");
+const { findLayoutFaults, layoutWarnings, planLayoutFixes, visualCheckModel } = require("./visualCheck");
+const { responseLineCount } = require("./builder/shared");
 const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
 const {
@@ -1584,7 +1586,7 @@ async function saveGeneratedResource(args) {
   return resourceStage(args.job, "document.build_upload", () => saveGeneratedResourceLogged(args));
 }
 
-async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, clock, model, callAi, signal, reviewWarnings = [], reviewStatus = "passed", contentReview = null }) {
+async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, clock, model, callAi, signal, pdfConverter = null, reviewWarnings = [], reviewStatus = "passed", contentReview = null }) {
   const answerMode = answerModeForJob(job);
   // The tutor's selection is the subject. A model's "English Advanced" read as
   // not-English here and failed the finished paper at the last step.
@@ -1613,32 +1615,35 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     err.resourceInfrastructure = "storage";
     throw err;
   }
+  const repairMath = callAi
+    ? ({ resource, issues, round }) => { mathRepairUsed = true; return resourceStage(job, "math.repair", () => repairMathFallbacks({
+      resource,
+      issues,
+      round,
+      callAi,
+      model,
+      signal,
+      attempt: Number(job.attemptCount) || 1,
+    })); }
+    : null;
+  // The same build again, for the visual check's fixes (RES-49).
+  let rebuild = (resource) => buildDocxWithDiagramReliability({
+    resourceType: job.resourceType,
+    parsed: resource,
+    buildDocx,
+    repairMath,
+    options: {
+      studentName: job.studentName,
+      subject: job.subject,
+      year: job.year,
+      answerMode,
+      showMarks: typeof job.showMarks === "boolean"
+        ? job.showMarks
+        : job.resourceType === "practice-paper",
+    },
+  });
   try {
-    built = await resourceStage(job, "document.build", () => buildDocxWithDiagramReliability({
-      resourceType: job.resourceType,
-      parsed,
-      buildDocx,
-      repairMath: callAi
-        ? ({ resource, issues, round }) => { mathRepairUsed = true; return resourceStage(job, "math.repair", () => repairMathFallbacks({
-          resource,
-          issues,
-          round,
-          callAi,
-          model,
-          signal,
-          attempt: Number(job.attemptCount) || 1,
-        })); }
-        : null,
-      options: {
-        studentName: job.studentName,
-        subject: job.subject,
-        year: job.year,
-        answerMode,
-        showMarks: typeof job.showMarks === "boolean"
-          ? job.showMarks
-          : job.resourceType === "practice-paper",
-      },
-    }));
+    built = await resourceStage(job, "document.build", () => rebuild(parsed));
   } catch (err) {
     if (usesPlannedGeneration(job) && canKeepDraftAfterReview(err)) {
       reviewStatus = "draft";
@@ -1646,11 +1651,12 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
       resourceEvent(job, "document.draft_retained", { outcome: "draft", errorCode: err?.code || "REVIEW_FAILED", recoveryDecision: "keep_draft" }, "warn");
       // No further model call. The normal builder still validates question and
       // answer structure; unresolved notation is shown with its fallback warning.
-      built = await resourceStage(job, "document.build_draft", () => buildDocxWithDiagramReliability({
-        resourceType: job.resourceType, parsed, buildDocx, repairMath: null,
+      rebuild = (resource) => buildDocxWithDiagramReliability({
+        resourceType: job.resourceType, parsed: resource, buildDocx, repairMath: null,
         options: { studentName: job.studentName, subject: job.subject, year: job.year,
           answerMode, showMarks: job.showMarks },
-      }));
+      });
+      built = await resourceStage(job, "document.build_draft", () => rebuild(parsed));
     } else {
       if (!isDiagramRenderError(err) && err?.name !== "ResourceValidationError" && !err?.resourceControl &&
           !err?.modelFailure && !isCancellationError(err)) err.resourceInfrastructure = "docx";
@@ -1658,8 +1664,21 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     }
   }
   if (!mathRepairUsed) resourceEvent(job, "stage.skipped", { stageId: "math.repair", reason: callAi ? "no_notation_fallbacks" : "repair_disabled" });
-  const { buffer: docxBuffer, warnings, resource: builtResource } = built;
   if (reviewStatus === "draft") outputFileName = `Draft_${outputFileName}`;
+  // RES-49. Look at the pages before the tutor does; the PDF that was looked
+  // at becomes the preview.
+  const visual = await runVisualCheck({
+    job,
+    built,
+    fileName: outputFileName,
+    pdfConverter,
+    callAi,
+    signal,
+    rebuild,
+    repairMath: reviewStatus === "draft" ? null : repairMath,
+  });
+  const { buffer: docxBuffer, warnings, resource: builtResource } = visual.built;
+  warnings.push(...visual.warnings);
   const outputPath = outputPathForJob(job.jobId, outputFileName, job.attemptId);
 
   try {
@@ -1672,16 +1691,25 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     throw err;
   }
 
-  // The sibling preview PDF is deliberately NOT built here. Conversion is an
-  // HTTP round trip to an external service with a 60s timeout, and this function
-  // runs inside the job's fixed 540s budget — so a slow converter used to eat
-  // into the time available for generation itself. The DOCX is the deliverable;
-  // the preview is a convenience, so it is produced afterwards by
-  // generateResourcePreview() once the job is already complete.
-  //
-  // previewPath is still returned as null so a regenerated job cannot keep a
-  // stale preview from an earlier attempt.
-  //
+  // The visual check (RES-49) already converted the final DOCX, so that PDF is
+  // stored as the preview. Without one (no converter, a failed conversion) the
+  // preview is produced afterwards by generateResourcePreview() once the job is
+  // complete, as before. The path is attempt-specific, and previewPath is null
+  // when there is no PDF, so a regenerated job never keeps a stale preview.
+  let previewPath = null;
+  if (visual.pdf) {
+    const pdfPath = outputPath.replace(/\.docx$/i, ".pdf");
+    try {
+      await resourceStage(job, "preview.upload", () => storage.bucket().file(pdfPath).save(visual.pdf, {
+        metadata: { contentType: PDF_CONTENT_TYPE },
+        resumable: false,
+      }));
+      previewPath = pdfPath;
+    } catch (err) {
+      logger.warn("[saveGeneratedResource] preview upload failed; the trigger will convert later", { jobId: job.jobId, errorMessage: err?.message });
+    }
+  }
+
   // model is echoed back and persisted onto the job doc alongside these
   // fields (see the completion patch in runQueueForTutor). The job's stored
   // `model` reflects what was requested at creation time, which drifts from
@@ -1693,7 +1721,8 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
   return {
     outputPath,
     outputFileName,
-    previewPath: null,
+    previewPath,
+    ...(visual.summary ? { visualCheck: visual.summary } : {}),
     // The exact JSON the DOCX was built from: after answer verification,
     // omitted diagrams and maths repairs. Revisions and repairs re-read it,
     // so it must match what the tutor downloaded.
@@ -1703,6 +1732,114 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
     ...(usesPlannedGeneration(job) || reviewWarnings.length || reviewStatus !== "passed" ? { reviewStatus: reviewStatus === "draft" ? "draft" : reviewWarnings.length ? "warnings" : "passed", contentReview } : {}),
     model,
   };
+}
+
+/**
+ * RES-49. Convert the built DOCX to PDF, have Claude look at the pages, apply
+ * the fixes it can place, rebuild once and convert the final document again.
+ *
+ * Returns { built, pdf, warnings, summary }: `built` is the build to deliver
+ * (the original, or the rebuild when fixes were applied), `pdf` the preview
+ * of exactly that build (or null), `warnings` the faults left for the tutor.
+ * Never fails the resource: every failure delivers the original build, and
+ * only a cancellation or a worker hand-off (resourceControl) propagates.
+ */
+async function runVisualCheck(args) {
+  return resourceStage(args.job, "visual.check", () => runVisualCheckLogged(args), {}, (result) => result.summary?.outcome || "skipped");
+}
+
+async function runVisualCheckLogged({ job, built, fileName, pdfConverter, callAi, signal, rebuild, repairMath }) {
+  const unchanged = (pdf = null, summary = null) => ({ built, pdf, warnings: [], summary });
+  const skip = (reason) => {
+    resourceEvent(job, "stage.skipped", { stageId: "visual.check", reason });
+    return unchanged();
+  };
+  const mustPropagate = (err) => isCancellationError(err) || err?.resourceControl;
+  if (!pdfConverter) return skip("converter_unconfigured");
+  if (typeof callAi !== "function") return skip("check_disabled");
+  if (!visualCheckModel()) return skip("no_vision_model");
+
+  const started = Date.now();
+  const convert = async (buffer) => {
+    try {
+      return await pdfConverter.convert({ docxBuffer: buffer, fileName });
+    } catch (err) {
+      resourceEvent(job, "visual.convert_failed", { errorCode: err?.code || "PREVIEW_CONVERSION" }, "warn");
+      return null;
+    }
+  };
+
+  const firstPdf = await convert(built.buffer);
+  if (!firstPdf) return unchanged(null, { outcome: "unavailable", reason: "conversion_failed" });
+
+  let faults;
+  try {
+    faults = await findLayoutFaults({ pdfBuffer: firstPdf, job, callAi, signal });
+  } catch (err) {
+    if (mustPropagate(err)) throw err;
+    resourceEvent(job, "visual.check_failed", { errorCode: err?.code || "VISUAL_CHECK_FAILED" }, "warn");
+    return unchanged(firstPdf, { outcome: "unavailable", reason: "check_failed" });
+  }
+  if (!faults.length) {
+    resourceEvent(job, "visual.check_completed", { outcome: "passed", issueCount: 0, durationMs: Date.now() - started });
+    return unchanged(firstPdf, { outcome: "passed", faults: 0, fixed: 0, warned: 0, durationMs: Date.now() - started });
+  }
+
+  const working = cloneGeneratedResource(built.resource);
+  const plan = planLayoutFixes({ resource: working, faults, subject: job.subject, responseLineCount });
+  const fixed = [...plan.applied];
+  const unresolved = [...plan.unresolved];
+  if (plan.mathIssues.length) {
+    let repaired = false;
+    // Each issue's fields as they stood. A repair usually keeps the notation
+    // and adds the delimiters it lacked, so "fixed" means one of those fields
+    // was rewritten, not that the characters are gone.
+    const valueAt = (path) => path.reduce((node, key) => (node == null ? node : node[key]), working);
+    const before = plan.mathIssues.map((issue) => affectedFields(working, [issue]).map((field) => ({ path: field.path, text: field.text })));
+    if (repairMath) {
+      try {
+        // A round number past the build's own repair rounds, so its saved
+        // stage never collides with theirs.
+        repaired = (await repairMath({ resource: working, issues: plan.mathIssues, round: MATH_REPAIR_ROUNDS + 1 })) > 0;
+      } catch (err) {
+        if (mustPropagate(err)) throw err;
+        resourceEvent(job, "visual.math_repair_failed", { errorCode: err?.code || "MATH_REPAIR_FAILED" }, "warn");
+      }
+    }
+    plan.mathIssues.forEach((issue, index) => {
+      const rewritten = repaired && before[index].some((field) => valueAt(field.path) !== field.text);
+      (rewritten ? fixed : unresolved).push(issue.fault);
+    });
+  }
+
+  let delivered = built;
+  let pdf = firstPdf;
+  if (fixed.length) {
+    try {
+      delivered = await resourceStage(job, "visual.rebuild", () => rebuild(working));
+      // The preview must show what was delivered; a failed conversion leaves
+      // it to the after-completion trigger.
+      pdf = await convert(delivered.buffer);
+    } catch (err) {
+      if (mustPropagate(err)) throw err;
+      resourceEvent(job, "visual.rebuild_failed", { errorCode: err?.code || "VISUAL_REBUILD_FAILED" }, "warn");
+      delivered = built;
+      pdf = firstPdf;
+      unresolved.push(...fixed.splice(0));
+    }
+  }
+
+  const warnings = layoutWarnings(unresolved);
+  const summary = {
+    outcome: unresolved.length ? "warnings" : "fixed",
+    faults: faults.length,
+    fixed: fixed.length,
+    warned: unresolved.length,
+    kinds: [...new Set(faults.map((fault) => fault.kind))],
+    durationMs: Date.now() - started,
+  };
+  resourceEvent(job, "visual.check_completed", { outcome: summary.outcome, issueCount: summary.faults, fixedCount: summary.fixed, warningCount: summary.warned, durationMs: summary.durationMs });
+  return { built: delivered, pdf, warnings, summary };
 }
 
 /**
@@ -3201,6 +3338,7 @@ async function runGenerationPipelineLogged(job, deps) {
       model: generationModel,
       callAi: trackedCallAi,
       signal: deps.signal,
+      pdfConverter: deps.pdfConverter || null,
     });
     const sourceWarnings = [passageSourcing.warning, stimulusSourcing.warning]
       .filter(Boolean)
@@ -3477,6 +3615,7 @@ async function runRepairPipelineLogged(job, deps) {
       model: repairModel,
       callAi: trackedCallAi,
       signal: deps.signal,
+      pdfConverter: deps.pdfConverter || null,
     });
     return {
       ...saved,
@@ -3784,6 +3923,7 @@ async function runRevisionPipelineLogged(job, deps) {
       model: revisionModel,
       callAi: trackedCallAi,
       signal: deps.signal,
+      pdfConverter: deps.pdfConverter || null,
     });
     return {
       ...saved,
@@ -4834,6 +4974,7 @@ const processResourceJob = onDocumentCreated(
           enablePdTextSourcing: pdTextSourcing.value(),
           enableFailover: llmFailoverEnabled.value(),
           durableStages: true,
+          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -4864,6 +5005,7 @@ const processResourceFallback = onDocumentUpdated(
           enablePdTextSourcing: pdTextSourcing.value(),
           enableFailover: llmFailoverEnabled.value(),
           durableStages: true,
+          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -4956,6 +5098,7 @@ const retryResourceJob = onCall(
           enablePdTextSourcing: pdTextSourcing.value(),
           enableFailover: llmFailoverEnabled.value(),
           durableStages: true,
+          pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
         },
       });
     } catch (err) {
@@ -5110,6 +5253,7 @@ module.exports = {
   fillDiagrams,
   runDiagramRepairPass,
   runRepairPipeline,
+  runVisualCheck,
   runRevisionPipeline,
   runGenerationPipeline,
   runQueueForTutor,
