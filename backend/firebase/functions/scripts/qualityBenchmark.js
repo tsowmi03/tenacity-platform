@@ -35,13 +35,14 @@ const ESTIMATE_PER_REQUEST = Object.freeze({ minutes: 5, graderUsd: 0.2 });
 
 function parseArgs(argv) {
   const options = { only: null, subject: null, compare: null, gradeOnly: null, resume: null, output: null, dryRun: false,
-    firebaseSecrets: false, graderModel: rubric.GRADER_MODEL, maxCalls: DEFAULT_MAX_CALLS, help: false };
+    firebaseSecrets: false, visualCheck: false, graderModel: rubric.GRADER_MODEL, maxCalls: DEFAULT_MAX_CALLS, help: false };
   const takesValue = { "--only": "only", "--subject": "subject", "--compare": "compare", "--grade-only": "gradeOnly", "--resume": "resume",
     "--output": "output", "--grader-model": "graderModel", "--max-calls": "maxCalls" };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--firebase-secrets") options.firebaseSecrets = true;
+    else if (arg === "--visual-check") options.visualCheck = true;
     else if (arg === "--help" || arg === "-h") options.help = true;
     else if (takesValue[arg]) {
       const value = argv[++i];
@@ -132,6 +133,24 @@ async function docxToPdf(docxPath, outDir, { soffice = findSoffice(), run = prom
   return pdf;
 }
 
+// RES-49. With --visual-check the replays get a DOCX→PDF converter, as
+// production has, so the visual check runs and its fixes reach the graded PDF.
+// LibreOffice stands in for the production converter (also LibreOffice).
+function localPdfConverter({ soffice } = {}) {
+  return {
+    async convert({ docxBuffer, fileName }) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "res49-convert-"));
+      try {
+        const docx = path.join(dir, /\.docx$/i.test(fileName || "") ? path.basename(fileName) : "resource.docx");
+        fs.writeFileSync(docx, docxBuffer);
+        return fs.readFileSync(await docxToPdf(docx, dir, soffice ? { soffice } : {}));
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  };
+}
+
 async function gradePdf({ request, pdfPath, client, model }) {
   const params = rubric.buildGraderParams({ request, pdfBase64: fs.readFileSync(pdfPath).toString("base64"), model });
   const message = await client.messages.stream(params).finalMessage();
@@ -211,7 +230,7 @@ function acquireLock(runDir) {
 }
 
 /** Generate (unless grade-only), convert and grade one request. Never throws. */
-async function runOne(request, { runDir, gradeOnly, keys, client, graderModel, maxCalls, replay, soffice }) {
+async function runOne(request, { runDir, gradeOnly, keys, client, graderModel, maxCalls, replay, soffice, visualCheck = false }) {
   const dir = path.join(runDir, request.id);
   const replayDir = path.join(dir, "replay");
   const result = { id: request.id, subject: request.subject, status: "pending" };
@@ -220,7 +239,8 @@ async function runOne(request, { runDir, gradeOnly, keys, client, graderModel, m
     if (!gradeOnly) {
       const inputFile = path.join(dir, "input.json");
       writeJson(inputFile, replayInput(request));
-      await replay({ input: inputFile, output: replayDir, keys, maxCalls, questionBank: true, pdSourcing: true });
+      await replay({ input: inputFile, output: replayDir, keys, maxCalls, questionBank: true, pdSourcing: true,
+        ...(visualCheck ? { pdfConverter: localPdfConverter({ soffice }) } : {}) });
     }
     result.generation = generationInfo(replayDir);
     const docx = path.join(replayDir, "resource.docx");
@@ -289,7 +309,7 @@ async function runBenchmark(options, deps = {}) {
       else {
         // A half-finished generation can't be continued: start that request again.
         if (options.resume && action === "generate") fs.rmSync(path.join(runDir, request.id), { recursive: true, force: true });
-        result = await runOne(request, { runDir, gradeOnly: action === "grade", keys, client, graderModel: options.graderModel, maxCalls: options.maxCalls, replay, soffice: deps.soffice });
+        result = await runOne(request, { runDir, gradeOnly: action === "grade", keys, client, graderModel: options.graderModel, maxCalls: options.maxCalls, replay, soffice: deps.soffice, visualCheck: options.visualCheck });
       }
       console.log(`  ${result.status}${result.grade ? ` · ${rubric.overallScore(result.grade)}` : ""}${result.error ? ` · ${result.error}` : ""}`);
       results.push(result);
@@ -306,7 +326,7 @@ async function runBenchmark(options, deps = {}) {
   return readJson(path.join(runDir, "summary.json"));
 }
 
-const USAGE = `Usage: npm run benchmark:resources -- [--dry-run] [--firebase-secrets] [--only id,id] [--subject maths|english]
+const USAGE = `Usage: npm run benchmark:resources -- [--dry-run] [--firebase-secrets] [--visual-check] [--only id,id] [--subject maths|english]
          [--compare <summary.json>] [--grade-only <runDir>] [--resume <runDir>] [--output <dir>] [--grader-model <id>] [--max-calls N]`;
 
 if (require.main === module) {
@@ -318,4 +338,4 @@ if (require.main === module) {
   }).catch((err) => { console.error(err.message); process.exitCode = 1; });
 }
 
-module.exports = { acquireLock, docxToPdf, generationUsage, resumeAction, loadRequests, parseArgs, replayInput, runBenchmark, runOne, selectRequests };
+module.exports = { acquireLock, docxToPdf, localPdfConverter, generationUsage, resumeAction, loadRequests, parseArgs, replayInput, runBenchmark, runOne, selectRequests };
