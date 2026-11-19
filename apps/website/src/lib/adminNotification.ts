@@ -15,6 +15,20 @@ export const escapeHtml = (value: string) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+const SENDGRID_ENV = ["SENDGRID_API_KEY", "SENDER_EMAIL", "RECIEVER_EMAIL"] as const;
+
+/**
+ * The SendGrid settings, and the names of any that are unset. Only names are
+ * ever logged, never values, so a missing one is quick to find (WEB-13: the
+ * contact form failed for a month on a missing Vercel variable).
+ */
+export const sendGridConfig = (env: Record<string, string | undefined> = process.env) => ({
+  apiKey: env.SENDGRID_API_KEY ?? "",
+  from: env.SENDER_EMAIL ?? "",
+  to: env.RECIEVER_EMAIL ?? "",
+  missing: SENDGRID_ENV.filter((name) => !env[name]?.trim()),
+});
+
 /**
  * Sends an internal notification to the Tenacity inbox.
  * Returns false when SendGrid is not configured so callers can decide whether a
@@ -26,11 +40,9 @@ export const sendAdminNotification = async ({
   intro,
   details,
 }: AdminNotification) => {
-  const apiKey = process.env.SENDGRID_API_KEY;
-  const to = process.env.RECIEVER_EMAIL;
-  const from = process.env.SENDER_EMAIL;
-  if (!apiKey || !to || !from) {
-    console.error("Missing SendGrid configuration for admin notification.");
+  const { apiKey, to, from, missing } = sendGridConfig();
+  if (missing.length) {
+    console.error(`Missing SendGrid configuration for admin notification: ${missing.join(", ")}`);
     return false;
   }
 

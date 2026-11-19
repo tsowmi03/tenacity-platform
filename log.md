@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-19 | [Website emails name the missing SendGrid setting (WEB-13)](#2026-11-19--website-emails-name-the-missing-sendgrid-setting-web-13) |
 | 2026-11-19 | [PDF previews show maths equations again; converter pinned to Gotenberg 8.40.0 (RES-118)](#2026-11-19--pdf-previews-show-maths-equations-again-converter-pinned-to-gotenberg-8400-res-118) |
 | 2026-11-19 | [Visual check of the printed pages before delivery (RES-49)](#2026-11-19--visual-check-of-the-printed-pages-before-delivery-res-49) |
 | 2026-11-18 | [Flagging a textbook question can take it out of use until an admin reviews it (RES-103)](#2026-11-18--flagging-a-textbook-question-can-take-it-out-of-use-until-an-admin-reviews-it-res-103) |
@@ -259,6 +260,24 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-19 — Website emails name the missing SendGrid setting (WEB-13)
+
+**What changed**
+- The contact form and the admin notifications (Year 11 interest, parent
+  feedback, `send-notification`) now log which of `SENDGRID_API_KEY`,
+  `SENDER_EMAIL` and `RECIEVER_EMAIL` is unset or blank, by name only. A
+  shared `sendGridConfig()` in `src/lib/adminNotification.ts` does the check.
+- Tests run the real enquiry route and notification helper with variables
+  missing and present.
+
+**Why:** The contact form failed for a month because these settings were
+missing on Vercel, and the log only said "Missing SendGrid configuration".
+The settings themselves were restored on 18 Nov (see Operational notes).
+
+**Status:** Live on merge: the website deploys to production when merged.
 
 ---
 
