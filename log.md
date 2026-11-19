@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-19 | [PDF previews show maths equations again; converter pinned to Gotenberg 8.40.0 (RES-118)](#2026-11-19--pdf-previews-show-maths-equations-again-converter-pinned-to-gotenberg-8400-res-118) |
 | 2026-11-19 | [Visual check of the printed pages before delivery (RES-49)](#2026-11-19--visual-check-of-the-printed-pages-before-delivery-res-49) |
 | 2026-11-18 | [Flagging a textbook question can take it out of use until an admin reviews it (RES-103)](#2026-11-18--flagging-a-textbook-question-can-take-it-out-of-use-until-an-admin-reviews-it-res-103) |
 | 2026-11-18 | [Diagram questions don't repeat what the diagram shows (RES-117)](#2026-11-18--diagram-questions-dont-repeat-what-the-diagram-shows-res-117) |
@@ -258,6 +259,29 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-19 — PDF previews show maths equations again; converter pinned to Gotenberg 8.40.0 (RES-118)
+
+**What changed**
+- The `resource-pdf-converter` Cloud Run service now runs
+  `gotenberg/gotenberg:8.40.0` (revision `resource-pdf-converter-00002-tk9`)
+  instead of the floating `:8` tag. All other settings are unchanged.
+- New runbook, `docs/operations/resource-pdf-converter.md`, records the
+  pinned version, the deploy command and how to check a new version before
+  moving to it.
+
+**Why:** Every maths equation was missing from the portal's PDF preview
+(for example, "equivalent ratios: ."), although the downloaded DOCX was
+fine. The July deploy pulled a Gotenberg 8 image from the range (8.30–8.36)
+that left out LibreOffice's maths module, so Word equations were dropped
+without any error (gotenberg/gotenberg#1644). The RES-49 visual check will
+review this PDF, so it has to be right.
+
+**Status:** Live. Converting a production Year 8 worksheet through the
+redeployed service shows every equation, with the maths fonts embedded.
+Previews made before 2026-11-19 still have the equations missing.
 
 ---
 
