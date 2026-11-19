@@ -1,5 +1,6 @@
 import sendgrid from "@sendgrid/mail";
 import type { NextApiRequest, NextApiResponse } from "next";
+import { sendGridConfig } from "@lib/adminNotification";
 
 type EnquiryPayload = {
   reason?: string;
@@ -42,11 +43,9 @@ export default async function handler(
     return res.status(400).json({ error: "Invalid enquiry payload" });
   }
 
-  const apiKey = process.env.SENDGRID_API_KEY;
-  const to = process.env.RECIEVER_EMAIL;
-  const from = process.env.SENDER_EMAIL;
-  if (!apiKey || !to || !from) {
-    console.error("Missing SendGrid configuration for enquiry email.");
+  const { apiKey, to, from, missing } = sendGridConfig();
+  if (missing.length) {
+    console.error(`Missing SendGrid configuration for enquiry email: ${missing.join(", ")}`);
     return res.status(500).json({ error: "Email is not configured" });
   }
 
