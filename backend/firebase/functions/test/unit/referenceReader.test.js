@@ -175,6 +175,15 @@ describe("reading reference files", () => {
     }
   });
 
+  it("reads a long text file whose sample ends inside a character", async () => {
+    const body = `${"a".repeat(65_535)}é and more notes`;
+    const result = await readReferenceFile(Buffer.from(body), { fileName: "notes.md" });
+    assert.ok(result.content.endsWith("é and more notes"));
+    for (let pad = 65_530; pad < 65_538; pad += 1) {
+      assert.equal(sniffKind(Buffer.from(`${"a".repeat(pad)}é€😀 text`)), "text");
+    }
+  });
+
   it("reads a text PDF locally, without Claude", async () => {
     const { callAi, calls } = fakeVision();
     const result = await readReferenceFile(fixture("text.pdf"), { fileName: "index-laws.pdf" }, { callAi, model: "claude-test" });

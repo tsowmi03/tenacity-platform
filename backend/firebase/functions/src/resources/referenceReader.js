@@ -143,8 +143,9 @@ function isUtf8Text(buffer) {
   const sample = buffer.subarray(0, 64 * 1024);
   if (sample.includes(0)) return false;
   try {
-    // Trim a trailing partial character the sample cut through.
-    new TextDecoder("utf-8", { fatal: true }).decode(sample.length === buffer.length ? sample : sample.subarray(0, sample.length - 4));
+    // Streaming mode holds back a character the sample cut through instead of
+    // calling it invalid; a whole file is decoded to the end.
+    new TextDecoder("utf-8", { fatal: true }).decode(sample, { stream: sample.length < buffer.length });
     return true;
   } catch {
     return false;
