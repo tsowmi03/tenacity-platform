@@ -500,6 +500,7 @@ section { position: relative; }
 .enquire-form h3 { font-size: 1.5rem; margin-bottom: 1.5rem; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .enquire-form .field textarea { resize: vertical; min-height: 90px; }
+.enquire-human { margin: 4px 0 18px; }
 .form-success {
   display: none; text-align: center; padding: 30px 10px;
 }

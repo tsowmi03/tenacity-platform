@@ -93,6 +93,9 @@ export type AnalyticsEvents = {
   };
   enquiry_form_succeeded: Record<string, never>;
   enquiry_form_failed: { error: string };
+  enquiry_turnstile_result: {
+    outcome: "success" | "expired" | "error" | "not_configured";
+  };
 
   // Referral links
   referral_link_opened: { code_valid: boolean; lookup_failed: boolean };
