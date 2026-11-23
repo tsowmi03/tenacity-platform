@@ -358,14 +358,10 @@ Previews made before 2026-11-19 still have the equations missing.
 **Why:** Every earlier check read the resource's content, not the printed
 page, so layout faults reached tutors unnoticed.
 
-**Status:** Merged, not deployed. Functions need a deploy before it runs in
-production. In live tests it caught every seeded fault (blank page, clipped
-diagram, raw LaTeX, short answer space), taking 4–8 s and $0.02–0.06 per
-resource. The RES-113 benchmark was not run.
-
-**Next steps**
-- Deploy functions, then update the Resource catalogue page in Confluence (warnings
-  now include layout faults by page).
+**Status:** Live. Functions deployed on 2026-11-23 (main `90e76954`). In live
+tests it caught every seeded fault (blank page, clipped diagram, raw LaTeX,
+short answer space), taking 4–8 s and $0.02–0.06 per resource. The RES-113
+benchmark was not run.
 
 ---
 
