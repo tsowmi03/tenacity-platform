@@ -189,6 +189,24 @@ describe("Resource assistant", () => {
     ]);
   });
 
+  it("clears the custom prompt when a whole-job proposal has an empty brief", async () => {
+    api.chatAboutResource
+      .mockResolvedValueOnce(reply({ reply: "Here.", proposal: BOOKLET }))
+      .mockResolvedValueOnce(reply({ reply: "Dropped the instructions.", proposal: { ...BOOKLET, brief: "" } }));
+    renderBuilder({ prefill: PREFILL });
+    sendMessage("Plan it");
+    await pane().findByText("Here.");
+    fireEvent.click(pane().getByRole("button", { name: "Apply to form" }));
+    expect(promptField()).toHaveValue(BOOKLET.brief);
+
+    sendMessage("Remove the custom instructions");
+    await pane().findByText("Dropped the instructions.");
+    expect(pane().getByText("(none: clears the custom prompt)")).toBeInTheDocument();
+    expect(pane().getByText("1 change to the form")).toBeInTheDocument();
+    fireEvent.click(pane().getByRole("button", { name: "Apply to form" }));
+    expect(promptField()).toHaveValue("");
+  });
+
   it("only lets the latest proposal be applied", async () => {
     api.chatAboutResource
       .mockResolvedValueOnce(reply({ proposal: { ...BOOKLET, brief: "First." } }))

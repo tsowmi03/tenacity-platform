@@ -278,6 +278,7 @@ omitted, and open follow-ups are tracked at the bottom.
 - The chat runs on Claude Sonnet 5.5 through an Anthropic tool loop (at most 5 rounds a turn; thinking `between_tools`, effort low). The OpenAI path is gone for this chat; file summaries are unchanged.
 - `scripts/resourceAssistantEval.js` runs 5 unsupported requests and 5 sample chats per subject against live Claude (production key). It passed 20/20 twice; the report is in [`docs/res-102-assistant-eval.md`](docs/res-102-assistant-eval.md).
 - New PostHog events: `resource_assistant_proposal_applied` and `resource_assistant_proposal_undone`.
+- Review follow-ups: `between_tools` thinking is sent only to Sonnet 5.5 (another chat model set in `config/resourceModels` keeps its default thinking instead of failing), and a proposal with an empty brief clears the custom prompt.
 
 **Why:** The old chat only drafted a prompt for a form the tutor had already filled in, and didn't know what the generator could produce. Tutors wanted a helper that suggests the right resource and structure.
 

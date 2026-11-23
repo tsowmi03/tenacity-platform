@@ -277,6 +277,13 @@ function textOf(content) {
     .trim();
 }
 
+const BETWEEN_TOOLS_MODELS = new Set(["claude-sonnet-5-5"]);
+
+/** The thinking setting for a chat model, or null to leave the model's default. */
+function thinkingFor(model) {
+  return BETWEEN_TOOLS_MODELS.has(model) ? { type: "between_tools" } : null;
+}
+
 // Sent on the last round: Sonnet 5.5 doesn't allow forcing a tool, so the
 // model is told instead, and a plain-text answer is still accepted.
 const FINAL_ROUND_INSTRUCTION = "You've used all your lookups for this turn. Reply now by calling respond, using what you already know; don't call any other tool.";
@@ -287,9 +294,11 @@ const FINAL_ROUND_INSTRUCTION = "You've used all your lookups for this turn. Rep
  * and if it answers in plain text that's kept as the reply, so a turn always
  * ends with an answer.
  *
- * Thinking is `between_tools` (Sonnet 5.5's way of turning it off: a 400 for
- * `disabled`) at low effort, which suits a short planning chat. Its progress
- * notes come back as thinking blocks and are passed back unchanged.
+ * On Sonnet 5.5 thinking is `between_tools` (its way of turning it off: a 400
+ * for `disabled`). Only Sonnet 5.5 accepts that, so another chat model set in
+ * config/resourceModels gets its default (adaptive) thinking instead; see
+ * thinkingFor(). Effort is low either way, which suits a short planning chat.
+ * Thinking blocks come back in the content and are passed back unchanged.
  */
 async function runAssistantTurn({
   client,
@@ -318,7 +327,7 @@ async function runAssistantTurn({
         : conversation,
       tools,
       tool_choice: { type: "auto" },
-      thinking: { type: "between_tools" },
+      ...(thinkingFor(model) ? { thinking: thinkingFor(model) } : {}),
       output_config: { effort: "low" },
       ...requestFields,
     });
@@ -374,4 +383,5 @@ module.exports = {
   normaliseProposal,
   openingMessage,
   runAssistantTurn,
+  thinkingFor,
 };

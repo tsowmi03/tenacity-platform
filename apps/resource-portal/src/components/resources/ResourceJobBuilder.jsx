@@ -298,7 +298,12 @@ export default function ResourceJobBuilder({
       if (answerMode !== draft.answerMode) patch.answerMode = answerMode;
       if (showMarks !== draft.showMarks) patch.showMarks = showMarks;
     }
-    if (proposal.brief && proposal.brief.trim() !== draft.customPrompt.trim()) patch.customPrompt = proposal.brief;
+    // A whole-job proposal sets the brief even when it's empty (the tutor asked
+    // to drop the instructions); a brief-only one from an older server can't.
+    const brief = proposal.resourceType ? proposal.brief ?? "" : proposal.brief;
+    if (typeof brief === "string" && (proposal.resourceType || brief) && brief.trim() !== draft.customPrompt.trim()) {
+      patch.customPrompt = brief;
+    }
     const fields = Object.keys(patch);
     if (!fields.length) return;
     const previous = Object.fromEntries(fields.map((field) => [field, draft[field]]));
