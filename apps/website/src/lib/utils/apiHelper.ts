@@ -6,13 +6,10 @@ export const sendEmailForm = async (formData: {
   email: string;
   phoneNumber: string;
   additionalInfo: string;
+  website: string;
+  turnstileToken: string;
 }) => {
   const response = await axios.post("/api/send-email", formData);
-  return response.data;
-};
-
-export const sendNotification = async (details: string[]) => {
-  const response = await axios.post("/api/send-notification", { details });
   return response.data;
 };
 

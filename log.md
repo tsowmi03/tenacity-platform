@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-11-23 | [Worksheet contents and section headings; a missing diagram is asked for again; Retry survives a double-click (RES-123)](#2026-11-23--worksheet-contents-and-section-headings-a-missing-diagram-is-asked-for-again-retry-survives-a-double-click-res-123) |
+| 2026-11-23 | [Contact form checks for bots (WEB-14)](#2026-11-23--contact-form-checks-for-bots-web-14) |
 | 2026-11-19 | [Website emails name the missing SendGrid setting (WEB-13)](#2026-11-19--website-emails-name-the-missing-sendgrid-setting-web-13) |
 | 2026-11-19 | [PDF previews show maths equations again; converter pinned to Gotenberg 8.40.0 (RES-118)](#2026-11-19--pdf-previews-show-maths-equations-again-converter-pinned-to-gotenberg-8400-res-118) |
 | 2026-11-19 | [Visual check of the printed pages before delivery (RES-49)](#2026-11-19--visual-check-of-the-printed-pages-before-delivery-res-49) |
@@ -293,6 +294,28 @@ diagram was missing from a fill response, and a double-clicked Retry then
 showed the tutor two errors ("No such object") before a third press worked.
 
 **Status:** Live. Functions deployed.
+
+---
+
+## 2026-11-23 — Contact form checks for bots (WEB-14)
+
+**What changed**
+- The `/contact` enquiry form shows the same Cloudflare Turnstile check as
+  registration, and `/api/send-email` rejects a missing or failed token
+  with 403. After a failed send the check resets, since each token works
+  only once.
+- A hidden honeypot field returns a normal success to a bot that fills
+  it, but sends nothing.
+- Blocked enquiries log the reason only, with no submitted details.
+- Removed `/api/send-notification`, which nothing called and which would
+  email the admin inbox for any request. Also removed the old pre-redesign
+  `modules/home/contact-form`, which nothing rendered.
+- New tests cover the missing-token, failed-token and honeypot paths.
+
+**Why:** Occasional spam enquiries were reaching the enquiries inbox.
+
+**Status:** Live on merge: the website deploys to production when merged.
+It uses the Turnstile keys that registration already has on Vercel.
 
 ---
 

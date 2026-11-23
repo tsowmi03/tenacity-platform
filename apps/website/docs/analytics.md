@@ -78,8 +78,9 @@ Properties are listed in `AnalyticsEvents`. Grouped by page:
   `contact_clicked`, `outbound_link_clicked`, `terms_opened`,
   `privacy_opened`, `mobile_menu_opened` / `_closed`, `section_viewed`.
 - **Home:** `hero_finder_submitted`, `faq_opened`, `reviews_navigated`.
-- **Contact:** `enquiry_form_started` / `_blocked` (missing field ids) /
-  `_submitted` / `_succeeded` / `_failed`.
+- **Contact:** `enquiry_form_started` / `_blocked` (missing field ids,
+  `turnstile` when the human check isn't done) / `_submitted` /
+  `_succeeded` / `_failed`, and `enquiry_turnstile_result`.
 - **Referral links:** `referral_link_opened` (server: whether the code was
   valid), `referral_link_landed`.
 - **Registration:** `registration_started` (entry: direct, hero_prefill,
