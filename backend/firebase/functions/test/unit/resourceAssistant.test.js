@@ -216,3 +216,20 @@ describe("assistant eval failures", () => {
     assert.match(problems[0], /^call failed/);
   });
 });
+
+describe("thinking per chat model", () => {
+  const { thinkingFor, runAssistantTurn } = require("../../src/resources/resourceAssistant");
+  it("uses between_tools only on Sonnet 5.5", () => {
+    assert.deepEqual(thinkingFor("claude-sonnet-5-5"), { type: "between_tools" });
+    assert.equal(thinkingFor("claude-opus-5-5"), null);
+    assert.equal(thinkingFor("claude-sonnet-5"), null);
+  });
+
+  it("leaves another model on its default thinking", async () => {
+    const requests = [];
+    const client = { messages: { async create(payload) { requests.push(payload); return { content: [{ type: "tool_use", id: "r", name: "respond", input: { reply: "Hi", proposal: null, suggestions: [] } }] }; } } };
+    await runAssistantTurn({ client, model: "claude-opus-5-5", systemPrompt: "S", messages: [{ role: "user", content: "Hi" }], form: { subject: "maths" } });
+    assert.equal("thinking" in requests[0], false);
+    assert.deepEqual(requests[0].output_config, { effort: "low" });
+  });
+});

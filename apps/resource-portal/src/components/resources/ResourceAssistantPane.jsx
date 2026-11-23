@@ -84,8 +84,15 @@ export function proposalRows(proposal, draft) {
       changed: Boolean(proposal.showMarks) !== Boolean(draft.showMarks),
     });
   }
-  if (proposal.brief) {
-    rows.push({ key: "customPrompt", label: "Brief", value: proposal.brief, changed: proposal.brief.trim() !== (draft.customPrompt || "").trim() });
+  // A whole-job proposal always sets the brief, even to nothing.
+  const brief = proposal.resourceType ? proposal.brief ?? "" : proposal.brief;
+  if (proposal.resourceType || brief) {
+    rows.push({
+      key: "customPrompt",
+      label: "Brief",
+      value: brief || "(none: clears the custom prompt)",
+      changed: brief.trim() !== (draft.customPrompt || "").trim(),
+    });
   }
   return rows;
 }
