@@ -120,6 +120,26 @@ describe("createPdfPreviewConverter", () => {
     assert.equal(pdf.subarray(0, 4).toString("utf8"), "%PDF");
   });
 
+  it("converts a reference file under its own extension, one page per sheet when asked (RES-122)", async () => {
+    const requests = [];
+    const converter = createPdfPreviewConverter({
+      url: "https://converter.example.com",
+      getAuthHeader: async () => null,
+      fetchImpl: async (requestUrl, init) => {
+        requests.push(init);
+        const bytes = Buffer.from("%PDF-1.7 fake");
+        return { ok: true, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+      },
+    });
+    await converter.convert({ buffer: Buffer.from("xls bytes"), fileName: "Term 3 Marks.XLS", singlePageSheets: true });
+    await converter.convert({ buffer: Buffer.from("ppt bytes"), fileName: "week3.ppt" });
+    assert.equal(requests[0].body.get("files").name, "reference.xls");
+    assert.equal(requests[0].body.get("singlePageSheets"), "true");
+    assert.equal(requests[1].body.get("files").name, "reference.ppt");
+    assert.equal(requests[1].body.get("singlePageSheets"), null);
+    await assert.rejects(converter.convert({ buffer: Buffer.from("x"), fileName: "no-extension" }), /extension/);
+  });
+
   it("throws on a non-OK converter response", async () => {
     const converter = createPdfPreviewConverter({
       url: "https://converter.example.com",

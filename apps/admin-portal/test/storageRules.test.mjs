@@ -119,6 +119,13 @@ describe("storage rules", () => {
     );
   });
 
+  it("refuses resource reference uploads over 50 MB (RES-122)", async () => {
+    const tutor = authedStorage("tutor-1", "tutor");
+    const path = "resources/uploads/tutor-1/scans.pdf";
+    await assertFails(uploadBytes(ref(tutor, path), new Uint8Array(50 * 1024 * 1024 + 1)));
+    await assertSucceeds(uploadBytes(ref(tutor, path), new Uint8Array(1024)));
+  });
+
   it("blocks all client writes to generated resource output", async () => {
     const admin = authedStorage("admin-1", "admin");
 

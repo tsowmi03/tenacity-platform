@@ -11,7 +11,10 @@ service firebase.storage {
     }
 
     match /resources/uploads/{uid}/{fileName} {
-      allow read, write: if isStaff() && request.auth.uid == uid;
+      allow read, delete: if isStaff() && request.auth.uid == uid;
+      // RES-122: reference files are capped at 50 MB (referenceReader.js).
+      allow create, update: if isStaff() && request.auth.uid == uid
+        && request.resource.size <= 50 * 1024 * 1024;
     }
 
     match /resources/output/{jobId}/{fileName} {

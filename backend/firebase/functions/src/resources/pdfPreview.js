@@ -43,17 +43,28 @@ function createPdfPreviewConverter({
   if (!baseUrl) return null;
 
   return {
-    async convert({ docxBuffer, fileName }) {
-      if (!Buffer.isBuffer(docxBuffer) || !docxBuffer.length) {
-        throw new TypeError("convert requires a non-empty docxBuffer");
+    // `docxBuffer` is a built resource. `buffer` is any other file LibreOffice
+    // opens (RES-122 reference files): its name keeps its own extension, which
+    // is how Gotenberg picks the import filter.
+    async convert({ docxBuffer, buffer, fileName, singlePageSheets = false }) {
+      const input = docxBuffer || buffer;
+      if (!Buffer.isBuffer(input) || !input.length) {
+        throw new TypeError("convert requires a non-empty buffer");
       }
 
       const form = new FormData();
-      form.append(
-        "files",
-        new Blob([docxBuffer], { type: DOCX_CONTENT_TYPE }),
-        fileName && /\.docx$/i.test(fileName) ? fileName : "resource.docx"
-      );
+      if (docxBuffer) {
+        form.append(
+          "files",
+          new Blob([docxBuffer], { type: DOCX_CONTENT_TYPE }),
+          fileName && /\.docx$/i.test(fileName) ? fileName : "resource.docx"
+        );
+      } else {
+        const extension = (/\.[a-z0-9]{1,5}$/i.exec(String(fileName || "")) || [""])[0].toLowerCase();
+        if (!extension) throw new TypeError("convert needs a file name with an extension");
+        form.append("files", new Blob([buffer]), `reference${extension}`);
+      }
+      if (singlePageSheets) form.append("singlePageSheets", "true");
 
       const headers = {};
       const authHeader = await getAuthHeader(baseUrl);

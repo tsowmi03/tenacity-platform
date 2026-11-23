@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-24 | [Photos, scans, PowerPoint, Excel and older Word files as reference files (RES-122)](#2026-11-24--photos-scans-powerpoint-excel-and-older-word-files-as-reference-files-res-122) |
 | 2026-11-23 | [Worksheet contents and section headings; a missing diagram is asked for again; Retry survives a double-click (RES-123)](#2026-11-23--worksheet-contents-and-section-headings-a-missing-diagram-is-asked-for-again-retry-survives-a-double-click-res-123) |
 | 2026-11-23 | [Contact form checks for bots (WEB-14)](#2026-11-23--contact-form-checks-for-bots-web-14) |
 | 2026-11-19 | [Website emails name the missing SendGrid setting (WEB-13)](#2026-11-19--website-emails-name-the-missing-sendgrid-setting-web-13) |
@@ -262,6 +263,23 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-24 — Photos, scans, PowerPoint, Excel and older Word files as reference files (RES-122)
+
+**What changed**
+- Tutors can upload far more kinds of reference file: photos, screenshots and scans (JPG, PNG, HEIC from iPhones, WebP, GIF, BMP, TIFF); PowerPoint (PPTX, PPT, PPSX, PPS); Word (DOC, ODT, RTF alongside DOCX); and Excel (XLSX, XLS, CSV). PDF, DOCX, Markdown and text work as before.
+- Scanned pages are now read. Every image, and every PDF page with no text layer, goes to Claude, which transcribes the text, writes maths in LaTeX, turns tables into Markdown tables and describes diagrams with their labels. Text PDFs and DOCX are still read locally and come out exactly as before.
+- Other Office files are converted to PDF by the existing Gotenberg service (`resource-pdf-converter`), then read the same way. Each spreadsheet sheet becomes one page. Every slide goes to Claude as a picture, since slides carry diagrams and charts; if Claude is unavailable the slide text is still used, with a warning.
+- Files are checked by what they really contain, not by their name. Unsupported, empty, damaged and password-protected files, or a file whose contents don't match its name, fail with a message naming the file and saying what to do. An unrecognised file used to be read as plain text and turned into garbage.
+- Limits are stated in the upload panel and enforced: 5 files; 50 MB each (30 MB for Office files, the converter's request limit), also enforced by a storage rule; 100 pages, slides or sheets each. Long animated GIFs are read as 10 frames spread through them.
+- Anything that couldn't be read (pages past the limit, illegible pages, parts of a page) becomes a warning on the finished resource, never silently dropped.
+- What was converted or read by Claude is cached by file contents (`resources/reference-reads/`), so a resumed stage, the pre-generation chat and a repeat upload don't pay for the same file again. The chat's time limit went from 2 to 9 minutes, because it reads newly attached files.
+
+**Why:** Tutors mostly have photos and scans of past papers, slide decks and spreadsheets, which the generator couldn't read at all.
+
+**Status:** Live. Functions and storage rules deployed.
 
 ---
 
