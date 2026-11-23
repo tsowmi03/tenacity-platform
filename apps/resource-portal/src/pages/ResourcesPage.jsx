@@ -31,6 +31,8 @@ export default function ResourcesPage() {
   const { user, isAdmin } = useAuth();
   const toast = useToast();
   const [students, setStudents] = useState([]);
+  // RES-102. The builder renders the resource assistant into this element.
+  const [assistantHost, setAssistantHost] = useState(null);
   const [studentsLoading, setStudentsLoading] = useState(true);
   const [studentsError, setStudentsError] = useState("");
   const [jobs, setJobs] = useState([]);
@@ -157,6 +159,7 @@ export default function ResourcesPage() {
 
       <div className="rg-layout">
         <ResourceJobBuilder
+          assistantHost={assistantHost}
           onPrefillApplied={() => setEditSource(null)}
           onSubmitJobs={handleSubmitJobs}
           onSelectedStudentChange={setSelectedStudent}
@@ -164,16 +167,20 @@ export default function ResourcesPage() {
           students={students}
           studentsLoading={studentsLoading}
         />
-        <ResourceQueuePanel
-          error={jobsError}
-          historyError={historyError}
-          historyJobs={historyJobs}
-          historyLoading={historyLoading}
-          jobs={jobs}
-          loading={jobsLoading}
-          onEditJob={setEditSource}
-          selectedStudentName={selectedStudent?.name || ""}
-        />
+        {/* RES-102: the resource assistant sits above the queue. */}
+        <div className="rg-side">
+          <div className="rg-assistant-host" ref={setAssistantHost} />
+          <ResourceQueuePanel
+            error={jobsError}
+            historyError={historyError}
+            historyJobs={historyJobs}
+            historyLoading={historyLoading}
+            jobs={jobs}
+            loading={jobsLoading}
+            onEditJob={setEditSource}
+            selectedStudentName={selectedStudent?.name || ""}
+          />
+        </div>
       </div>
     </>
   );

@@ -177,7 +177,7 @@ describe("the builder loaded with a past resource", () => {
     expect(screen.getByRole("button", { name: "Answers with working out" })).toHaveClass("active");
     expect(screen.getByRole("switch", { name: "Show marks beside questions" }))
       .toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("textbox")).toHaveValue("Ten index-law questions.");
+    expect(screen.getByRole("textbox", { name: /Custom prompt/ })).toHaveValue("Ten index-law questions.");
     expect(screen.getByText("1 reference document")).toBeInTheDocument();
     expect(screen.getByText("paper.pdf")).toBeInTheDocument();
 
@@ -195,7 +195,7 @@ describe("the builder loaded with a past resource", () => {
     const onSubmitJobs = vi.fn().mockResolvedValue({ ok: true, errors: {} });
     renderBuilder({ prefill: pastJob, onSubmitJobs });
 
-    fireEvent.change(screen.getByRole("textbox"), {
+    fireEvent.change(screen.getByRole("textbox", { name: /Custom prompt/ }), {
       target: { value: "Twenty index-law questions, harder." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Answers only" }));
@@ -231,7 +231,7 @@ describe("the builder loaded with a past resource", () => {
     expect(screen.queryByText("Alice Able")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Search by name or year..." })).toBeInTheDocument();
     expect(screen.queryByText("paper.pdf")).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: /Custom prompt/ })).toHaveValue("");
   });
 
   it("replaces the working draft without disturbing jobs already staged", () => {
@@ -257,7 +257,7 @@ describe("the builder loaded with a past resource", () => {
     );
 
     expect(screen.getByText("Editing a copy from history")).toBeInTheDocument();
-    expect(screen.getByRole("textbox")).toHaveValue("Ten index-law questions.");
+    expect(screen.getByRole("textbox", { name: /Custom prompt/ })).toHaveValue("Ten index-law questions.");
     // The staged job survives — only the in-progress draft is replaced.
     expect(screen.getByText("Worksheet for Bob Baker")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Submit all (2)" })).toBeInTheDocument();

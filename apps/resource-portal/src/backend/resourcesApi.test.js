@@ -330,9 +330,27 @@ describe("chatAboutResource", () => {
       uploadedFiles: [{ path: "resources/uploads/t/a.pdf", name: "a.pdf" }],
       fileSummaries: [{ path: "resources/uploads/t/a.pdf", summary: "Summary A" }],
       messages: [
-        { role: "assistant", content: "Questions?", proposedPrompt: null },
-        { role: "user", content: "Harder", proposedPrompt: null },
+        { role: "assistant", content: "Questions?", proposedPrompt: null, proposal: null },
+        { role: "user", content: "Harder", proposedPrompt: null, proposal: null },
       ],
     }, { timeoutMs: 550_000 });
+  });
+
+  it("sends an empty year and type as null, and earlier proposals (RES-102)", async () => {
+    callable.callFunction.mockResolvedValueOnce({ reply: "Hi" });
+    const proposal = { subject: "maths", resourceType: "worksheet", answerMode: "none", showMarks: false, sections: [], brief: "B" };
+    await chatAboutResource({
+      draft: { studentId: "s1", subject: "maths", year: "", resourceType: "", answerMode: "none", uploadedFiles: [] },
+      messages: [
+        { role: "user", content: "Ideas?" },
+        { role: "assistant", content: "Try this", proposal },
+        { role: "user", content: "OK" },
+      ],
+    });
+    const payload = callable.callFunction.mock.calls.at(-1)[1];
+    expect(payload.year).toBeNull();
+    expect(payload.resourceType).toBeNull();
+    expect(payload.messages[1].proposal).toEqual(proposal);
+    expect(payload.messages[0].proposal).toBeNull();
   });
 });

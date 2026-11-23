@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-24 | [Resource assistant: the planning chat recommends what to make and knows what the generator can do (RES-102)](#2026-11-24--resource-assistant-the-planning-chat-recommends-what-to-make-and-knows-what-the-generator-can-do-res-102) |
 | 2026-11-24 | [Photos, scans, PowerPoint, Excel and older Word files as reference files (RES-122)](#2026-11-24--photos-scans-powerpoint-excel-and-older-word-files-as-reference-files-res-122) |
 | 2026-11-23 | [Worksheet contents and section headings; a missing diagram is asked for again; Retry survives a double-click (RES-123)](#2026-11-23--worksheet-contents-and-section-headings-a-missing-diagram-is-asked-for-again-retry-survives-a-double-click-res-123) |
 | 2026-11-23 | [Contact form checks for bots (WEB-14)](#2026-11-23--contact-form-checks-for-bots-web-14) |
@@ -263,6 +264,24 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-24 — Resource assistant: the planning chat recommends what to make and knows what the generator can do (RES-102)
+
+**What changed**
+- The "Discuss with AI" drawer is now the **Resource assistant**, a pane above the queue that sits beside the job builder whenever the page is open. Tutors can use it as soon as they pick a student, before choosing a year or type. It makes no model call until the tutor asks something.
+- It proposes the whole job, not just the custom prompt: resource type, sections, answer section, marks and brief. Each proposal shows as a card listing what it would change on the form (old → new). **Apply to form** fills it in, a banner offers **Undo**, and changed fields are marked "from assistant" until the tutor edits them. It can recommend a different type from the one picked.
+- It knows what the generator can do. A short overview (about 700 tokens, capped at 1,500 by a test) sits in its prompt. For detail it calls four lookups, each read from the code: every type's sections (`builder/descriptors.js`, which a test checks against each type's response schema), maths diagram types (`diagramRegistry.js`), bank coverage, and English stimulus sources with the year rule. Asked for something unsupported (slides, Year 12, copyrighted texts, interactive quizzes), it says so and offers the closest thing it can make. Short "Checked …" lines under each reply show what it looked at.
+- Changing the year, subject or type no longer closes the conversation; the assistant reads the form on every turn. A new student, a submitted job or **New chat** starts afresh.
+- The weekly question bank job now writes a summary of what both banks hold (maths questions by category and year, English stimuli by text type) to `resourceCapabilities/bankCoverage`, for the coverage lookup. Until the first run, the assistant says it can't quote numbers.
+- The chat runs on Claude Sonnet 5.5 through an Anthropic tool loop (at most 5 rounds a turn; thinking `between_tools`, effort low). The OpenAI path is gone for this chat; file summaries are unchanged.
+- `scripts/resourceAssistantEval.js` runs 5 unsupported requests and 5 sample chats per subject against live Claude (production key). It passed 20/20 twice; the report is in [`docs/res-102-assistant-eval.md`](docs/res-102-assistant-eval.md).
+- New PostHog events: `resource_assistant_proposal_applied` and `resource_assistant_proposal_undone`.
+
+**Why:** The old chat only drafted a prompt for a form the tutor had already filled in, and didn't know what the generator could produce. Tutors wanted a helper that suggests the right resource and structure.
+
+**Status:** Live. Functions and resource portal deployed.
 
 ---
 
