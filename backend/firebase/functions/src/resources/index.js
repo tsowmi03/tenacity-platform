@@ -4611,47 +4611,57 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
   const upgradeToPlanned = plannedOn && job.generationVersion !== 1 &&
     ["RESOURCE_STAGE_TIMEOUT", "RESOURCE_STAGE_LIMIT"].includes(job.errorCode);
   const canResume = resumableFailure(job) && !upgradeToPlanned;
-  if (deps.storage && !canResume) {
-    await deleteCheckpointFiles(deps.storage, payload.jobId);
-  }
+  // A request that fails after claiming releases its claim (if it still holds
+  // it), so the next Retry is not mistaken for a duplicate and silently dropped.
+  try {
+    if (deps.storage && !canResume) {
+      await deleteCheckpointFiles(deps.storage, payload.jobId);
+    }
 
-  const modelChoice = inferModelChoice(job);
-  const requestedModel = configuredModelForResourceType(job.resourceType, modelChoice);
-  await jobRef.update({
-    runId: retryRunId, runStartedAt: now(clock), activeElapsedMs: 0, queueElapsedMs: 0, queueTurnAt: now(clock), queueNotBefore: null,
-    stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0, optionalReviewFailures: {}, optionalStageFailures: {}, reviewStatus: null, contentReview: null,
-    progress: canResume ? job.progress || null : null,
-    status: "pending",
-    modelChoice,
-    requestedModel,
-    activeModel: requestedModel,
-    effectiveModel: null,
-    effectiveProvider: null,
-    model: requestedModel,
-    attemptedModels: [],
-    fallbackUsed: false,
-    failover: null,
-    failureAttempts: [],
-    recoveryCount: 0,
-    ...(upgradeToPlanned ? { generationVersion: 1 } : {}),
-    ...(job.generationVersion === 1 || upgradeToPlanned ? {
-      stageRecoveryCount: 0,
-      stageRecovery: Object.fromEntries(Object.entries(canResume ? job.stageRecovery || {} : {}).filter(([, v]) => v.split).map(([k]) => [k, { split: true, failures: 0 }])),
-    } : {}),
-    usageByProvider: {},
-    warnings: [],
-    error: null,
-    errorCode: null,
-    errorDetail: null,
-    lastError: job.error || null,
-    lastErrorCode: job.errorCode || null,
-    lastErrorDetail: job.errorDetail || null,
-    cancelRequested: false,
-    attemptId: null,
-    leaseExpiresAt: null,
-    startedAt: null,
-    completedAt: null,
-  });
+    const modelChoice = inferModelChoice(job);
+    const requestedModel = configuredModelForResourceType(job.resourceType, modelChoice);
+    await jobRef.update({
+      runId: retryRunId, runStartedAt: now(clock), activeElapsedMs: 0, queueElapsedMs: 0, queueTurnAt: now(clock), queueNotBefore: null,
+      stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0, optionalReviewFailures: {}, optionalStageFailures: {}, reviewStatus: null, contentReview: null,
+      progress: canResume ? job.progress || null : null,
+      status: "pending",
+      modelChoice,
+      requestedModel,
+      activeModel: requestedModel,
+      effectiveModel: null,
+      effectiveProvider: null,
+      model: requestedModel,
+      attemptedModels: [],
+      fallbackUsed: false,
+      failover: null,
+      failureAttempts: [],
+      recoveryCount: 0,
+      ...(upgradeToPlanned ? { generationVersion: 1 } : {}),
+      ...(job.generationVersion === 1 || upgradeToPlanned ? {
+        stageRecoveryCount: 0,
+        stageRecovery: Object.fromEntries(Object.entries(canResume ? job.stageRecovery || {} : {}).filter(([, v]) => v.split).map(([k]) => [k, { split: true, failures: 0 }])),
+      } : {}),
+      usageByProvider: {},
+      warnings: [],
+      error: null,
+      errorCode: null,
+      errorDetail: null,
+      lastError: job.error || null,
+      lastErrorCode: job.errorCode || null,
+      lastErrorDetail: job.errorDetail || null,
+      cancelRequested: false,
+      attemptId: null,
+      leaseExpiresAt: null,
+      startedAt: null,
+      completedAt: null,
+    });
+  } catch (err) {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(jobRef);
+      if (snap.exists && snap.data()?.retryClaim?.toRunId === retryRunId) tx.update(jobRef, { retryClaim: null });
+    }).catch(() => {});
+    throw err;
+  }
 
   resourceEvent({ ...job, runId: retryRunId, attemptId: null }, "job.retry_queued", { recoveryDecision: upgradeToPlanned ? "manual_retry_planned" : "manual_retry", generationVersion: upgradeToPlanned ? 1 : job.generationVersion || 0 });
   const outcomes = deps.durableStages ? [] : await (deps.runQueueForTutor || runQueueForTutor)(

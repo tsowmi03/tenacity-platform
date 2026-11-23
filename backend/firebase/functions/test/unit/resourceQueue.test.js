@@ -1776,6 +1776,11 @@ describe("retryResourceJobImpl", () => {
     const brokenDb = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", runId: "run-1", errorCode: "DIAGRAM_LAYOUT_ERROR", failureAttempts: [{ reasonCode: "REQUIRED_DIAGRAM" }] }]);
     await assert.rejects(retryResourceJobImpl({ payload: { jobId: "job-1" }, actor,
       deps: { db: brokenDb, clock, durableStages: true, storage: storageFailing([Object.assign(new Error("forbidden"), { code: 403 })]) } }), /forbidden/);
+    // The failed request released its claim, so the next Retry really queues the job.
+    assert.equal(brokenDb.jobs[0].retryClaim, null);
+    await retryResourceJobImpl({ payload: { jobId: "job-1" }, actor, deps: { db: brokenDb, clock, durableStages: true, storage: fakeStorage() } });
+    assert.equal(brokenDb.jobs[0].status, "pending");
+    assert.notEqual(brokenDb.jobs[0].runId, "run-1");
   });
 
   it("rejects retries by another tutor", async () => {
