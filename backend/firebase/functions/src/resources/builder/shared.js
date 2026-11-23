@@ -849,13 +849,19 @@ function makeContentsHeading(text, opts = {}) {
   });
 }
 
+// A contents page that lists only two entries (say "Questions" and "Answers")
+// costs a page and helps nobody find anything, so it is left out.
+const MIN_CONTENTS_ENTRIES = 3;
+
 function makeTableOfContents(entries = []) {
-  const contentChildren = entries
+  const listed = entries
     .map((entry) => ({
       title: cleanText(entry?.title),
       level: entry?.level === 2 ? 2 : 1,
     }))
-    .filter((entry) => entry.title)
+    .filter((entry) => entry.title);
+  if (listed.length < MIN_CONTENTS_ENTRIES) return [];
+  const contentChildren = listed
     .map((entry) => new Paragraph({
       indent: entry.level === 2 ? { left: 360 } : undefined,
       spacing: { after: 80 },

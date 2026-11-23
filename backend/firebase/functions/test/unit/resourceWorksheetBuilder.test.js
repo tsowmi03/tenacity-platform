@@ -829,3 +829,46 @@ it("letters each multiple-choice option once, whether or not the model lettered 
   assert.equal(optionText("A-level texts", 0), "A-level texts");
   assert.equal(optionText("B. wrong letter for slot A", 0), "B. wrong letter for slot A");
 });
+
+describe("worksheet section headings", () => {
+  const { questionsWithSections, splitStemSection } = require("../../src/resources/builder/worksheet");
+
+  it("lifts a section heading the writer put on the stem's first line", () => {
+    assert.deepEqual(
+      splitStemSection("Section C: Points, radii and diameters\n\nA circle has centre (-3, 2)."),
+      { section: "Section C: Points, radii and diameters", stem: "A circle has centre (-3, 2)." }
+    );
+    assert.deepEqual(splitStemSection("Section A asks about circles."), { section: "", stem: "Section A asks about circles." });
+    assert.deepEqual(splitStemSection("Solve 2x + 3 = 11."), { section: "", stem: "Solve 2x + 3 = 11." });
+  });
+
+  it("prints each section's heading once, even when a later batch repeats it", () => {
+    const rows = questionsWithSections([
+      { number: 1, stem: "Section A: Origin\n\nQ1" },
+      { number: 2, stem: "Q2" },
+      { number: 3, stem: "Section B: Points\n\nQ3" },
+      { number: 4, stem: "Section B: Points\n\nQ4" },
+      { number: 5, stem: "Q5", section: "Section C: Expanded form" },
+    ]);
+    assert.deepEqual(rows.map((r) => r.heading), ["Section A: Origin", "", "Section B: Points", "", "Section C: Expanded form"]);
+    assert.deepEqual(rows.map((r) => r.question.stem), ["Q1", "Q2", "Q3", "Q4", "Q5"]);
+  });
+
+  it("prints no heading when the worksheet has only one section", () => {
+    const rows = questionsWithSections([{ number: 1, stem: "Q1", section: "Section A" }, { number: 2, stem: "Q2", section: "Section A" }]);
+    assert.deepEqual(rows.map((r) => r.heading), ["", ""]);
+  });
+
+  it("renders the lifted heading once in the document", async () => {
+    const buffer = await buildWorksheetDocx({
+      ...sampleWorksheet,
+      questions: [
+        { ...sampleWorksheet.questions[0], stem: "Section A: One-step\n\nSolve 2x + 3 = 11." },
+        { ...sampleWorksheet.questions[1], stem: "Section B: Two-step\n\nSolve each equation." },
+      ],
+    });
+    const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+    assert.equal(xml.split("Section B: Two-step").length - 1, 1);
+    assert.doesNotMatch(xml, /Section A: One-step<\/w:t>[\s\S]{0,400}Section A: One-step/);
+  });
+});

@@ -484,7 +484,7 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
         maxTokens: 16000, systemPrompt: buildSystemPrompt(job.resourceType, contentOptions),
         responseSchema: buildResponseSchema(job.resourceType, contentOptions),
         validateStageResult: (r) => validateQuestions(r, specs, job.resourceType, prior, stimulusRules()),
-        userMessage: `${request.userMessage}\n\nSAVED PLAN (overrides whole-resource counts for this response): ${JSON.stringify(specs)}\nGenerate ONLY these question numbers, topics, difficulty, sections and exact marks, each testing its planned focus. Preserve global numbering. Do not include solutions or marking guides in this response. Return the normal resource shape for this batch. ${prior.length ? `These questions are already written. Do not repeat their wording, their skill or the evidence (quotations, lines or details) they use: ${JSON.stringify(prior)}` : ""}${wholePaperNote()}${stimulusNote(false)}`,
+        userMessage: `${request.userMessage}\n\nSAVED PLAN (overrides whole-resource counts for this response): ${JSON.stringify(specs)}\nGenerate ONLY these question numbers, topics, difficulty, sections and exact marks, each testing its planned focus. The section heading is printed separately, so never write it into a question's text. Preserve global numbering. Do not include solutions or marking guides in this response. Return the normal resource shape for this batch. ${prior.length ? `These questions are already written. Do not repeat their wording, their skill or the evidence (quotations, lines or details) they use: ${JSON.stringify(prior)}` : ""}${wholePaperNote()}${stimulusNote(false)}`,
       });
     } catch (err) {
       if (err?.code !== "RESOURCE_STAGE_SPLIT") throw err;
@@ -546,7 +546,12 @@ For "N per topic", allocate exactly N questions to EACH eligible topic. Otherwis
       parsed.topics = plan.topics.map((t) => t.name);
       parsed.sections = [...new Set(plan.questions.map((q) => sectionTitle(q.section)))].map((title) => ({ title,
         questions: rows.filter((q) => sectionTitle(plan.questions[q.number - 1].section) === title) }));
-    } else { parsed.questions = rows; parsed.topic = plan.topics.map((t) => t.name).join(", "); }
+    } else {
+      // The worksheet builder prints each section's heading once, above its
+      // first question, from this field.
+      parsed.questions = rows.map((q) => ({ ...q, section: sectionTitle(plan.questions[q.number - 1]?.section) }));
+      parsed.topic = plan.topics.map((t) => t.name).join(", ");
+    }
     validateQuestions({ parsed }, plan.questions, job.resourceType);
     if (job.answerMode !== "none") validateAnswers({ parsed }, rows, answerKey);
     return { parsed, raw: JSON.stringify(parsed) };
