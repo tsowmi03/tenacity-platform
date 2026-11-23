@@ -420,6 +420,65 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
       error.style.marginTop = "14px";
       form.appendChild(error);
     };
+
+    // Human check. A token is single use, so it is reset after every send
+    // attempt that fails.
+    let enquiryToken = "";
+    let enquiryWidgetId: TurnstileWidgetId | null = null;
+    let enquiryRetry: number | null = null;
+    const markEnquiryTurnstileErr = (on: boolean) => {
+      getEl<HTMLElement>("enquiryTurnstile")?.classList.toggle("err", on);
+    };
+    const resetEnquiryTurnstile = () => {
+      enquiryToken = "";
+      if (enquiryWidgetId && window.turnstile) {
+        window.turnstile.reset(enquiryWidgetId);
+      }
+    };
+    const renderEnquiryTurnstile = () => {
+      const container = getEl<HTMLElement>("enquiryTurnstileWidget");
+      const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+      if (!container || enquiryWidgetId) return;
+
+      if (!siteKey) {
+        track("enquiry_turnstile_result", { outcome: "not_configured" });
+        markEnquiryTurnstileErr(true);
+        const error = getEl<HTMLElement>("enquiryTurnstileError");
+        if (error) error.textContent = "Verification is not configured.";
+        return;
+      }
+
+      if (!window.turnstile) {
+        enquiryRetry = window.setTimeout(() => {
+          enquiryRetry = null;
+          renderEnquiryTurnstile();
+        }, 250);
+        return;
+      }
+
+      enquiryWidgetId = window.turnstile.render(container, {
+        sitekey: siteKey,
+        callback: (token) => {
+          enquiryToken = token;
+          markEnquiryTurnstileErr(false);
+          track("enquiry_turnstile_result", { outcome: "success" });
+        },
+        "expired-callback": () => {
+          enquiryToken = "";
+          track("enquiry_turnstile_result", { outcome: "expired" });
+        },
+        "error-callback": () => {
+          enquiryToken = "";
+          markEnquiryTurnstileErr(true);
+          track("enquiry_turnstile_result", { outcome: "error" });
+        },
+      });
+    };
+    renderEnquiryTurnstile();
+    cleanups.push(() => {
+      if (enquiryRetry) window.clearTimeout(enquiryRetry);
+    });
+
     const submit = async (event: Event) => {
       event.preventDefault();
       clearFormError();
@@ -443,6 +502,10 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
       ) {
         email.style.borderColor = "#e0573a";
         missing.push("f-email_invalid");
+      }
+      if (!enquiryToken) {
+        markEnquiryTurnstileErr(true);
+        missing.push("turnstile");
       }
       if (missing.length) {
         track("enquiry_form_blocked", { missing_fields: missing });
@@ -477,6 +540,8 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
             ? `Enquiry Request for ${details}`
             : "Enquiry Request",
           additionalInfo: message,
+          website: getEl<HTMLInputElement>("f-website")?.value ?? "",
+          turnstileToken: enquiryToken,
         });
         form.style.display = "none";
         getEl<HTMLElement>("formSuccess")?.classList.add("show");
@@ -486,7 +551,15 @@ const setupDesignInteractions = (page: DesignRuntimePage) => {
         track("enquiry_form_failed", {
           error: error instanceof Error ? error.message.slice(0, 200) : "unknown",
         });
-        showFormError("Failed to send your message. Please try again later.");
+        const verificationFailed =
+          (error as { response?: { status?: number } })?.response?.status ===
+          403;
+        showFormError(
+          verificationFailed
+            ? "We couldn't verify you're human. Please complete the check again and resend."
+            : "Failed to send your message. Please try again later."
+        );
+        resetEnquiryTurnstile();
         if (button) {
           button.disabled = false;
           button.innerHTML = buttonHtml ?? "Send enquiry";

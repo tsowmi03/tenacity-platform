@@ -1,6 +1,7 @@
 import sendgrid from "@sendgrid/mail";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { sendGridConfig } from "@lib/adminNotification";
+import { requestIp, verifyTurnstile } from "@lib/turnstile";
 
 type EnquiryPayload = {
   reason?: string;
@@ -8,6 +9,8 @@ type EnquiryPayload = {
   email?: string;
   phoneNumber?: string;
   additionalInfo?: string;
+  website?: unknown;
+  turnstileToken?: unknown;
 };
 
 const isEmail = (value: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
@@ -29,8 +32,25 @@ export default async function handler(
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { reason, name, email, phoneNumber, additionalInfo } =
-    req.body as EnquiryPayload;
+  const body = (req.body ?? {}) as EnquiryPayload;
+  const { reason, name, email, phoneNumber, additionalInfo, turnstileToken } =
+    body;
+
+  // A hidden field a person never sees. Return success so a bot does not
+  // learn which part of its payload caused the rejection. Blocked logs never
+  // include what was submitted.
+  if (typeof body.website === "string" && body.website.trim()) {
+    console.warn("Enquiry blocked: honeypot field filled.");
+    return res.status(200).json({ ok: true });
+  }
+
+  // The honeypot only catches bots that fill in the rendered form. A script
+  // posting straight to this route needs a real check.
+  if (typeof turnstileToken !== "string" || !turnstileToken.trim()) {
+    console.warn("Enquiry blocked: no verification token.");
+    return res.status(403).json({ error: "Human verification required" });
+  }
+
   const trimmed = {
     reason: reason?.trim() || "Enquiry Request",
     name: name?.trim() ?? "",
@@ -47,6 +67,17 @@ export default async function handler(
   if (missing.length) {
     console.error(`Missing SendGrid configuration for enquiry email: ${missing.join(", ")}`);
     return res.status(500).json({ error: "Email is not configured" });
+  }
+
+  try {
+    const verified = await verifyTurnstile(turnstileToken, requestIp(req));
+    if (!verified) {
+      console.warn("Enquiry blocked: verification failed.");
+      return res.status(403).json({ error: "Human verification failed" });
+    }
+  } catch (error) {
+    console.error("Turnstile verification failed for enquiry:", error);
+    return res.status(500).json({ error: "Failed to send enquiry" });
   }
 
   sendgrid.setApiKey(apiKey);

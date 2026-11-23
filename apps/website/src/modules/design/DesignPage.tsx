@@ -11,7 +11,7 @@ const DesignPage = ({ html, title, description, page }: DesignPageProps) => {
   return (
     <>
       <Head title={title} description={description} />
-      {page === "register" ? (
+      {page === "register" || page === "contact" ? (
         <Script
           src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
           strategy="afterInteractive"

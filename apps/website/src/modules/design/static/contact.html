@@ -93,6 +93,11 @@
             </div>
           </div>
           <div class="field"><label for="f-msg">Message <span style="color:var(--muted);font-weight:400">(optional)</span></label><textarea id="f-msg" placeholder="Tell us a little about your child…"></textarea></div>
+          <div class="pf-honeypot" hidden aria-hidden="true"><label for="f-website">Website</label><input id="f-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+          <div class="reg-human enquire-human" id="enquiryTurnstile">
+            <div id="enquiryTurnstileWidget"></div>
+            <p class="reg-human-error" id="enquiryTurnstileError">Please complete the verification before sending.</p>
+          </div>
           <button type="submit" class="btn btn-primary btn-lg">Send enquiry
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </button>
