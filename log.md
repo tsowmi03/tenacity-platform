@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-23 | [Worksheet contents and section headings; a missing diagram is asked for again; Retry survives a double-click (RES-123)](#2026-11-23--worksheet-contents-and-section-headings-a-missing-diagram-is-asked-for-again-retry-survives-a-double-click-res-123) |
 | 2026-11-19 | [Website emails name the missing SendGrid setting (WEB-13)](#2026-11-19--website-emails-name-the-missing-sendgrid-setting-web-13) |
 | 2026-11-19 | [PDF previews show maths equations again; converter pinned to Gotenberg 8.40.0 (RES-118)](#2026-11-19--pdf-previews-show-maths-equations-again-converter-pinned-to-gotenberg-8400-res-118) |
 | 2026-11-19 | [Visual check of the printed pages before delivery (RES-49)](#2026-11-19--visual-check-of-the-printed-pages-before-delivery-res-49) |
@@ -260,6 +261,38 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-23 — Worksheet contents and section headings; a missing diagram is asked for again; Retry survives a double-click (RES-123)
+
+**What changed**
+- A contents page is left out when it would list fewer than three entries. A
+  maths worksheet (Questions, Answers) no longer opens with one; booklets,
+  study guides and English worksheets with a stimulus booklet keep theirs.
+- Worksheets print each section's heading ("Section C: Points, radii and
+  diameters") once, as a heading above its first question. Planned worksheets
+  carry each question's section from the plan, and the writer is told not to
+  put the heading in the question text. A heading the writer still puts on a
+  stem's first line is lifted out, so older resources and revisions print
+  correctly too.
+- A diagram fill that leaves out a required diagram is rejected before it is
+  saved and asked again, told which item was missing, within the stage's usual
+  retries (then the backup model). Before, the incomplete response was saved
+  and replayed, so one omission failed the whole resource on both attempts.
+- Retry claims the job in a transaction. A second request for the same failure
+  (a double-click) is answered as queued and does nothing. Deleting saved
+  stages ignores files that are already gone. A claim expires after a minute,
+  so a retry that stopped part-way never blocks the next one.
+
+**Why:** A Year 10 worksheet opened with a contents page listing only
+Questions and Answers, and printed "Section C" twice: the writer wrote the
+heading into the question text, and a new writing batch repeated it. The same
+day, a Year 5 maths paper failed twice after 12 minutes because one required
+diagram was missing from a fill response, and a double-clicked Retry then
+showed the tutor two errors ("No such object") before a third press worked.
+
+**Status:** Live. Functions deployed.
 
 ---
 

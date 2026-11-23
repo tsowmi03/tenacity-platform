@@ -2752,6 +2752,26 @@ function describeDiagramTargets(targets, contexts = new Map()) {
  * run the same call unconstrained, which is exactly the pre-AWP-15 behaviour and
  * is still covered by validation.js and the diagram repair path.
  */
+// A fill response that leaves out a diagram a question cannot be answered
+// without is rejected before it is saved. Saved, it was replayed on every later
+// attempt, so one omission failed a 32-question paper twice in a row. Rejected,
+// the stage is asked again, told what was missing, within its usual retries.
+function requireDiagramsFor(group) {
+  return (result) => {
+    const returned = new Set((result?.parsed?.diagrams || [])
+      .filter((entry) => entry?.diagram)
+      .map((entry) => Number(entry.index)));
+    const missing = group
+      .map((target, i) => ({ target, index: i + 1 }))
+      .filter(({ target, index }) => target.diagramRequired !== false && !returned.has(index));
+    if (missing.length) {
+      throw Object.assign(controlError("RESOURCE_BATCH_INVALID", "A required diagram was not returned by the model"), {
+        reason: `required diagram missing for item ${missing.map(({ index }) => index).join(", ")}; return a diagram for every item`,
+      });
+    }
+  };
+}
+
 async function fillDiagrams(args) {
   return resourceStage(args.job, "diagrams.fill", () => fillDiagramsLogged(args));
 }
@@ -2806,7 +2826,7 @@ async function fillDiagramsLogged({ job, parsed, callAi, apiKey, model, signal }
         mathBearing: true,
         // RES-70: a failed optional fill is recorded and not sent again by
         // later workers; the diagrams are omitted with a warning instead.
-        ...(optionalGroup ? { bestEffort: true } : {}),
+        ...(optionalGroup ? { bestEffort: true } : { validateStageResult: requireDiagramsFor(group) }),
       });
       for (const entry of filled?.diagrams || []) {
         const target = group[Number(entry?.index) - 1];
@@ -4526,27 +4546,58 @@ function resumableFailure(job) {
   return attempts.length > 0 && attempts.every((attempt) => RESUMABLE_REASON_CODES.has(attempt?.reasonCode));
 }
 
+const RETRY_CLAIM_MS = 60 * 1000;
+
+// Deleting a job's saved stages tolerates files that are already gone: a file
+// another request removed first is the outcome we wanted, not a failure.
+async function deleteCheckpointFiles(storage, jobId) {
+  try {
+    await storage.bucket().deleteFiles({ prefix: `resources/checkpoints/${jobId}/`, force: true });
+  } catch (err) {
+    const errors = Array.isArray(err) ? err : [err];
+    if (errors.some((e) => Number(e?.code) !== 404)) throw errors.find((e) => Number(e?.code) !== 404);
+  }
+}
+
 async function retryResourceJobImpl({ payload, actor, deps }) {
   const { db, clock } = deps;
   if (!db) throw new TypeError("retryResourceJobImpl requires db");
   if (!actor?.uid) throw new TypeError("retryResourceJobImpl requires actor.uid");
 
   const jobRef = db.collection("resourceJobs").doc(payload.jobId);
-  const snap = await jobRef.get();
-  if (!snap.exists) {
-    throw new HttpsError("not-found", `Resource job not found: ${payload.jobId}`);
-  }
-
-  const job = snap.data() || {};
-  if (actor.role !== "admin" && job.createdBy !== actor.uid) {
-    throw new HttpsError("permission-denied", "You can only retry your own resource jobs");
-  }
-  if (!["failed", "cancelled"].includes(job.status)) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Only failed or cancelled resource jobs can be retried"
-    );
-  }
+  // A double-clicked Retry sent two requests 0.4 s apart. Both deleted the
+  // same saved files, so both failed on files the other had already removed,
+  // and the tutor saw two errors. The first request now claims the retry in a
+  // transaction; a second one for the same failure is answered as queued and
+  // changes nothing.
+  const retryRunId = randomUUID();
+  const { job, duplicate } = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(jobRef);
+    if (!snap.exists) {
+      throw new HttpsError("not-found", `Resource job not found: ${payload.jobId}`);
+    }
+    const current = snap.data() || {};
+    if (actor.role !== "admin" && current.createdBy !== actor.uid) {
+      throw new HttpsError("permission-denied", "You can only retry your own resource jobs");
+    }
+    const claim = current.retryClaim;
+    const failed = ["failed", "cancelled"].includes(current.status);
+    const nowMs = clock ? clock().getTime() : Date.now();
+    // A claim expires, so a retry that crashed part-way never blocks the next.
+    const live = claim && nowMs - (Number(claim.atMs) || 0) < RETRY_CLAIM_MS;
+    if (live && ((claim.fromRunId === (current.runId || null) && failed) || (claim.toRunId === current.runId && !failed))) {
+      return { job: current, duplicate: true };
+    }
+    if (!failed) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Only failed or cancelled resource jobs can be retried"
+      );
+    }
+    tx.update(jobRef, { retryClaim: { fromRunId: current.runId || null, toRunId: retryRunId, atMs: nowMs } });
+    return { job: current, duplicate: false };
+  });
+  if (duplicate) return { jobId: payload.jobId, status: "pending", outcomes: [] };
 
   // Saved stages let Retry resume after a timeout, a stage limit or a busy
   // provider. After a content failure (invalid JSON, a missing required
@@ -4561,12 +4612,11 @@ async function retryResourceJobImpl({ payload, actor, deps }) {
     ["RESOURCE_STAGE_TIMEOUT", "RESOURCE_STAGE_LIMIT"].includes(job.errorCode);
   const canResume = resumableFailure(job) && !upgradeToPlanned;
   if (deps.storage && !canResume) {
-    await deps.storage.bucket().deleteFiles({ prefix: `resources/checkpoints/${payload.jobId}/` });
+    await deleteCheckpointFiles(deps.storage, payload.jobId);
   }
 
   const modelChoice = inferModelChoice(job);
   const requestedModel = configuredModelForResourceType(job.resourceType, modelChoice);
-  const retryRunId = randomUUID();
   await jobRef.update({
     runId: retryRunId, runStartedAt: now(clock), activeElapsedMs: 0, queueElapsedMs: 0, queueTurnAt: now(clock), queueNotBefore: null,
     stageRetryCount: 0, providerCallCount: 0, stageFallbackCount: 0, optionalReviewFailures: {}, optionalStageFailures: {}, reviewStatus: null, contentReview: null,
@@ -4745,7 +4795,7 @@ async function deleteResourceJobImpl({ payload, actor, deps }) {
   };
   // The private journal contains the same student resource content as the
   // output. Remove it when an administrator deletes the resource.
-  await storage.bucket().deleteFiles({ prefix: `resources/checkpoints/${payload.jobId}/` });
+  await deleteCheckpointFiles(storage, payload.jobId);
   await jobRef.delete();
 
   await writeAuditLog(

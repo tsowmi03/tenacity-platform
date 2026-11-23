@@ -257,3 +257,64 @@ describe("answer mode reaches the generation schema", () => {
     assert.deepEqual(worksheet.properties.answers.items.properties.workingOut, { type: "null" });
   });
 });
+
+describe("a fill that leaves out a required diagram is asked again, not saved", () => {
+  const { createDurableCaller } = require("../../src/resources/durableStages");
+  const rectangle = { type: "rectangle", dimensions: { width: 4, height: 3 }, unit: "cm" };
+  const clock = { type: "clock", hour: 9, minute: 0 };
+
+  function durableHarness() {
+    const values = new Map();
+    const current = { jobId: "job-1", runId: "run", status: "processing", attemptId: "a", invocationId: "i", generationVersion: 1, subject: "maths", year: 9 };
+    const db = { runTransaction: async (fn) => fn({ get: async () => ({ exists: true, data: () => current }), update: (_ref, patch) => Object.assign(current, patch) }) };
+    const storage = { bucket: () => ({ file: (key) => ({
+      download: async () => {
+        if (!values.has(key)) throw Object.assign(new Error("missing"), { code: 404 });
+        return [Buffer.from(values.get(key))];
+      },
+      save: async (data) => values.set(key, data),
+    }) }) };
+    const job = () => ({ ...current, ref: {}, resourceLogSink: () => {} });
+    return { values, current, caller: (callAi) => createDurableCaller({ job: job(), db, storage, callAi }), job };
+  }
+
+  it("gives required groups a check that rejects a missing diagram and accepts a full set", async () => {
+    const checks = {};
+    await fillDiagrams({ job, parsed: documentFixture(), apiKey: "k", model: "m", callAi: async (req) => {
+      const type = /producing "([^"]+)" diagram/.exec(req.systemPrompt)[1];
+      checks[type] = req.validateStageResult;
+      return { parsed: { diagrams: [{ index: 1, diagram: type === "clock" ? clock : rectangle }] } };
+    } });
+    assert.throws(() => checks.rectangle({ parsed: { diagrams: [] } }), (err) => err.code === "RESOURCE_BATCH_INVALID" && /item 1/.test(err.reason));
+    assert.throws(() => checks.rectangle({ parsed: { diagrams: [{ index: 1, diagram: null }] } }), { code: "RESOURCE_BATCH_INVALID" });
+    assert.doesNotThrow(() => checks.rectangle({ parsed: { diagrams: [{ index: 1, diagram: rectangle }] } }));
+  });
+
+  it("recovers on the next call instead of replaying the bad response", async () => {
+    const h = durableHarness();
+    const sent = [];
+    let rectangleCalls = 0;
+    const provider = async (req) => {
+      const type = /producing "([^"]+)" diagram/.exec(req.systemPrompt)[1];
+      sent.push({ type, userMessage: req.userMessage });
+      if (type === "rectangle" && rectangleCalls++ === 0) return { parsed: { diagrams: [] } };
+      return { parsed: { diagrams: [{ index: 1, diagram: type === "clock" ? clock : rectangle }] } };
+    };
+    let parsed;
+    let result;
+    for (let i = 0; i < 6 && !result; i++) {
+      parsed = documentFixture();
+      try {
+        result = await fillDiagrams({ job: h.job(), parsed, apiKey: "k", model: "m", callAi: h.caller(provider) });
+      } catch (err) {
+        assert.equal(err.code, "RESOURCE_STAGE_YIELD", err.stack);
+      }
+    }
+    assert.ok(result, "the fill completes");
+    assert.deepEqual(parsed.questions[0].diagram, rectangle);
+    const rectangleSends = sent.filter((s) => s.type === "rectangle");
+    assert.equal(rectangleSends.length, 2, "asked once more, not failed");
+    assert.match(rectangleSends[1].userMessage, /required diagram missing for item 1/);
+    for (const saved of h.values.values()) assert.notDeepEqual(JSON.parse(saved).parsed, { diagrams: [] }, "the incomplete response was never saved");
+  });
+});

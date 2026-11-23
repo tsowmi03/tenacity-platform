@@ -75,6 +75,10 @@ for (const type of ["worksheet", "practice-paper"]) it(`plans and resumes a ${ty
   if (type === "practice-paper") {
     assert.equal(result.parsed.timeAllowed, "90 minutes");
     assert.deepEqual(result.parsed.sections.map((s) => s.questions.length), [7, 7]);
+  } else {
+    // The builder prints these as headings, so the writer never has to.
+    assert.deepEqual([...new Set(result.parsed.questions.map((q) => q.section))], ["Section A", "Section B"]);
+    assert.ok(calls.some((c) => /never write it into a question's text/.test(c.userMessage)));
   }
   assert.ok(h.events.some((e) => e.event === "checkpoint.reused"));
   assert.equal(h.events.filter((e) => e.event === "provider.started").length, calls.length);

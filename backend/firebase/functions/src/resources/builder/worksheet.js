@@ -77,6 +77,44 @@ function makeInfoLine(resource, studentName) {
   ];
 }
 
+// The writer is told each question's section and sometimes prints it as the
+// first line of the stem ("Section C: Points, radii and diameters\n\n..."). A
+// new writing batch then repeats the heading of a section it continues, so the
+// same heading appeared twice and sat inside the question's own line. The
+// heading is lifted out of the stem and printed once, above the section.
+const STEM_SECTION_LINE = /^\s*(section\s+[A-Z0-9]{1,2}\b[^\n]{0,100}?)\s*\n+/i;
+
+function splitStemSection(stem) {
+  const text = typeof stem === "string" ? stem : "";
+  const match = text.match(STEM_SECTION_LINE);
+  if (!match) return { section: "", stem };
+  const rest = text.slice(match[0].length).trim();
+  if (!rest) return { section: "", stem };
+  return { section: cleanText(match[1]), stem: rest };
+}
+
+function sectionKey(section) {
+  return cleanText(section).toLowerCase().replace(/[\s:.\-–—]+/g, " ").trim();
+}
+
+// Questions paired with the section heading to print before them, if any.
+// Headings print only when the worksheet has two or more sections.
+function questionsWithSections(questions = []) {
+  const rows = questions.map((question) => {
+    const lifted = splitStemSection(question?.stem);
+    const section = cleanText(question?.section) || lifted.section;
+    return { question: lifted.section ? { ...question, stem: lifted.stem } : question, section };
+  });
+  const distinct = new Set(rows.map((row) => sectionKey(row.section)).filter(Boolean));
+  let previous = "";
+  return rows.map(({ question, section }) => {
+    const key = sectionKey(section);
+    const heading = distinct.size > 1 && key && key !== previous ? section : "";
+    if (key) previous = key;
+    return { question, heading };
+  });
+}
+
 function answerLabel(answer) {
   const number = answer?.questionNumber ?? "";
   const partLabel = cleanText(answer?.partLabel).replace(/[()]/g, "");
@@ -132,7 +170,8 @@ async function buildWorksheetDocx(resource, options = {}) {
   children.push(...makeTableOfContents(contentsEntries));
   children.push(...renderStimulusBooklet(resource, subject, { includeInTableOfContents: true }));
   children.push(makeContentsHeading("Questions", { section: true }));
-  for (const question of resource.questions) {
+  for (const { question, heading } of questionsWithSections(resource.questions)) {
+    if (heading) children.push(makeContentsHeading(heading, { level: 2 }));
     children.push(...(await renderQuestion(question, {
       responseLines: isEnglish,
       showMarks: options.showMarks === true,
@@ -168,6 +207,8 @@ async function buildWorksheetDocx(resource, options = {}) {
 module.exports = {
   buildWorksheetDocx,
   makeAnswerTable,
+  questionsWithSections,
   renderQuestion,
+  splitStemSection,
   validateWorksheetResource,
 };

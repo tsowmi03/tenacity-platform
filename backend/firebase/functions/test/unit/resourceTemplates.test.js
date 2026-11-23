@@ -303,18 +303,33 @@ describe("resource template dispatcher", () => {
   it("adds a live table of contents only to the three navigable booklet types", async () => {
     const included = ["topic-booklet", "study-guide", "worksheet"];
     const excluded = Object.keys(samples).filter((resourceType) => !included.includes(resourceType));
+    // Enough sections that every navigable type lists at least three entries.
+    const navigable = {
+      "topic-booklet": samples["topic-booklet"],
+      "study-guide": {
+        ...samples["study-guide"],
+        sections: [0, 1, 2].map((i) => ({ ...samples["study-guide"].sections[0], title: `Part ${i + 1}` })),
+      },
+      worksheet: {
+        title: "Reading Worksheet", subject: "english", year: 10, topic: "Growing up", totalMarks: 2,
+        stimulus: [{ label: "Text 1", textType: "poem", title: "A Sourced Poem", author: "Real Poet", source: "Wikisource (https://en.wikisource.org/wiki/x)", body: "line one\nline two" }],
+        questions: [{ number: 1, stem: "Analyse Text 1.", marks: 2, workingLines: 4, parts: null }],
+        markingGuide: [{ questionNumber: 1, partLabel: null, suggestedResponse: "Explains the technique.", markingCriteria: ["Names a technique."], marks: 2 }],
+      },
+    };
 
     for (const resourceType of included) {
-      const sample = samples[resourceType];
+      const sample = navigable[resourceType];
       const buffer = await buildResourceDocx(resourceType, sample, {
         studentName: "Mei Tanaka",
         subject: sample.subject,
         year: sample.year,
+        answerMode: "answers",
       });
       const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
       const settings = extractZipEntry(buffer, "word/settings.xml").toString("utf8");
 
-      assert.match(xml, /<w:instrText[^>]*>TOC \\h \\o &quot;1-2&quot;<\/w:instrText>/);
+      assert.match(xml, /<w:instrText[^>]*>TOC \\h \\o &quot;1-2&quot;<\/w:instrText>/, resourceType);
       assert.match(xml, /<w:pStyle w:val="Heading1"\/>/);
       assert.match(extractXmlText(buffer, "word/document.xml"), /Contents/);
       assert.match(settings, /<w:updateFields\/>/);
@@ -330,6 +345,18 @@ describe("resource template dispatcher", () => {
       const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
       assert.doesNotMatch(xml, /<w:instrText[^>]*>TOC/);
     }
+  });
+
+  it("leaves out a contents page that would list fewer than three entries", async () => {
+    const buffer = await buildResourceDocx("worksheet", samples.worksheet, {
+      studentName: "Mei Tanaka",
+      subject: "maths",
+      year: samples.worksheet.year,
+      answerMode: "answers",
+    });
+    const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+    assert.doesNotMatch(xml, /<w:instrText[^>]*>TOC/);
+    assert.doesNotMatch(extractXmlText(buffer, "word/document.xml"), /Contents/);
   });
 
   for (const [resourceType, sample] of Object.entries(englishMarkingSamples)) {

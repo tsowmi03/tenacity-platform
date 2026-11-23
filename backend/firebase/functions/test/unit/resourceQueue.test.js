@@ -1738,6 +1738,46 @@ describe("retryResourceJobImpl", () => {
     }
   });
 
+  it("answers a double-clicked Retry once and leaves the second request with nothing to do", async () => {
+    const db = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", runId: "run-1", errorCode: "DIAGRAM_LAYOUT_ERROR", failureAttempts: [{ reasonCode: "REQUIRED_DIAGRAM" }] }]);
+    const storage = fakeStorage();
+    const deps = { db, clock, storage, durableStages: true };
+    const actor = { uid: "tutor-1", role: "tutor" };
+    const first = await retryResourceJobImpl({ payload: { jobId: "job-1" }, actor, deps });
+    const second = await retryResourceJobImpl({ payload: { jobId: "job-1" }, actor, deps });
+    assert.equal(first.status, "pending");
+    assert.equal(second.status, "pending");
+    assert.deepEqual(storage.deletedPrefixes, ["resources/checkpoints/job-1/"], "saved stages deleted once");
+    assert.equal(db.jobs[0].runId, db.jobs[0].retryClaim.toRunId);
+  });
+
+  it("lets a later failure be retried, and an expired claim never blocks a retry", async () => {
+    const actor = { uid: "tutor-1", role: "tutor" };
+    // The retried run failed again: a new failure, so Retry works again.
+    const again = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", runId: "run-2",
+      retryClaim: { fromRunId: "run-1", toRunId: "run-2", atMs: clock().getTime() } }]);
+    await retryResourceJobImpl({ payload: { jobId: "job-1" }, actor, deps: { db: again, clock, storage: fakeStorage(), durableStages: true } });
+    assert.notEqual(again.jobs[0].runId, "run-2");
+    // A claim left by a retry that crashed part-way expires after a minute.
+    const stale = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", runId: "run-1",
+      retryClaim: { fromRunId: "run-1", toRunId: "never-written", atMs: clock().getTime() - 61 * 1000 } }]);
+    await retryResourceJobImpl({ payload: { jobId: "job-1" }, actor, deps: { db: stale, clock, storage: fakeStorage(), durableStages: true } });
+    assert.equal(stale.jobs[0].status, "pending");
+    assert.notEqual(stale.jobs[0].runId, "run-1");
+  });
+
+  it("ignores saved files another request already deleted, but not other storage errors", async () => {
+    const actor = { uid: "tutor-1", role: "tutor" };
+    const storageFailing = (errors) => ({ bucket: () => ({ deleteFiles: async () => { throw errors; } }) });
+    const goneDb = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", runId: "run-1", errorCode: "DIAGRAM_LAYOUT_ERROR", failureAttempts: [{ reasonCode: "REQUIRED_DIAGRAM" }] }]);
+    await retryResourceJobImpl({ payload: { jobId: "job-1" }, actor,
+      deps: { db: goneDb, clock, durableStages: true, storage: storageFailing([Object.assign(new Error("No such object"), { code: 404 })]) } });
+    assert.equal(goneDb.jobs[0].status, "pending");
+    const brokenDb = fakeQueueDb([{ id: "job-1", createdBy: "tutor-1", status: "failed", runId: "run-1", errorCode: "DIAGRAM_LAYOUT_ERROR", failureAttempts: [{ reasonCode: "REQUIRED_DIAGRAM" }] }]);
+    await assert.rejects(retryResourceJobImpl({ payload: { jobId: "job-1" }, actor,
+      deps: { db: brokenDb, clock, durableStages: true, storage: storageFailing([Object.assign(new Error("forbidden"), { code: 403 })]) } }), /forbidden/);
+  });
+
   it("rejects retries by another tutor", async () => {
     const db = fakeQueueDb([
       { id: "job-1", createdBy: "tutor-1", status: "failed" },
