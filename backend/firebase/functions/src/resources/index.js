@@ -30,7 +30,7 @@ const { blankSketchDiagrams } = require("./sketchQuestions");
 const { normaliseQuestionShape } = require("./builder/questionShape");
 const { isDiagramRenderError, optionalDiagramOmittedWarning } = require("./builder/diagrams");
 const { classifyResourceFailure, describeResourceFailure } = require("./failure");
-const { extractTextFromBuffer } = require("./fileExtractor");
+const { readReferenceFile } = require("./referenceReader");
 const { mathFallbackWarning } = require("./mathNotation");
 const { MATH_REPAIR_ROUNDS, affectedFields, repairMathFallbacks, unresolvedMathError } = require("./mathRepair");
 const {
@@ -223,7 +223,9 @@ const RESOURCE_CALLABLE_OPTIONS = {
 const RESOURCE_CHAT_OPTIONS = {
   region: "us-central1",
   memory: "1GiB",
-  timeoutSeconds: 120,
+  // RES-122: a new photo, scan or slide deck is read by Claude on the turn it
+  // is attached (then cached for the generation), which can take minutes.
+  timeoutSeconds: 540,
   secrets: [anthropicApiKey, openaiApiKey],
 };
 
@@ -1055,7 +1057,7 @@ function chatHistoryEntry(job) {
  * written to Firestore.
  */
 async function chatAboutResourceImpl({ payload, actor, deps }) {
-  const { db, storage, callAi = callAiForResource, extractText = extractTextFromBuffer } = deps;
+  const { db, storage, callAi = callAiForResource, extractText = null } = deps;
   if (!db) throw new TypeError("chatAboutResourceImpl requires db");
   if (!actor?.uid) throw new TypeError("chatAboutResourceImpl requires actor.uid");
 
@@ -1122,6 +1124,19 @@ async function chatAboutResourceImpl({ payload, actor, deps }) {
         job: { uploadedFiles: toSummarise },
         storage,
         extractText,
+        // RES-122. Images and scans are read here too; the reading is cached,
+        // so the generation that follows doesn't pay for it again.
+        callAi: (request) => callAi({
+          ...request,
+          anthropicApiKey: deps.anthropicApiKey,
+          openaiApiKey: deps.openaiApiKey,
+          safetyIdentifier: safetyIdentifierForUid(actor.uid),
+          posthogProperties,
+          posthogTraceId,
+          posthogDistinctId: actor.uid,
+        }),
+        visionModel: referenceVisionModel(model),
+        pdfConverter: deps.pdfConverter || null,
       });
     } catch (err) {
       logger.warn("[chatAboutResource] reference file could not be read", {
@@ -1130,7 +1145,9 @@ async function chatAboutResourceImpl({ payload, actor, deps }) {
       });
       throw new HttpsError(
         "failed-precondition",
-        "A reference file couldn't be read. Remove it and try again."
+        err?.name === "ReferenceFileError"
+          ? `${err.tutorMessage} Or remove it and try again.`
+          : "A reference file couldn't be read. Remove it and try again."
       );
     }
     newSummaries = await callModel(
@@ -1425,26 +1442,60 @@ async function downloadUploadedContent(args) {
   return resourceStage(args.job, "references", () => downloadUploadedContentLogged(args));
 }
 
-async function downloadUploadedContentLogged({ job, storage, extractText = extractTextFromBuffer }) {
+async function downloadUploadedContentLogged({ job, storage, extractText = null, callAi = null, visionModel = null, signal = null, pdfConverter = null }) {
   const uploadedFiles = uploadedFilesForJob(job);
   if (!uploadedFiles.length) { resourceEvent(job, "stage.skipped", { stageId: "references", reason: "no_uploads" }); return []; }
   if (!storage) throw new TypeError("downloadUploadedContent requires storage");
+  const bucket = storage.bucket();
+  // RES-122. Images and scanned pages are read by Claude; `extractText` is the
+  // text-only stand-in tests and tooling inject.
+  const read = extractText
+    ? async (buffer, metadata) => ({ content: await extractText(buffer, metadata), warnings: [] })
+    : (buffer, metadata) => readReferenceFile(buffer, metadata, {
+      callAi, model: visionModel, signal, bucket,
+      convertToPdf: pdfConverter ? (request) => pdfConverter.convert(request) : null,
+    });
 
   return Promise.all(uploadedFiles.map(async (file) => {
+    let buffer;
     try {
-      const [buffer] = await storage.bucket().file(file.path).download();
-      const content = await extractText(buffer, {
-        fileName: file.name,
-      });
-      return {
-        fileName: file.name,
-        content,
-      };
+      [buffer] = await bucket.file(file.path).download();
     } catch (err) {
       err.resourceInfrastructure = "upload";
       throw err;
     }
+    let result;
+    try {
+      result = await read(buffer, { fileName: file.name });
+    } catch (err) {
+      // A provider error while reading a scan stays retryable like any model
+      // call; anything else is a problem with the file.
+      if (!err?.provider && !err?.status && err?.name !== "ReferenceFileError") err.resourceInfrastructure = "upload";
+      throw err;
+    }
+    if (result.kind) {
+      resourceEvent(job, "references.read", { referenceKind: result.kind, referenceBytes: buffer.length, visionPages: result.visionPages || 0, warningCount: result.warnings?.length || 0 });
+    }
+    return {
+      fileName: file.name,
+      content: result.content,
+      warnings: result.warnings || [],
+    };
   }));
+}
+
+// RES-122. Claude reads images and scanned pages: the job's own model when it
+// is a Claude model, else the vision model the layout check uses.
+function referenceVisionModel(model) {
+  if (model && providerForModel(model) === "anthropic") return model;
+  return visualCheckModel();
+}
+
+// What couldn't be read in the reference files, for the finished job.
+function referenceWarnings(uploadedContent) {
+  return (Array.isArray(uploadedContent) ? uploadedContent : [])
+    .flatMap((file) => file.warnings || [])
+    .map(({ code, message }) => ({ code, message }));
 }
 
 function outputPathForJob(jobId, outputFileName, attemptId = null) {
@@ -2945,7 +2996,7 @@ async function runGenerationPipelineLogged(job, deps) {
     clock,
     callAi = callAiForResource,
     buildDocx = buildResourceDocx,
-    extractText = extractTextFromBuffer,
+    extractText = null,
     enablePdTextSourcing = false,
     sourceText = sourceVerifiedText,
     planStimulus = planStimulusSelections,
@@ -2959,7 +3010,10 @@ async function runGenerationPipelineLogged(job, deps) {
   const sourcingCallAi = createAnalyticsAiCaller({ job, callAi });
 
   throwIfCancelled(deps);
-  const uploadedContent = await downloadUploadedContent({ job, storage, extractText });
+  const uploadedContent = await downloadUploadedContent({
+    job, storage, extractText, callAi: trackedCallAi, visionModel: referenceVisionModel(generationModel), signal: deps.signal,
+    pdfConverter: deps.pdfConverter || null,
+  });
   const hasUploadedContent = Array.isArray(uploadedContent)
     ? uploadedContent.length > 0
     : Boolean(uploadedContent);
@@ -3372,6 +3426,7 @@ async function runGenerationPipelineLogged(job, deps) {
         ...(saved.warnings || []),
         ...diagramRepair.warnings.filter((w) => w.code !== "OPTIONAL_DIAGRAM_OMITTED"),
         ...sourceWarnings,
+        ...referenceWarnings(uploadedContent),
       ],
       omittedDiagrams: settledDiagrams.notes,
       ...diagramRepairPatch(diagramRepair),
@@ -3850,7 +3905,7 @@ async function runRevisionPipelineLogged(job, deps) {
     clock,
     callAi = callAiForResource,
     buildDocx = buildResourceDocx,
-    extractText = extractTextFromBuffer,
+    extractText = null,
   } = deps;
   if (!db) throw new TypeError("runRevisionPipeline requires db");
   if (!storage) throw new TypeError("runRevisionPipeline requires storage");
@@ -3878,17 +3933,15 @@ async function runRevisionPipelineLogged(job, deps) {
     );
   }
 
-  const uploadedContent = await downloadUploadedContent({
-    job,
-    storage,
-    extractText,
-  });
-  throwIfCancelled(deps);
-
   const answerMode = answerModeForJob(job);
   const revisionModel = modelForResourceJob(job);
   const usageByProvider = {};
   const trackedCallAi = createTrackedAiCaller({ job, deps, callAi, usageByProvider });
+  const uploadedContent = await downloadUploadedContent({
+    job, storage, extractText, callAi: trackedCallAi, visionModel: referenceVisionModel(revisionModel), signal: deps.signal,
+    pdfConverter: deps.pdfConverter || null,
+  });
+  throwIfCancelled(deps);
 
   const { parsed, raw } = await trackedCallAi({
     model: revisionModel,
@@ -3951,6 +4004,7 @@ async function runRevisionPipelineLogged(job, deps) {
         ...revisionDriftWarnings(revisionChanges),
         ...diagramRepair.warnings,
         ...saved.warnings,
+        ...referenceWarnings(uploadedContent),
       ],
       ...diagramRepairPatch(diagramRepair),
       revisionChanges,
@@ -5123,6 +5177,7 @@ const chatAboutResource = onCall(RESOURCE_CHAT_OPTIONS, async (request) => {
         storage: admin.storage(),
         anthropicApiKey: anthropicApiKey.value(),
         openaiApiKey: openaiApiKey.value(),
+        pdfConverter: createPdfPreviewConverter({ url: pdfPreviewUrl.value() }),
       },
     });
   } catch (err) {

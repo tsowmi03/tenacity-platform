@@ -120,10 +120,12 @@ export function assertFunctionsConfigured() {
   }
 }
 
-export async function callFunction(name, payload = {}) {
+// `timeoutMs` overrides the SDK's 70-second client deadline for a callable
+// that may legitimately run longer on the server.
+export async function callFunction(name, payload = {}, { timeoutMs } = {}) {
   assertFunctionsConfigured();
   try {
-    const fn = httpsCallable(functions, name);
+    const fn = httpsCallable(functions, name, timeoutMs ? { timeout: timeoutMs } : undefined);
     const result = await fn(payload);
     return result?.data;
   } catch (error) {

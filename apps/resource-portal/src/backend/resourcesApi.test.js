@@ -333,6 +333,6 @@ describe("chatAboutResource", () => {
         { role: "assistant", content: "Questions?", proposedPrompt: null },
         { role: "user", content: "Harder", proposedPrompt: null },
       ],
-    });
+    }, { timeoutMs: 550_000 });
   });
 });

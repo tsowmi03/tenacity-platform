@@ -274,8 +274,42 @@ describe("resource reference documents", () => {
     });
 
     expect(
-      await screen.findByText("Upload PDF, DOCX, Markdown, or text files only.")
+      await screen.findByText(/“archive\.zip” isn't supported\. Upload PDF, Word/)
     ).toBeInTheDocument();
+    expect(api.uploadResourceReference).not.toHaveBeenCalled();
+  });
+
+  it("accepts images, including iPhone HEIC photos", async () => {
+    const { container } = renderBuilder();
+    const input = container.querySelector('input[type="file"]');
+    for (const ext of [".heic", ".jpg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".csv",
+      ".pptx", ".ppt", ".ppsx", ".pps", ".doc", ".odt", ".rtf", ".xlsx", ".xls"]) {
+      expect(input.getAttribute("accept").split(",")).toContain(ext);
+    }
+    fireEvent.change(input, {
+      target: { files: [new File(["img"], "IMG_0042.HEIC", { type: "image/heic" })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByText("IMG_0042.HEIC")).toBeInTheDocument();
+    });
+  });
+
+  it("refuses Office files over 30 MB, suggesting a PDF", async () => {
+    const { container } = renderBuilder();
+    const deck = new File(["x"], "Term 3.pptx", { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
+    Object.defineProperty(deck, "size", { value: 31 * 1024 * 1024 });
+    fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [deck] } });
+    expect(await screen.findByText(/“Term 3\.pptx” is over 30 MB\. Save it as a PDF/)).toBeInTheDocument();
+    expect(api.uploadResourceReference).not.toHaveBeenCalled();
+  });
+
+  it("states the file limits and refuses files over 50 MB", async () => {
+    const { container } = renderBuilder();
+    expect(screen.getByText(/up to 5 files, 50 MB \(Office files 30 MB\) and 100 pages, slides or sheets each/)).toBeInTheDocument();
+    const big = new File(["x"], "scans.pdf", { type: "application/pdf" });
+    Object.defineProperty(big, "size", { value: 50 * 1024 * 1024 + 1 });
+    fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [big] } });
+    expect(await screen.findByText(/“scans\.pdf” is over 50 MB/)).toBeInTheDocument();
     expect(api.uploadResourceReference).not.toHaveBeenCalled();
   });
 

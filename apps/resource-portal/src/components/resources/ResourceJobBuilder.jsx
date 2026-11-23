@@ -29,7 +29,20 @@ import {
 
 const YEARS = [5, 6, 7, 8, 9, 10];
 const MAX_REFERENCE_FILES = 5;
-const REFERENCE_FILE_EXTENSIONS = new Set(["pdf", "docx", "md", "txt"]);
+// RES-122. Keep in step with referenceReader.js and the storage rules.
+// Office files other than DOCX are converted to PDF first, and the converter
+// takes up to 30 MB.
+const CONVERTED_REFERENCE_EXTENSIONS = new Set(["doc", "odt", "rtf", "pptx", "ppt", "ppsx", "pps", "xlsx", "xls"]);
+const REFERENCE_FILE_EXTENSIONS = new Set([
+  "pdf", "docx", "md", "markdown", "txt", "csv", "json",
+  "jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "bmp", "tif", "tiff",
+  ...CONVERTED_REFERENCE_EXTENSIONS,
+]);
+const REFERENCE_FILE_ACCEPT = [...REFERENCE_FILE_EXTENSIONS].map((ext) => `.${ext}`).join(",");
+const MAX_REFERENCE_MB = 50;
+const MAX_CONVERTED_REFERENCE_MB = 30;
+const MAX_REFERENCE_PAGES = 100;
+const REFERENCE_FORMATS_LABEL = "PDF, Word, PowerPoint, Excel, CSV, text or images (JPG, PNG, HEIC and more)";
 
 function initialDraft(subject = "maths") {
   return {
@@ -349,8 +362,21 @@ export default function ResourceJobBuilder({
       set({ uploadError: `Add up to ${MAX_REFERENCE_FILES} reference documents.`, uploadProgress: null });
       return;
     }
-    if (selectedFiles.some((file) => !REFERENCE_FILE_EXTENSIONS.has(file.name.split(".").pop()?.toLowerCase()))) {
-      set({ uploadError: "Upload PDF, DOCX, Markdown, or text files only.", uploadProgress: null });
+    const unsupported = selectedFiles.find((file) => !REFERENCE_FILE_EXTENSIONS.has(file.name.split(".").pop()?.toLowerCase()));
+    if (unsupported) {
+      set({ uploadError: `“${unsupported.name}” isn't supported. Upload ${REFERENCE_FORMATS_LABEL}.`, uploadProgress: null });
+      return;
+    }
+    const tooLarge = selectedFiles.find((file) => file.size > MAX_REFERENCE_MB * 1024 * 1024);
+    if (tooLarge) {
+      set({ uploadError: `“${tooLarge.name}” is over ${MAX_REFERENCE_MB} MB. Compress or split it, then upload it again.`, uploadProgress: null });
+      return;
+    }
+    const tooLargeToConvert = selectedFiles.find((file) =>
+      CONVERTED_REFERENCE_EXTENSIONS.has(file.name.split(".").pop()?.toLowerCase()) &&
+      file.size > MAX_CONVERTED_REFERENCE_MB * 1024 * 1024);
+    if (tooLargeToConvert) {
+      set({ uploadError: `“${tooLargeToConvert.name}” is over ${MAX_CONVERTED_REFERENCE_MB} MB. Save it as a PDF and upload that instead.`, uploadProgress: null });
       return;
     }
 
@@ -964,7 +990,7 @@ function UploadField({
       tabIndex={hasFiles ? undefined : 0}
     >
       <input
-        accept=".pdf,.docx,.md,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
+        accept={REFERENCE_FILE_ACCEPT}
         multiple
         onChange={(event) => {
           onFiles(event.target.files);
@@ -988,7 +1014,7 @@ function UploadField({
           <div className="rg-progress"><div style={{ width: `${Math.round((progress || 0) * 100)}%` }} /></div>
         ) : (
           <div className={`text-xs ${error ? "error" : "muted"}`}>
-            {error || `PDF, DOCX, Markdown, or text · up to ${maxFiles} files`}
+            {error || `${REFERENCE_FORMATS_LABEL} · up to ${maxFiles} files, ${MAX_REFERENCE_MB} MB (Office files ${MAX_CONVERTED_REFERENCE_MB} MB) and ${MAX_REFERENCE_PAGES} pages, slides or sheets each`}
           </div>
         )}
         {hasFiles ? (

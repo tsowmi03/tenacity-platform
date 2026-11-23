@@ -50,6 +50,12 @@ function describeResourceFailure(err) {
 
   if (err?.resourceControl) return { message: raw, detail: null };
 
+  // RES-122. A reference file that is unsupported, damaged or locked says so,
+  // and names the file.
+  if (err?.name === "ReferenceFileError" && err?.tutorMessage) {
+    return { message: `${err.tutorMessage} Then press Retry.`, detail: clampDetail(err.detail) };
+  }
+
   if (isStorageLimitError(err)) {
     return {
       message:
@@ -146,8 +152,7 @@ function describeResourceFailure(err) {
   ) {
     return {
       message:
-        "We couldn't read one of your reference files. Re-upload it as a clean, text-based PDF or DOCX " +
-        "(scanned images and password-protected files can't be read), then press Retry.",
+        "We couldn't read one of your reference files. Re-upload it, or remove it, then press Retry.",
       detail,
     };
   }
@@ -198,6 +203,7 @@ function resourceFailureReasonCode(err) {
   const status = statusOf(err);
   const name = String(err?.name || "");
   if (isStorageLimitError(err)) return "STORAGE_LIMIT";
+  if (err?.name === "ReferenceFileError" && err?.code) return String(err.code);
   // A deliberate stop (scope clarification, size limit) is not a model fault.
   if (err?.resourceControl && err?.code) return String(err.code);
   if (err?.refusal === true || err?.stopReason === "refusal") return "REFUSAL";

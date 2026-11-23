@@ -795,6 +795,35 @@ describe("resource generation pipeline", () => {
     );
   });
 
+  it("reads an image reference with Claude and returns what it couldn't read", async () => {
+    const image = await require("sharp")({ create: { width: 60, height: 40, channels: 3, background: "#ffffff" } }).png().toBuffer();
+    const storage = fakeStorage({ "resources/uploads/tutor-1/board.png": image });
+    const requests = [];
+    const references = await downloadUploadedContent({
+      job: { uploadedFiles: [{ path: "resources/uploads/tutor-1/board.png", name: "board.png" }] },
+      storage,
+      visionModel: "claude-test",
+      callAi: async (request) => {
+        requests.push(request);
+        return { parsed: { pages: [{ page: 1, text: "Whiteboard notes", legibility: "partial" }] } };
+      },
+    });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].model, "claude-test");
+    assert.equal(references[0].content, "Whiteboard notes");
+    assert.equal(references[0].warnings[0].code, "REFERENCE_PARTLY_READ");
+    // The reading is cached by contents for the next job or stage.
+    assert.ok(storage.saved.some((entry) => entry.path.startsWith("resources/reference-reads/")));
+  });
+
+  it("fails a reference whose contents don't match its name", async () => {
+    const storage = fakeStorage({ "resources/uploads/tutor-1/paper.pdf": Buffer.from("plain words") });
+    await assert.rejects(
+      downloadUploadedContent({ job: { uploadedFiles: [{ path: "resources/uploads/tutor-1/paper.pdf", name: "paper.pdf" }] }, storage }),
+      (err) => err.code === "REFERENCE_TYPE_MISMATCH" && err.resourceInfrastructure === "upload"
+    );
+  });
+
   it("downloads and extracts every reference document in order", async () => {
     const storage = fakeStorage({
       "resources/uploads/tutor-1/one.pdf": Buffer.from("first"),
@@ -813,8 +842,8 @@ describe("resource generation pipeline", () => {
     });
 
     assert.deepEqual(references, [
-      { fileName: "one.pdf", content: "one.pdf:first" },
-      { fileName: "two.docx", content: "two.docx:second" },
+      { fileName: "one.pdf", content: "one.pdf:first", warnings: [] },
+      { fileName: "two.docx", content: "two.docx:second", warnings: [] },
     ]);
   });
 

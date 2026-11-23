@@ -15,7 +15,13 @@ The functions call it through `RESOURCE_PDF_PREVIEW_URL`
 | Resources | 1 CPU, 1 GiB, scale to zero, max 3 instances |
 | Access | Private. Only the functions' runtime service account has `run.invoker`. |
 
-Staging has no converter, so previews are off there
+Since RES-122 the same service also converts tutors' reference files that
+aren't PDF, DOCX or text (PowerPoint, DOC, ODT, RTF, XLSX, XLS) to PDF before
+they are read (`src/resources/referenceReader.js`). Spreadsheets are sent with
+`singlePageSheets=true`, so each sheet is one page. Cloud Run caps a request at
+32 MiB, so these uploads are limited to 30 MB.
+
+Staging has no converter, so previews and Office reference files are off there
 (`RESOURCE_PDF_PREVIEW_URL` is empty in the staging env file).
 
 ## Always pin an exact version

@@ -273,6 +273,11 @@ export function submitResourceRevision({ sourceJobId, instruction }) {
  * summaries for any newly read files, and the past resources the AI could see.
  * Nothing is stored server-side.
  */
+// RES-122. A chat turn reads newly attached photos, scans and slide decks
+// before replying, which can take minutes: just under the function's
+// 540-second limit, so the server's own error reaches the tutor first.
+const CHAT_TIMEOUT_MS = 550_000;
+
 export function chatAboutResource({ draft, fileSummaries = {}, messages = [] }) {
   const uploadedFiles = (draft.uploadedFiles || []).map((file) => ({ path: file.path, name: file.name }));
   const chatProperties = {
@@ -297,7 +302,7 @@ export function chatAboutResource({ draft, fileSummaries = {}, messages = [] }) 
       content: message.content,
       proposedPrompt: message.proposedPrompt || null,
     })),
-  }));
+  }, { timeoutMs: CHAT_TIMEOUT_MS }));
 }
 
 export function retryResourceJob(jobId) {
