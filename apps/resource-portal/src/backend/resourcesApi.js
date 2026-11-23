@@ -287,8 +287,9 @@ export function chatAboutResource({ draft, fileSummaries = {}, messages = [] }) 
   return tracked(EVENTS.CHAT_TURN, chatProperties, () => callFunction("chatAboutResource", {
     studentId: draft.studentId,
     subject: draft.subject,
-    year: Number(draft.year),
-    resourceType: draft.resourceType,
+    // RES-102. The assistant can be used before a year or type is chosen.
+    year: draft.year ? Number(draft.year) : null,
+    resourceType: draft.resourceType || null,
     answerMode: draft.answerMode,
     showMarks: Boolean(draft.showMarks),
     customPrompt: draft.customPrompt || "",
@@ -301,6 +302,7 @@ export function chatAboutResource({ draft, fileSummaries = {}, messages = [] }) 
       role: message.role,
       content: message.content,
       proposedPrompt: message.proposedPrompt || null,
+      proposal: message.role === "assistant" && message.proposal?.resourceType ? message.proposal : null,
     })),
   }, { timeoutMs: CHAT_TIMEOUT_MS }));
 }

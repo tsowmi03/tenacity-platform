@@ -26,6 +26,9 @@ export const EVENTS = Object.freeze({
   GENERATION_FINISHED: "resource_generation_finished",
   REVISION_SUBMITTED: "resource_revision_submitted",
   CHAT_TURN: "resource_chat_turn",
+  // RES-102. A resource assistant proposal applied to the form, or undone.
+  PROPOSAL_APPLIED: "resource_assistant_proposal_applied",
+  PROPOSAL_UNDONE: "resource_assistant_proposal_undone",
   RESOURCE_DOWNLOADED: "resource_downloaded",
   PREVIEW_OPENED: "resource_preview_opened",
   RESOURCE_RETRIED: "resource_retried",

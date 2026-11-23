@@ -5,7 +5,7 @@ const { HttpsError, onCall } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret, defineBoolean, defineString } = require("firebase-functions/params");
-const { analyticsEnvironment } = require("../shared/posthogClient");
+const { analyticsEnvironment, posthogRequestFields, shutdownPostHogClient } = require("../shared/posthogClient");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
@@ -84,6 +84,7 @@ const {
   RESOURCE_TYPES,
 } = require("./modelMap");
 const {
+  DEFAULT_MODELS,
   LEGACY_CHOICE,
   assertAllowedMainModel,
   assertModelChoice,
@@ -100,15 +101,19 @@ const {
 const { normaliseTopics } = require("./topicTaxonomy");
 const {
   CHAT_LIMITS,
-  CHAT_RESPONSE_SCHEMA,
   FILE_SUMMARY_SCHEMA,
   FILE_SUMMARY_SYSTEM_PROMPT,
-  buildChatMessages,
-  buildChatSystemPrompt,
   buildFileSummaryMessage,
-  normaliseChatReply,
   normaliseFileSummaries,
 } = require("./chatPrompt");
+const {
+  buildAssistantMessages,
+  buildAssistantSystemPrompt,
+  normaliseProposal,
+  runAssistantTurn,
+} = require("./resourceAssistant");
+const { loadBankCoverage } = require("./bankCoverage");
+const { createDefaultAnthropicClient } = require("./apiClient");
 const { excerptStimulusBody, stimulusUnits } = require("./stimulusUnits");
 
 const SUBJECTS = ["maths", "english"];
@@ -430,8 +435,16 @@ function validateChatAboutResourcePayload(input) {
   const payload = validateShape(input || {}, {
     studentId: (value) => assertString(value, "studentId", { max: 160 }),
     subject: (value) => assertEnum(value, "subject", SUBJECTS),
-    year: (value) => assertNumber(value, "year", { min: 5, max: 10, integer: true }),
-    resourceType: (value) => assertEnum(value, "resourceType", RESOURCE_TYPES),
+    // RES-102. The assistant can be opened before the form is filled in, so
+    // the year and resource type may still be empty.
+    year: (value) => {
+      if (value === undefined || value === null || value === "" || Number.isNaN(value)) return null;
+      return assertNumber(value, "year", { min: 5, max: 10, integer: true });
+    },
+    resourceType: (value) => {
+      if (value === undefined || value === null || value === "") return null;
+      return assertEnum(value, "resourceType", RESOURCE_TYPES);
+    },
     answerMode: (value) => {
       if (value === undefined || value === null || value === "") return "none";
       return assertEnum(value, "answerMode", ANSWER_MODES);
@@ -470,6 +483,11 @@ function validateChatAboutResourcePayload(input) {
         proposedPrompt: nullableString(message?.proposedPrompt, `messages[${index}].proposedPrompt`, {
           max: CHAT_LIMITS.maxPromptChars,
         }),
+        // RES-102. The assistant's earlier proposal, replayed so it sees what
+        // it suggested. Re-checked rather than trusted.
+        proposal: message?.role === "assistant"
+          ? normaliseProposal(message?.proposal, { fallbackSubject: SUBJECTS.includes(input?.subject) ? input.subject : "maths" })
+          : null,
       }));
     },
   });
@@ -493,13 +511,11 @@ function validateChatAboutResourcePayload(input) {
     }
   }
 
+  // RES-102. The assistant pane opens without a model call, so a transcript
+  // may start with the tutor; a RES-24 drawer starts with the opening reply.
   payload.messages.forEach((message, index) => {
-    const expected = index % 2 === 0 ? "assistant" : "user";
-    if (message.role !== expected) {
-      throw new HttpsError(
-        "invalid-argument",
-        "messages must alternate, starting with the assistant's opening reply"
-      );
+    if (index > 0 && message.role === payload.messages[index - 1].role) {
+      throw new HttpsError("invalid-argument", "messages must alternate between the tutor and the assistant");
     }
   });
   if (payload.messages.length && payload.messages.at(-1).role !== "user") {
@@ -1162,24 +1178,53 @@ async function chatAboutResourceImpl({ payload, actor, deps }) {
     for (const entry of newSummaries) known.set(entry.path, entry.summary);
   }
 
-  const reply = await callModel({
-    systemPrompt: buildChatSystemPrompt({
+  // RES-102. The reply comes from the resource assistant's tool loop, which
+  // needs Anthropic tool use, so a chat model configured on another provider
+  // falls back to the default chat model.
+  const assistantModel = providerForModel(model) === "anthropic" ? model : DEFAULT_MODELS.chat;
+  const createClient = deps.createAnthropicClient || createDefaultAnthropicClient;
+  const created = createClient(deps.anthropicApiKey);
+  const client = created.client || created;
+  let reply;
+  try {
+    reply = await runAssistantTurn({
+      client,
+      model: assistantModel,
       form: payload,
-      studentName,
-      customPrompt: payload.customPrompt.trim(),
-      files: payload.uploadedFiles.map((file) => ({
-        name: file.name,
-        summary: known.get(file.path),
+      systemPrompt: buildAssistantSystemPrompt({
+        form: payload,
+        studentName,
+        customPrompt: payload.customPrompt.trim(),
+        files: payload.uploadedFiles.map((file) => ({
+          name: file.name,
+          summary: known.get(file.path),
+        })),
+        history,
+      }),
+      messages: buildAssistantMessages({
+        customPrompt: payload.customPrompt.trim(),
+        transcript: payload.messages,
+      }),
+      loadCoverage: deps.loadCoverage || (() => loadBankCoverage(db).catch((err) => {
+        logger.warn("[chatAboutResource] bank coverage could not be loaded", { errorMessage: err?.message });
+        return null;
       })),
-      history,
-    }),
-    messages: buildChatMessages({
-      customPrompt: payload.customPrompt.trim(),
-      transcript: payload.messages,
-    }),
-    responseSchema: CHAT_RESPONSE_SCHEMA,
-    maxTokens: 6000,
-  }, normaliseChatReply);
+      requestFields: posthogRequestFields(created.posthog, {
+        posthogProperties,
+        posthogTraceId,
+        posthogDistinctId: actor.uid,
+      }),
+    });
+  } catch (err) {
+    logger.error("[chatAboutResource] assistant turn failed", {
+      actorUid: actor.uid,
+      model: assistantModel,
+      errorMessage: err?.message,
+    });
+    throw new HttpsError("unavailable", "The AI couldn't reply just now. Try again.");
+  } finally {
+    await shutdownPostHogClient(created.posthog);
+  }
 
   return {
     ...reply,

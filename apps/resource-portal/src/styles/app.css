@@ -2522,26 +2522,49 @@ input, select, textarea {
 
 /* RES-24: pre-generation chat */
 .rg-prompt-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
-.rg-prompt-head .rg-chat-open { color: var(--brand-blue-600); }
 .rg-prompt-flash { animation: rgPromptFlash 1.6s var(--ease-out); }
 @keyframes rgPromptFlash {
   0% { box-shadow: 0 0 0 3px var(--brand-blue-100); border-color: var(--brand-blue); background: var(--brand-blue-50); }
   100% { box-shadow: none; }
 }
 
-/* No overlay: the form stays visible and editable beside the chat. */
-.rg-chat-drawer {
-  position: fixed;
-  top: 0; right: 0; bottom: 0;
-  z-index: 91;
-  width: min(460px, 100vw);
-  display: flex;
-  flex-direction: column;
-  background: var(--white);
-  border-left: 1px solid var(--ink-200);
-  box-shadow: var(--shadow-xl);
-  animation: slideIn var(--dur-slow) var(--ease-out);
+/* RES-102: the resource assistant, above the queue in the side column. */
+.rg-side { display: flex; flex-direction: column; gap: var(--s-5); min-width: 0; }
+.rg-assistant-host:empty { display: none; }
+.rg-assistant {
+  display: flex; flex-direction: column; overflow: hidden;
+  height: min(600px, calc(100vh - 120px)); min-height: 440px;
 }
+.rg-assistant-welcome { display: flex; flex-direction: column; gap: 10px; }
+.rg-assistant-activity {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px;
+  font-size: var(--fs-xs); color: var(--ink-500);
+}
+.rg-assistant-activity li { display: inline-flex; align-items: center; gap: 4px; }
+
+.rg-proposal { border: 1px solid var(--brand-blue-300); background: var(--white); border-radius: var(--r-md); overflow: hidden; }
+.rg-proposal.superseded { border-color: var(--ink-200); opacity: 0.6; }
+.rg-proposal-head {
+  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+  background: var(--brand-blue-50); color: var(--brand-navy); font-size: var(--fs-sm); font-weight: 600;
+}
+.rg-proposal.superseded .rg-proposal-head { background: var(--ink-50); color: var(--ink-600); }
+.rg-proposal-count { margin-left: auto; font-size: var(--fs-xs); font-weight: 500; color: var(--ink-500); }
+.rg-proposal-rows {
+  display: grid; grid-template-columns: 76px 1fr; gap: 6px 10px; margin: 0; padding: 10px 12px;
+  font-size: var(--fs-sm); line-height: var(--lh-base);
+}
+.rg-proposal-rows dt { color: var(--ink-500); }
+.rg-proposal-rows dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.rg-proposal-rows s { color: var(--ink-400); margin-right: 6px; }
+.rg-proposal-new { color: var(--brand-navy); font-weight: 600; }
+.rg-proposal-actions { display: flex; align-items: center; gap: var(--s-2); padding: 0 12px 12px; flex-wrap: wrap; }
+
+.rg-from-assistant {
+  display: inline-flex; align-items: center; gap: 3px; margin-left: 8px;
+  color: var(--brand-blue-600); font-size: var(--fs-xs); font-weight: 600;
+}
+
 .rg-chat-head {
   display: flex; align-items: flex-start; gap: var(--s-3);
   padding: 18px 20px 14px; border-bottom: 1px solid var(--ink-100);
@@ -2587,24 +2610,6 @@ input, select, textarea {
   flex-shrink: 0; width: 26px; height: 26px; border-radius: var(--r-full);
   display: grid; place-items: center; background: var(--brand-blue-50); color: var(--brand-blue-600);
 }
-.rg-chat-seed {
-  border: 1px dashed var(--ink-300); border-radius: var(--r-md);
-  padding: 10px 12px; display: flex; flex-direction: column; gap: 4px;
-}
-
-.rg-chat-proposal { border: 1px solid var(--brand-blue-400); background: var(--white); border-radius: var(--r-md); overflow: hidden; }
-.rg-chat-proposal.superseded { border-color: var(--ink-200); opacity: 0.6; }
-.rg-chat-proposal-head {
-  display: flex; justify-content: space-between; padding: 7px 12px;
-  background: var(--brand-blue-50); font-size: var(--fs-xs); font-weight: 700; color: var(--brand-navy);
-}
-.rg-chat-proposal.superseded .rg-chat-proposal-head { background: var(--ink-50); color: var(--ink-600); }
-.rg-chat-proposal-text {
-  padding: 10px 12px; font-size: var(--fs-sm); line-height: var(--lh-base);
-  white-space: pre-wrap; overflow-wrap: anywhere;
-}
-.rg-chat-proposal-actions { display: flex; align-items: center; gap: var(--s-3); padding: 0 12px 12px; flex-wrap: wrap; }
-
 .rg-chat-suggestions { display: flex; flex-wrap: wrap; gap: 6px; }
 .rg-chat-suggestions button {
   border: 1px solid var(--ink-200); background: var(--white); color: var(--ink-700);
@@ -2631,7 +2636,7 @@ input, select, textarea {
 .rg-chat-composer .textarea { flex: 1; min-height: 44px; resize: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .rg-chat-drawer, .rg-prompt-flash, .rg-chat-dots i { animation: none; }
+  .rg-prompt-flash, .rg-chat-dots i { animation: none; }
 }
 
 /* RES-61. Textbook (question bank) questions in a resource, and the admin review list. */

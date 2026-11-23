@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../../AuthProvider";
+import { EVENTS, track } from "../../analytics";
 import {
   downloadResourceJob,
   findSimilarResources,
@@ -10,7 +12,7 @@ import { extractQueryTopics } from "../../backend/topicTaxonomy";
 import Button from "../Button";
 import Icon from "../Icon";
 import { useToast } from "../ToastProvider";
-import ResourceChatDrawer from "./ResourceChatDrawer";
+import ResourceAssistantPane from "./ResourceAssistantPane";
 import ResourcePreviewModal from "./ResourcePreviewModal";
 import { exemplarForType } from "./exemplars";
 import {
@@ -119,6 +121,9 @@ export default function ResourceJobBuilder({
   onSelectedStudentChange,
   prefill,
   onPrefillApplied,
+  // RES-102. Where the resource assistant renders (the page's side column).
+  // Without one it renders below the builder.
+  assistantHost = null,
 }) {
   const { user } = useAuth();
   const toast = useToast();
@@ -131,12 +136,16 @@ export default function ResourceJobBuilder({
   const [showAllOther, setShowAllOther] = useState(false);
   const [previewType, setPreviewType] = useState(null);
   const [editingFrom, setEditingFrom] = useState(null);
-  // RES-24 chat. Summaries are keyed by storage path, which is unique per
-  // upload, so they stay valid across reopens and drafts.
-  const [chatOpen, setChatOpen] = useState(false);
+  // RES-102 resource assistant. Summaries are keyed by storage path, which is
+  // unique per upload, so they stay valid across chats and drafts. A new
+  // session (new student, new draft, New chat) starts an empty conversation.
   const [chatSession, setChatSession] = useState(0);
   const [fileSummaries, setFileSummaries] = useState({});
   const [promptFromChat, setPromptFromChat] = useState(false);
+  // The last proposal applied, with the values it replaced, for Undo; and the
+  // fields it set, marked "from assistant" until the tutor changes them.
+  const [appliedProposal, setAppliedProposal] = useState(null);
+  const [fromAssistant, setFromAssistant] = useState(() => new Set());
   const activeUploadRef = useRef(null);
   const sectionRef = useRef(null);
 
@@ -164,7 +173,7 @@ export default function ResourceJobBuilder({
     activeUploadRef.current?.cancel?.();
     activeUploadRef.current = null;
     setDraft(draftFromJob(prefill));
-    setChatOpen(false);
+    resetAssistant();
     setEditingFrom({
       resourceType: prefill.resourceType,
       studentName: prefill.studentName || "",
@@ -264,35 +273,59 @@ export default function ResourceJobBuilder({
     !draft.uploadError
   );
   const stagedCountForSubmit = staged.length + (canStage ? 1 : 0);
-  const canDiscuss = Boolean(
-    draft.studentId &&
-    draft.year &&
-    draft.resourceType &&
-    draft.uploadProgress == null
-  );
-
-  // The chat talks about this draft, so it can't outlive a draft that no
-  // longer has what it needs (student cleared, upload started).
+  // RES-102. A different student is a different conversation. Changing the
+  // year, subject or type keeps it: the assistant reads the form every turn.
   useEffect(() => {
-    if (chatOpen && !canDiscuss) setChatOpen(false);
-  }, [chatOpen, canDiscuss]);
-
-  // A different student, year, subject or type is a different resource: close
-  // the chat so a reply about the old one can't be applied to the new one.
-  // Reopening is cheap, since file summaries are kept.
-  useEffect(() => {
-    setChatOpen(false);
-  }, [draft.studentId, draft.year, draft.subject, draft.resourceType]);
-
-  function openChat() {
     setChatSession((n) => n + 1);
-    setChatOpen(true);
+  }, [draft.studentId]);
+
+  function resetAssistant() {
+    setChatSession((n) => n + 1);
+    setAppliedProposal(null);
+    setFromAssistant(new Set());
   }
 
-  function applyChatPrompt(text) {
-    set({ customPrompt: text });
-    setPromptFromChat(true);
-    setChatOpen(false);
+  // Apply a proposal from the assistant to the form. Only the fields it sets
+  // and that differ are changed; the old values are kept for Undo.
+  function applyProposal(proposal) {
+    const patch = {};
+    if (proposal.subject && proposal.subject !== draft.subject) patch.subject = proposal.subject;
+    if (proposal.resourceType && proposal.resourceType !== draft.resourceType) patch.resourceType = proposal.resourceType;
+    const type = RESOURCE_BY_KEY[proposal.resourceType];
+    if (type) {
+      const answerMode = type.hasQuestions ? proposal.answerMode || "none" : "none";
+      const showMarks = type.hasQuestions ? Boolean(proposal.showMarks) : false;
+      if (answerMode !== draft.answerMode) patch.answerMode = answerMode;
+      if (showMarks !== draft.showMarks) patch.showMarks = showMarks;
+    }
+    if (proposal.brief && proposal.brief.trim() !== draft.customPrompt.trim()) patch.customPrompt = proposal.brief;
+    const fields = Object.keys(patch);
+    if (!fields.length) return;
+    const previous = Object.fromEntries(fields.map((field) => [field, draft[field]]));
+    setDraft((current) => ({ ...current, ...patch }));
+    setAppliedProposal({ previous, fields });
+    setFromAssistant(new Set(fields));
+    track(EVENTS.PROPOSAL_APPLIED, {
+      resource_type: patch.resourceType || draft.resourceType || null,
+      subject: patch.subject || draft.subject,
+      fields_changed: fields,
+      type_changed: Boolean(patch.resourceType),
+    });
+    if (patch.customPrompt) setPromptFromChat(true);
+  }
+
+  function undoProposal() {
+    if (!appliedProposal) return;
+    setDraft((current) => ({ ...current, ...appliedProposal.previous }));
+    track(EVENTS.PROPOSAL_UNDONE, { fields_changed: appliedProposal.fields });
+    setAppliedProposal(null);
+    setFromAssistant(new Set());
+  }
+
+  function fromAssistantTag(field) {
+    return fromAssistant.has(field) ? (
+      <span className="rg-from-assistant"><Icon name="sparkles" size={12} /> from assistant</span>
+    ) : null;
   }
 
   function addFileSummaries(entries) {
@@ -304,6 +337,14 @@ export default function ResourceJobBuilder({
 
   function set(patch) {
     setDraft((current) => ({ ...current, ...patch }));
+    // A field the tutor changes is theirs again, and Undo would now overwrite
+    // their edit, so it goes.
+    if (Object.keys(patch).some((field) => fromAssistant.has(field))) {
+      setFromAssistant((current) => new Set([...current].filter((field) => !(field in patch))));
+    }
+    if (appliedProposal && Object.keys(patch).some((field) => appliedProposal.fields.includes(field))) {
+      setAppliedProposal(null);
+    }
   }
 
   function setSelectedStudent(student) {
@@ -329,7 +370,7 @@ export default function ResourceJobBuilder({
     if (!canStage) return;
     setStaged((current) => [...current, { ...draft }]);
     setDraft(initialDraft(draft.subject));
-    setChatOpen(false);
+    resetAssistant();
     setSelectedStudent(null);
     setRowErrors({});
     setEditingFrom(null);
@@ -340,7 +381,7 @@ export default function ResourceJobBuilder({
     activeUploadRef.current?.cancel?.();
     activeUploadRef.current = null;
     setDraft(initialDraft());
-    setChatOpen(false);
+    resetAssistant();
     setSelectedStudent(null);
     setRowErrors({});
     setEditingFrom(null);
@@ -435,7 +476,7 @@ export default function ResourceJobBuilder({
     if (result?.ok) {
       setStaged([]);
       setDraft(initialDraft());
-      setChatOpen(false);
+      resetAssistant();
       setSelectedStudent(null);
       setEditingFrom(null);
       return;
@@ -466,6 +507,17 @@ export default function ResourceJobBuilder({
               </div>
             </div>
             <Button onClick={discardEdits} size="sm" variant="ghost">Start fresh</Button>
+          </div>
+        ) : null}
+
+        {appliedProposal ? (
+          <div className="banner banner-info rg-card-banner rg-applied-note" role="status">
+            <Icon name="sparkles" />
+            <div className="grow">
+              Applied the assistant&apos;s proposal: {appliedProposal.fields.length} field
+              {appliedProposal.fields.length === 1 ? "" : "s"} changed.
+            </div>
+            <Button onClick={undoProposal} size="sm" variant="ghost">Undo</Button>
           </div>
         ) : null}
 
@@ -504,7 +556,7 @@ export default function ResourceJobBuilder({
           </div>
 
           <div className="field">
-            <label className="label">Subject <span className="req">*</span></label>
+            <label className="label">Subject <span className="req">*</span>{fromAssistantTag("subject")}</label>
             <div className="rg-segments" role="group" aria-label="Subject">
               <button className={draft.subject === "maths" ? "active" : ""} onClick={() => set({ subject: "maths" })} type="button">
                 <Icon name="grid" size={15} /> Maths
@@ -516,7 +568,7 @@ export default function ResourceJobBuilder({
           </div>
 
           <div className="field">
-            <label className="label">Resource type <span className="req">*</span></label>
+            <label className="label">Resource type <span className="req">*</span>{fromAssistantTag("resourceType")}</label>
             <div className="rg-type-grid">
               {RESOURCE_TYPES
                 .filter((type) => (draft.subject === "english" ? type.english : type.maths))
@@ -560,7 +612,7 @@ export default function ResourceJobBuilder({
           {selectedType?.hasQuestions ? (
             <>
               <div className="field">
-                <label className="label">Answer section</label>
+                <label className="label">Answer section{fromAssistantTag("answerMode")}</label>
                 <div className="rg-segments rg-segments-3" role="group" aria-label="Answer section">
                   {ANSWER_MODES.map((answerMode) => (
                     <button
@@ -589,7 +641,7 @@ export default function ResourceJobBuilder({
               </div>
 
               <div className="rg-option-row">
-                <div className="rg-option-label">Show marks beside questions</div>
+                <div className="rg-option-label">Show marks beside questions{fromAssistantTag("showMarks")}</div>
                 <button
                   aria-checked={draft.showMarks}
                   aria-label="Show marks beside questions"
@@ -626,17 +678,9 @@ export default function ResourceJobBuilder({
 
           <div className="field">
             <div className="rg-prompt-head">
-              <label className="label" htmlFor="rg-custom-prompt">Custom prompt <span className="opt">optional</span></label>
-              <Button
-                className="rg-chat-open"
-                disabled={!canDiscuss}
-                icon="sparkles"
-                onClick={openChat}
-                size="sm"
-                variant="ghost"
-              >
-                {draft.customPrompt.trim() ? "Refine with AI" : "Discuss with AI"}
-              </Button>
+              <label className="label" htmlFor="rg-custom-prompt">
+                Custom prompt <span className="opt">optional</span>{fromAssistantTag("customPrompt")}
+              </label>
             </div>
             <textarea
               className={`textarea${promptFromChat ? " rg-prompt-flash" : ""}`}
@@ -648,11 +692,9 @@ export default function ResourceJobBuilder({
               value={draft.customPrompt}
             />
             <div className="hint">
-              {!canDiscuss
-                ? "Choose a student, year and resource type to talk this through with AI."
-                : draft.customPrompt.trim()
-                  ? "Edit directly, or refine with AI. The chat starts from what's here."
-                  : "Not sure what to ask for? Talk it through with AI and it will write this prompt for you."}
+              {draft.customPrompt.trim()
+                ? "Edit directly, or ask the resource assistant to change it."
+                : "Not sure what to ask for? Tell the resource assistant what the student needs and it will write this for you."}
             </div>
           </div>
 
@@ -805,16 +847,19 @@ export default function ResourceJobBuilder({
         </div>
       ) : null}
 
-      {chatOpen ? (
-        <ResourceChatDrawer
-          draft={draft}
-          key={chatSession}
-          onClose={() => setChatOpen(false)}
-          onSummaries={addFileSummaries}
-          onUsePrompt={applyChatPrompt}
-          summaries={fileSummaries}
-        />
-      ) : null}
+      {(() => {
+        const pane = (
+          <ResourceAssistantPane
+            draft={draft}
+            key={`${draft.studentId || "none"}-${chatSession}`}
+            onApplyProposal={applyProposal}
+            onNewChat={resetAssistant}
+            onSummaries={addFileSummaries}
+            summaries={fileSummaries}
+          />
+        );
+        return assistantHost ? createPortal(pane, assistantHost) : pane;
+      })()}
 
       <ResourcePreviewModal
         open={Boolean(previewType)}
