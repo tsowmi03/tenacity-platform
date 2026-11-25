@@ -372,3 +372,25 @@ describe("measuring the ETA from logs (scripts/measureEtaAccuracy)", () => {
     assert.equal(runsFrom(events, { since: "2026-12-01" }).length, 0);
   });
 });
+
+describe("the model's inputs reach the log (RES-93)", () => {
+  const { resourceEvent } = require("../../src/resources/resourceLog");
+
+  it("logs every new field of a progress report, and each step's start as its own number", () => {
+    const logged = [];
+    const job = { jobId: "j1", resourceLogSink: (_message, data) => logged.push(data) };
+    resourceEvent(job, "progress.reported", {
+      progressPhase: "diagrams", progressFraction: 0.8, etaMs: 60_000,
+      activeMs: 200_000, wallMs: 210_000, expectedTotalMs: 300_000, modelEtaMs: 30_000, tailAllowanceMs: 30_000, countsDone: false,
+      planStartMs: 0, writeStartMs: 20_000, diagramsStartMs: 150_000,
+      // Objects are never logged: a step's start must be flattened first.
+      phaseStarts: { plan: 0 },
+    });
+    assert.deepEqual({ ...logged[0], timestamp: undefined, invocationId: undefined }, {
+      schemaVersion: 1, timestamp: undefined, invocationId: undefined, event: "progress.reported", jobId: "j1", runId: "j1",
+      progressPhase: "diagrams", progressFraction: 0.8, etaMs: 60_000,
+      activeMs: 200_000, wallMs: 210_000, expectedTotalMs: 300_000, modelEtaMs: 30_000, tailAllowanceMs: 30_000, countsDone: false,
+      planStartMs: 0, writeStartMs: 20_000, diagramsStartMs: 150_000,
+    });
+  });
+});

@@ -122,7 +122,9 @@ function createDurableCaller({ job, db, storage, callAi, providerBudget = null, 
       diagramsDone: reported.diagramsDone, diagramCount: reported.diagramCount,
       activeMs: reported.activeMs, wallMs: reported.wallMs, expectedTotalMs: reported.expectedTotalMs,
       modelEtaMs: reported.modelRemainingMs, tailAllowanceMs: reported.tailAllowanceMs,
-      countsDone: Boolean(reported.countsDoneAtMs), phaseStarts: reported.phaseStarts });
+      countsDone: Boolean(reported.countsDoneAtMs),
+      // The logger keeps plain values only, so each step's start is its own field.
+      ...Object.fromEntries(Object.entries(reported.phaseStarts || {}).map(([phase, ms]) => [`${phase}StartMs`, ms])) });
     return result;
   };
   const durableCall = async (request) => {

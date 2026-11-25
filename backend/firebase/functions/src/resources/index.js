@@ -1886,7 +1886,7 @@ async function runVisualCheckLogged({ job, built: firstBuilt, fileName, pdfConve
     if (joined.joined.length) {
       built = joined.built;
       firstPdf = joined.pdf;
-      resourceEvent(job, "layout.sections_joined", { count: joined.joined.length, pagesSaved: joined.pagesSaved });
+      resourceEvent(job, "layout.sections_joined", { fixedCount: joined.joined.length, pagesSaved: joined.pagesSaved });
     }
   } catch (err) {
     if (mustPropagate(err)) throw err;

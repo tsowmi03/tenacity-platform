@@ -11,10 +11,14 @@ const GOOGLE_DOCUMENT_MIME_TYPES = new Set([
   "application/vnd.google-apps.presentation",
 ]);
 
+// A Drive shortcut: a pointer to a file that lives somewhere else.
+const SHORTCUT_MIME_TYPE = "application/vnd.google-apps.shortcut";
+
 // Folders never walked at all.
 const EXCLUDED_FOLDER = /^student docs$/i;
 
 const SKIP_REASONS = Object.freeze({
+  shortcut: "shortcut",
   notDocument: "not_document",
   belowYear5: "below_year_5",
   answerFile: "answer_file",
@@ -28,8 +32,21 @@ function extensionOf(name) {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
 }
 
+const DOCUMENT_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+]);
+
+// A shortcut is whatever it points to: Drive names one after its target, but
+// a renamed shortcut may have no extension to go by.
 function isDocument(file) {
-  return GOOGLE_DOCUMENT_MIME_TYPES.has(file.mimeType) || DOCUMENT_EXTENSIONS.has(extensionOf(file.name));
+  if (GOOGLE_DOCUMENT_MIME_TYPES.has(file.mimeType) || DOCUMENT_EXTENSIONS.has(extensionOf(file.name))) return true;
+  if (file.mimeType !== SHORTCUT_MIME_TYPE) return false;
+  return GOOGLE_DOCUMENT_MIME_TYPES.has(file.shortcutTargetMimeType) || DOCUMENT_MIME_TYPES.has(file.shortcutTargetMimeType);
 }
 
 function baseName(name) {
@@ -37,11 +54,17 @@ function baseName(name) {
   return ext ? name.slice(0, -(ext.length + 1)) : name;
 }
 
-// Mathletics is filed by year (Maths/Mathletics/K, 01 ... 12). The bank starts
-// at Year 5; nothing outside Mathletics is below that.
+// The bank starts at Year 5. In the Subject → Year → Topic layout (TP-47)
+// everything younger is under Maths/Primary (K–4). Before that move, Mathletics
+// was the only material below Year 5, filed by year (Maths/Mathletics/K, 01 ...
+// 12). Both rules apply until the move is finished (RES-121).
+const BELOW_YEAR_5_FOLDERS = [
+  /(^|\/)Primary \(K\s*[–—-]\s*4\)\//i,
+  /(^|\/)Mathletics\/(K|0[1-4])\//i,
+];
+
 function isBelowYear5(path) {
-  const match = /(^|\/)Mathletics\/(K|0[1-4])\//i.exec(path);
-  return Boolean(match);
+  return BELOW_YEAR_5_FOLDERS.some((folder) => folder.test(path));
 }
 
 // Answer and solution files are kept for answer linking (RES-63), not the
@@ -85,6 +108,7 @@ function planSources(files) {
     else if (isBelowYear5(plan.path)) skip(plan, SKIP_REASONS.belowYear5);
     else if (isAnswerFile(plan.name)) skip(plan, SKIP_REASONS.answerFile);
   }
+  skipShortcuts([...plans.values()], skip);
 
   // A teacher edition's diagrams have the answers drawn in, so its questions
   // come from the student edition when there is one.
@@ -97,6 +121,48 @@ function planSources(files) {
 
   skipCopies(pending(), skip);
   return [...plans.values()];
+}
+
+// A file skipped for one of these is skipped because of where it is filed, not
+// because of what it is. A shortcut to it from a folder that is in scope is
+// then the way that file gets extracted.
+const FILED_ELSEWHERE = new Set(["below_year_5", "out_of_scope"]);
+
+/**
+ * Skips shortcuts that would have the same file extracted twice (RES-121). A
+ * book that spans several years sits in the earliest year's folder, with
+ * shortcuts to it in the later years (TP-47). A shortcut is read by fetching
+ * its target, and it has no checksum for the duplicate check to match, so each
+ * one used to be a source of its own.
+ *
+ * - A shortcut to a file that is being extracted is skipped.
+ * - A shortcut to a file skipped for what it is (an answer file, not a
+ *   document) is skipped too.
+ * - Shortcuts to a file outside the listing, or to one skipped only for where
+ *   it is filed (a Year 4-6 book kept under Primary), keep one of them.
+ *
+ * Run after the per-file rules, so each target's own status is known.
+ */
+function skipShortcuts(plans, skip) {
+  const targets = new Map(plans.filter((plan) => plan.mimeType !== SHORTCUT_MIME_TYPE).map((plan) => [plan.id, plan]));
+  const onlyRoute = new Map();
+  for (const plan of plans) {
+    if (plan.status !== "pending" || plan.mimeType !== SHORTCUT_MIME_TYPE || !plan.shortcutTargetId) continue;
+    const target = targets.get(plan.shortcutTargetId);
+    if (target && !(target.status === "skipped" && FILED_ELSEWHERE.has(target.skipReason))) {
+      skip(plan, SKIP_REASONS.shortcut, { duplicateOf: target.id });
+      continue;
+    }
+    if (!onlyRoute.has(plan.shortcutTargetId)) onlyRoute.set(plan.shortcutTargetId, []);
+    onlyRoute.get(plan.shortcutTargetId).push(plan);
+  }
+  for (const group of onlyRoute.values()) {
+    if (group.length < 2) continue;
+    const keep = canonicalOf(group);
+    for (const plan of group) {
+      if (plan !== keep) skip(plan, SKIP_REASONS.shortcut, { duplicateOf: keep.id });
+    }
+  }
 }
 
 /**
@@ -142,6 +208,7 @@ function skipCopies(pendingPlans, skip) {
 module.exports = {
   EXCLUDED_FOLDER,
   GOOGLE_DOCUMENT_MIME_TYPES,
+  SHORTCUT_MIME_TYPE,
   SKIP_REASONS,
   baseName,
   canonicalOf,
@@ -151,4 +218,5 @@ module.exports = {
   isDocument,
   planSources,
   skipCopies,
+  skipShortcuts,
 };
