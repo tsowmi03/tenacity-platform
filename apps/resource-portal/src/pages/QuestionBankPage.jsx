@@ -5,6 +5,7 @@ import EmptyState from "../components/EmptyState";
 import Icon from "../components/Icon";
 import PageHeader from "../components/PageHeader";
 import BankDrawer, { StatusBadge } from "../components/bank/BankDrawer";
+import BankGapsPanel from "../components/bank/BankGapsPanel";
 import { bankById, banksFor, matchesStatus, sourceLine, statusesFor } from "../components/bank/bankConfig";
 
 const THUMBNAIL_GROUP = 6;
@@ -95,6 +96,8 @@ function resultLabel(bank, total, count) {
 export default function QuestionBankPage({ readOnly = false }) {
   const banks = banksFor(readOnly);
   const [bankId, setBankId] = useState(banks[0].id);
+  // RES-74. "Gaps" sits beside the banks but lists no records of its own. Admins only.
+  const [showGaps, setShowGaps] = useState(false);
   const [status, setStatus] = useState("live");
   const [filters, setFilters] = useState({});
   const [cursors, setCursors] = useState([null]); // the cursor of each page reached so far
@@ -171,6 +174,7 @@ export default function QuestionBankPage({ readOnly = false }) {
   }
 
   function chooseBank(id) {
+    setShowGaps(false);
     if (id === bankId) return;
     setBankId(id);
     setStatus("live");
@@ -232,15 +236,23 @@ export default function QuestionBankPage({ readOnly = false }) {
         title={readOnly ? "Stimulus library" : "Question bank"}
       />
 
-      {banks.length > 1 ? (
+      {banks.length > 1 || !readOnly ? (
         <div className="tabs bank-tabs" role="tablist" aria-label="Bank">
           {banks.map((entry) => (
-            <button aria-selected={entry.id === bankId} className={`tab${entry.id === bankId ? " active" : ""}`} key={entry.id} onClick={() => chooseBank(entry.id)} role="tab" type="button">
+            <button aria-selected={!showGaps && entry.id === bankId} className={`tab${!showGaps && entry.id === bankId ? " active" : ""}`} key={entry.id} onClick={() => chooseBank(entry.id)} role="tab" type="button">
               {entry.label}
             </button>
           ))}
+          {readOnly ? null : (
+            <button aria-selected={showGaps} className={`tab${showGaps ? " active" : ""}`} onClick={() => { setShowGaps(true); setOpen(null); }} role="tab" type="button">
+              Gaps
+            </button>
+          )}
         </div>
       ) : null}
+
+      {showGaps ? <BankGapsPanel /> : (
+      <>
 
       {optionsError ? <div className="error mb-3" role="alert">{optionsError}</div> : null}
 
@@ -328,6 +340,8 @@ export default function QuestionBankPage({ readOnly = false }) {
       {open && options ? (
         <BankDrawer bank={bank} onChanged={onChanged} onClose={() => setOpen(null)} options={options} readOnly={readOnly} recordId={open.id} summary={open} />
       ) : null}
+      </>
+      )}
     </>
   );
 }

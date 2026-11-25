@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   browseBank: vi.fn(),
   editBankRecord: vi.fn(),
+  getBankGaps: vi.fn(),
   getBankImages: vi.fn(),
   getBankOptions: vi.fn(),
   getBankRecord: vi.fn(),
@@ -278,5 +279,89 @@ describe("Stimulus library for tutors (RES-68)", () => {
     expect(await screen.findByRole("heading", { name: "Question bank" })).toBeInTheDocument();
     expect(screen.getByRole("tablist")).toBeInTheDocument();
     expect(screen.getByRole("radiogroup", { name: "Status" })).toBeInTheDocument();
+  });
+});
+
+describe("Gaps tab (RES-74)", () => {
+  const summary = {
+    updatedAt: "2026-11-25T16:30:00.000Z", windowDays: 90, years: [5, 6, 7, 8, 9, 10, 11, 12], thinSupply: 10, jobs: 27,
+    supply: { total: 86712, byType: {
+      right_triangle: { total: 5452, byYear: { 9: 3000, 10: 2452 }, skills: { find_hypotenuse: { total: 900, byYear: { 9: 800, 10: 4 } } } },
+      vectors: { total: 6, byYear: { 12: 6 }, skills: { other: { total: 6, byYear: { 12: 6 } } } },
+    } },
+    demand: {
+      totals: { slots: 232, used: 175, drawn: 57, reasons: { none_suitable: 18, answer_check: 16 } },
+      rows: [
+        { year: 9, bankDiagramType: "right_triangle", bankSkill: "find_hypotenuse", needed: 20, used: 20, drawn: 0, reasons: {}, skills: [{ name: "finding the hypotenuse", count: 12 }], supply: 804 },
+        { year: 9, bankDiagramType: "shape_2d", bankSkill: "", needed: 9, used: 0, drawn: 9, reasons: { answer_check: 4, none_suitable: 2 }, skills: [{ name: "angles in circles", count: 2 }], supply: 5450, fix: "answer_check" },
+      ],
+    },
+    gaps: [
+      { year: 9, bankDiagramType: "shape_2d", bankSkill: "", needed: 9, used: 0, drawn: 9, reasons: { answer_check: 4, none_suitable: 2 }, skills: [{ name: "angles in circles", count: 2 }], supply: 5450, fix: "answer_check" },
+      { year: 5, bankDiagramType: "", bankSkill: "", needed: 1, used: 0, drawn: 1, reasons: { none_suitable: 1 }, skills: [{ name: "fractions on a number line", count: 1 }], supply: null, fix: "add_material" },
+    ],
+  };
+
+  beforeEach(() => {
+    Object.values(api).forEach((fn) => fn.mockReset());
+    api.getBankOptions.mockResolvedValue(options);
+    api.browseBank.mockResolvedValue({ records: [row], nextCursor: null, total: 1 });
+    api.getBankImages.mockResolvedValue({ images: {} });
+    api.getBankGaps.mockResolvedValue({ summary });
+  });
+
+  const openGaps = async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Gaps" }));
+  };
+
+  it("shows how much came from the bank and when the summary was made", async () => {
+    await openGaps();
+    expect(await screen.findByText("86,712")).toBeInTheDocument();
+    expect(screen.getByText("75%")).toBeInTheDocument(); // 175 of 232 from the bank
+    expect(screen.getByText("25%")).toBeInTheDocument();
+    expect(screen.getByText("27 maths resources")).toBeInTheDocument();
+    expect(screen.getByText(/Rebuilt every night/)).toBeInTheDocument();
+    // The list of bank records gives way to the summary.
+    expect(screen.queryByText("Find x.")).not.toBeInTheDocument();
+  });
+
+  it("ranks the gaps with why each diagram was drawn and the likely fix", async () => {
+    await openGaps();
+    const gaps = within(await screen.findByRole("region", { name: "Gaps" }));
+    const rows = gaps.getAllByRole("row").slice(1);
+    expect(within(rows[0]).getByText("Shape 2d")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("angles in circles")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("Answer check ×4")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("None suited ×2")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("Answer check problem")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Not in the bank's categories")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Add Drive material")).toBeInTheDocument();
+  });
+
+  it("lists demand, and supply by year with thin cells marked", async () => {
+    await openGaps();
+    const demand = within(await screen.findByRole("region", { name: "Demand" }));
+    expect(demand.getByText("Right triangle: find hypotenuse")).toBeInTheDocument();
+    const supply = within(screen.getByRole("region", { name: "Supply" }));
+    // The name is also an option in the type picker; the table cell is the one wanted.
+    const vectors = supply.getByText("Vectors", { selector: "td" }).closest("tr");
+    expect(within(vectors).getByText("6", { selector: "td" })).toHaveClass("bank-gap-thin");
+    fireEvent.change(supply.getByLabelText("Diagram type"), { target: { value: "right_triangle" } });
+    const skill = supply.getByText("Find hypotenuse", { selector: "td" }).closest("tr");
+    expect(within(skill).getByText("800")).not.toHaveClass("bank-gap-thin");
+    expect(within(skill).getByText("4")).toHaveClass("bank-gap-thin");
+  });
+
+  it("says so when there is no summary yet, and offers a retry when loading fails", async () => {
+    api.getBankGaps.mockResolvedValueOnce({ summary: null });
+    await openGaps();
+    expect(await screen.findByText("No summary yet")).toBeInTheDocument();
+    api.getBankGaps.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ summary });
+    fireEvent.click(screen.getByRole("tab", { name: "Maths questions" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Gaps" }));
+    expect(await screen.findByText("offline")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("86,712")).toBeInTheDocument();
   });
 });

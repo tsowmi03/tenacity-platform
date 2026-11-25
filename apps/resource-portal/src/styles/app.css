@@ -2868,3 +2868,25 @@ button.bank-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(-
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* RES-74. The bank's "Gaps" tab: supply, demand and where diagrams were drawn. */
+.bank-gaps { display: flex; flex-direction: column; gap: var(--s-4); }
+.bank-gap-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-3); }
+.bank-gap-stat { background: var(--white); border: 1px solid var(--ink-100); border-radius: var(--r-lg); padding: var(--s-4) var(--s-5); }
+.bank-gap-stat-value { font-size: 28px; font-weight: 700; line-height: 1.1; color: var(--brand-navy); font-variant-numeric: tabular-nums; }
+.bank-gap-stat-label { margin-top: 4px; font-size: var(--fs-sm); color: var(--ink-700); }
+.bank-gap-updated { margin-top: calc(var(--s-2) * -1); font-size: var(--fs-sm); }
+.bank-gap-card { padding: var(--s-5) var(--s-6); }
+.bank-gap-title { font-size: var(--fs-lg, 18px); font-weight: 650; color: var(--ink-900); margin: 0 0 2px; }
+.bank-gap-card > p { margin: 0 0 var(--s-4); }
+.bank-gap-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bank-gap-table td { vertical-align: top; }
+.bank-gap-category { font-weight: 600; color: var(--ink-900); }
+.bank-gap-reasons { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.bank-gap-thin { background: var(--warn-100); color: var(--warn-700); font-weight: 600; }
+.bank-gap-more { margin-top: var(--s-3); }
+.bank-gap-supply-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; margin-bottom: var(--s-3); }
+@media (max-width: 760px) {
+  .bank-gap-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bank-gap-card { padding: var(--s-4); }
+}

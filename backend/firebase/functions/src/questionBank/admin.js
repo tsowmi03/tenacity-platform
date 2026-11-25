@@ -20,6 +20,7 @@ const admin = require("firebase-admin");
 
 const { lazyRequire } = require("../shared/lazyRequire");
 const { BANKS, FILTER_OPTIONS, MATHS_COLLECTION } = require("./banks");
+const { loadBankGaps } = require("./gaps");
 const { GUIDES_COLLECTION, QUESTIONS_COLLECTION: ENGLISH_QUESTIONS_COLLECTION, STIMULI_COLLECTION } = require("../englishBank/collections");
 const { id, invalid, oneOf, requireAdmin, text } = require("./validate");
 
@@ -480,7 +481,14 @@ async function edit({ db, bucket, actor, payload, now }) {
   return detailOf({ db, bucket, name, bank, recordId });
 }
 
+/** RES-74. The daily summary of what the bank holds, what was needed and what was drawn instead. */
+async function gaps({ db, actor }) {
+  requireAdmin(actor);
+  return { summary: await loadBankGaps(db) };
+}
+
 const ADMIN_ACTIONS = Object.freeze({
+  bankGaps: gaps,
   bankOptions: options,
   browseBank: browse,
   bankRecord: record,

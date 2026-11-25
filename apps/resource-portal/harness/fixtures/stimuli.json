@@ -1,0 +1,1358 @@
+{
+ "options": {
+  "diagramTypes": {
+   "shape_2d": [
+    "perimeter_polygon",
+    "circumference_arc_length",
+    "area_rectangle_triangle",
+    "area_parallelogram_trapezium_rhombus_kite",
+    "area_circle_sector_annulus",
+    "area_composite",
+    "missing_length_from_area_or_perimeter",
+    "name_classify_shapes",
+    "other"
+   ],
+   "solid_3d": [
+    "faces_edges_vertices_nets",
+    "volume_prism_cylinder",
+    "volume_pyramid_cone_sphere",
+    "surface_area_prism_cylinder",
+    "surface_area_pyramid_cone_sphere",
+    "composite_solid",
+    "missing_dimension_from_volume_or_area",
+    "capacity_units",
+    "other"
+   ],
+   "scale_drawing": [
+    "actual_length_from_scale",
+    "find_scale_factor",
+    "area_or_cost_from_plan",
+    "map_distance_or_grid_reference",
+    "other"
+   ],
+   "right_triangle": [
+    "label_sides_write_ratio",
+    "find_hypotenuse",
+    "find_shorter_side",
+    "test_right_angled",
+    "trig_find_side_numerator",
+    "trig_find_side_denominator",
+    "trig_find_angle",
+    "exact_values",
+    "two_triangles_multi_step",
+    "three_dimensional",
+    "other"
+   ],
+   "non_right_triangle": [
+    "sine_rule_side",
+    "sine_rule_angle",
+    "cosine_rule_side",
+    "cosine_rule_angle",
+    "area_half_ab_sin_c",
+    "choose_rule_multi_step",
+    "other"
+   ],
+   "elevation_bearings": [
+    "elevation_depression",
+    "read_or_draw_bearing",
+    "bearing_travel_problem",
+    "bearings_non_right",
+    "other"
+   ],
+   "angle_relationships": [
+    "point_line_vertically_opposite",
+    "parallel_lines_transversal",
+    "triangle_angle_sum_exterior",
+    "isosceles_equilateral",
+    "polygon_angle_sum",
+    "geometric_reasoning_proof",
+    "other"
+   ],
+   "congruence_similarity": [
+    "identify_congruent",
+    "congruence_test_proof",
+    "similar_scale_factor_missing_side",
+    "similar_triangles_proof",
+    "enlargement_area_volume_ratio",
+    "other"
+   ],
+   "circle_geometry": [
+    "parts_of_circle",
+    "angle_centre_circumference",
+    "angles_same_segment_semicircle",
+    "cyclic_quadrilateral",
+    "chord_properties",
+    "tangent_properties",
+    "circle_proof",
+    "other"
+   ],
+   "transformations": [
+    "reflect",
+    "translate",
+    "rotate",
+    "describe_or_combine_transformations",
+    "line_rotational_symmetry",
+    "tessellation",
+    "other"
+   ],
+   "number_plane": [
+    "plot_read_points",
+    "distance",
+    "midpoint",
+    "gradient",
+    "shapes_on_plane",
+    "other"
+   ],
+   "straight_line": [
+    "plot_from_equation_or_table",
+    "gradient_intercepts_from_graph",
+    "equation_from_graph",
+    "parallel_perpendicular",
+    "simultaneous_graphical",
+    "linear_model_real_world",
+    "travel_graph",
+    "other"
+   ],
+   "parabola": [
+    "sketch_from_equation",
+    "equation_from_graph",
+    "vertex_axis_of_symmetry",
+    "transformations",
+    "quadratic_model",
+    "line_parabola_intersection",
+    "other"
+   ],
+   "other_curve": [
+    "polynomial_sketch_roots",
+    "hyperbola_asymptotes",
+    "circle_equation",
+    "exponential_growth_decay",
+    "logarithmic",
+    "absolute_value",
+    "function_transformations",
+    "inverse_function",
+    "domain_range_from_graph",
+    "solve_graphically",
+    "other"
+   ],
+   "trig_graph": [
+    "sketch_amplitude_period_phase",
+    "equation_from_graph",
+    "unit_circle_exact_values",
+    "solve_trig_graphically",
+    "other"
+   ],
+   "calculus_graph": [
+    "tangent_gradient_at_point",
+    "sketch_derivative",
+    "stationary_points_curve_sketch",
+    "area_under_between_curves",
+    "rates_motion_graphs",
+    "optimisation",
+    "other"
+   ],
+   "region_inequality": [
+    "number_line_inequality",
+    "linear_region",
+    "curved_region",
+    "describe_region_from_graph",
+    "other"
+   ],
+   "data_display": [
+    "read_interpret_graph",
+    "construct_graph",
+    "histogram_frequency_polygon",
+    "dot_plot_stem_leaf_stats",
+    "box_plot",
+    "scatter_plot_line_of_best_fit",
+    "cumulative_frequency_quartiles",
+    "misleading_graph",
+    "other"
+   ],
+   "normal_curve": [
+    "z_scores",
+    "empirical_rule",
+    "compare_distributions",
+    "probability_from_area",
+    "other"
+   ],
+   "probability_diagram": [
+    "tree_with_replacement",
+    "tree_without_replacement",
+    "venn_union_intersection_complement",
+    "two_way_table_conditional",
+    "other"
+   ],
+   "network": [
+    "terminology_degree_paths",
+    "shortest_path",
+    "minimum_spanning_tree",
+    "critical_path",
+    "flow_max_min_cut",
+    "other"
+   ],
+   "vectors": [
+    "add_subtract_diagram",
+    "magnitude_direction_components",
+    "vector_proof",
+    "projection",
+    "other"
+   ],
+   "mechanics": [
+    "projectile",
+    "forces_resisted_motion",
+    "simple_harmonic_motion",
+    "other"
+   ]
+  },
+  "difficulties": [
+   "easy",
+   "medium",
+   "hard"
+  ],
+  "stimulusTypes": [
+   "prose_fiction",
+   "nonfiction",
+   "poem",
+   "speech",
+   "letter",
+   "drama",
+   "other_written",
+   "poster",
+   "advertisement",
+   "cartoon",
+   "photograph",
+   "infographic",
+   "cover",
+   "artwork",
+   "other_visual"
+  ],
+  "techniques": [
+   "metaphor",
+   "simile",
+   "personification",
+   "imagery",
+   "symbolism",
+   "motif",
+   "allusion",
+   "hyperbole",
+   "irony",
+   "juxtaposition",
+   "contrast",
+   "alliteration",
+   "assonance",
+   "onomatopoeia",
+   "rhyme_rhythm",
+   "enjambment",
+   "caesura",
+   "repetition",
+   "anaphora",
+   "listing",
+   "rhetorical_question",
+   "direct_address",
+   "inclusive_language",
+   "emotive_language",
+   "high_modality",
+   "imperative",
+   "first_person_narration",
+   "third_person_narration",
+   "dialogue",
+   "characterisation",
+   "setting",
+   "foreshadowing",
+   "flashback",
+   "tone",
+   "sentence_structure",
+   "structure",
+   "word_choice",
+   "other",
+   "salience",
+   "vectors",
+   "gaze",
+   "framing",
+   "colour",
+   "lighting",
+   "layout_reading_path",
+   "camera_angle",
+   "shot_size",
+   "typography",
+   "text_image_relationship",
+   "body_language"
+  ],
+  "questionTypes": [
+   "multiple_choice",
+   "short_answer",
+   "extended_response",
+   "essay",
+   "imaginative_response",
+   "persuasive_or_discursive",
+   "reflection",
+   "other"
+  ],
+  "englishSkills": [
+   "identify_technique",
+   "explain_technique_effect",
+   "meaning_and_inference",
+   "purpose_and_audience",
+   "perspective_and_context",
+   "structure_and_form",
+   "vocabulary_in_context",
+   "compare_texts",
+   "evaluate",
+   "compose",
+   "other"
+  ],
+  "setTextForms": [
+   "novel",
+   "play",
+   "poem",
+   "short_story",
+   "nonfiction",
+   "other"
+  ],
+  "openFlags": 0
+ },
+ "records": [
+  {
+   "id": "1-1JmNgoyHamBGEDktGlI05ENS6AurEAm_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 1/Sydney Boys 2011 P1 - Year 12 Trial.pdf",
+   "pageNumber": 5,
+   "label": null,
+   "title": "Widower in the Country",
+   "author": "Les Murray",
+   "preview": "I'll get up soon, and leave my bed unmade. I'll go outside and split off kindling wood from the yellow-box log that lies beside the gate, and the sun will be high, for I get up late now. I'll drive my axe in the log and come back in with my",
+   "type": "poem",
+   "medium": "written",
+   "wordCount": 205,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "imagery",
+    "personification"
+   ],
+   "themes": [
+    "grief and loss",
+    "solitude",
+    "rural life",
+    "routine and endurance"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-2ZbiHQ_vtKWGb0SIgzh0ubJKgeWsq-x_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Extension 1 Trials/St George Girls 2019 - Year 12 Extension 1 Trial.pdf",
+   "pageNumber": 2,
+   "label": "Text 1",
+   "title": "Closed for Winter",
+   "author": "Blain",
+   "preview": "Even this early in the morning it is hot. Everything is still, stunned and helpless in the relentless shimmer. The Labrador from across the road has surrendered. She lies, tongue hanging out, in the shade of the scrappy almond tree by the f",
+   "type": "prose_fiction",
+   "medium": "written",
+   "wordCount": 591,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "setting",
+    "imagery",
+    "tone",
+    "first_person_narration"
+   ],
+   "themes": [
+    "heat and stillness",
+    "isolation",
+    "oppressive suburban routine",
+    "hopelessness",
+    "admiration and imitation",
+    "belonging and friendship",
+    "power and obedience",
+    "self-consciousness"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-F240_ou2kph6yNhcp4rwSJFb5vNpwup_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Cheltenham Girls 2022 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 8,
+   "label": null,
+   "title": null,
+   "author": null,
+   "preview": "But female bad characters can also act as keys to doors we need to open, and as mirrors in which we can see more than just a pretty face. They can be explorations of moral freedom – because everyone’s choices are limited, and women’s choice",
+   "type": "other_written",
+   "medium": "written",
+   "wordCount": 81,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "rhetorical_question",
+    "repetition"
+   ],
+   "themes": [
+    "female bad characters",
+    "moral freedom",
+    "responsibility",
+    "power and choice"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-F240_ou2kph6yNhcp4rwSJFb5vNpwup_s2",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Cheltenham Girls 2022 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 9,
+   "label": null,
+   "title": "The prescribed texts for Section III are:",
+   "author": null,
+   "preview": "Section III (continued) The prescribed texts for Section III are: ∙ Prose Fiction – Kate Chopin, The Awakening – Elizabeth Harrower, The Fun of the Fair – Franz Kafka, Metamorphosis – Nam Le, Love and Honour and Pity and Pride and Compassio",
+   "type": "other_written",
+   "medium": "written",
+   "wordCount": 164,
+   "yearLevel": "Year 12",
+   "difficulty": "easy",
+   "techniqueIds": [],
+   "themes": [
+    "literary canon",
+    "prescribed texts"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-aFvScaq8OqV8Q3leQ2uy9lkAsGyyW07_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Standard/English Standard HSC exam 2023 - Paper 1.pdf",
+   "pageNumber": 14,
+   "label": "Text 1",
+   "title": "Time Capsule",
+   "author": "Mike Greenacre",
+   "preview": "Sitting on the kitchen shelf the tea leaves tin held pride of place in the running of the house from breakfast through to dinner. ‘Would you like a cup of tea?’ my mother would question one and all as a welcome and a kind of mental setting ",
+   "type": "poem",
+   "medium": "written",
+   "wordCount": 185,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "metaphor",
+    "simile",
+    "personification",
+    "enjambment"
+   ],
+   "themes": [
+    "family rituals",
+    "time and change",
+    "memory",
+    "loss and inheritance"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-aFvScaq8OqV8Q3leQ2uy9lkAsGyyW07_s2",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Standard/English Standard HSC exam 2023 - Paper 1.pdf",
+   "pageNumber": 16,
+   "label": "Text 3",
+   "title": "We Come With This Place",
+   "author": "Debra Dank",
+   "preview": "Text 3 — Prose extract One extraordinary time, I felt the strangeness of an unfamiliar terrain . . . A strange new pressure of wet pebbles and the tickle of moist sand pushing itself between toes that until then had walked only in dry, dust",
+   "type": "prose_fiction",
+   "medium": "written",
+   "wordCount": 393,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "personification",
+    "imagery",
+    "listing",
+    "contrast"
+   ],
+   "themes": [
+    "belonging",
+    "home and place",
+    "connection to country",
+    "cultural identity"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-aFvScaq8OqV8Q3leQ2uy9lkAsGyyW07_s3",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Standard/English Standard HSC exam 2023 - Paper 1.pdf",
+   "pageNumber": 17,
+   "label": "Text 4",
+   "title": "Memoir extract",
+   "author": "Kate Langbroek",
+   "preview": "It is no great revelation that certain countries or cities can become shorthand for a feeling; that their very name becomes one with an ethos or experience. Hawaii. Thailand. New York. The name of the place automatically conjures a mental p",
+   "type": "nonfiction",
+   "medium": "written",
+   "wordCount": 347,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "listing",
+    "metaphor",
+    "simile"
+   ],
+   "themes": [
+    "travel and place",
+    "falling in love with a country",
+    "identity and self"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-aFvScaq8OqV8Q3leQ2uy9lkAsGyyW07_s4",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Standard/English Standard HSC exam 2023 - Paper 1.pdf",
+   "pageNumber": 18,
+   "label": "Text 5",
+   "title": "Buy Experiences, Not Things",
+   "author": "James Hamblin",
+   "preview": "In the journal Psychological Science last month, Gilovich and Killingsworth, along with Cornell doctoral candidate Amit Kumar, expanded on the current understanding that spending money on experiences “provide[s] more enduring happiness.” . ",
+   "type": "nonfiction",
+   "medium": "written",
+   "wordCount": 280,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "listing",
+    "word_choice",
+    "repetition"
+   ],
+   "themes": [
+    "experiences versus possessions",
+    "happiness and anticipation",
+    "memory and nostalgia"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-ipybmVyWOg1veKMxZpDjNrmkdB4Idtd_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Sydney Boys 2012 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 4,
+   "label": null,
+   "title": null,
+   "author": null,
+   "preview": "'How dare you sport thus with life?'",
+   "type": "other_written",
+   "medium": "written",
+   "wordCount": 7,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [],
+   "themes": [
+    "life and creation",
+    "responsibility and hubris"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 4,
+   "label": null,
+   "title": null,
+   "author": null,
+   "preview": "A digitally composed image of a gallery room with a grey wall and pale skirting board. A large framed painting of a girl in a white dress and a boy in a dark hat sits centre-top. A seated figure with long dark hair is viewed from behind on ",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 0,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "salience",
+    "gaze",
+    "juxtaposition"
+   ],
+   "themes": [
+    "interpretation of art",
+    "gaze and perspective",
+    "identity and representation"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s10",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 13,
+   "label": null,
+   "title": null,
+   "author": null,
+   "preview": "Black-and-white photograph of a man in a suit and hat bending forward to look through the glass door of a shopfront. The left window shows a Smith-Corona sign and typewriters. A dark sign reads TYPEWRITER REPAIR SHOP above a window displayi",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 0,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "salience"
+   ],
+   "themes": [
+    "curiosity",
+    "commerce and technology",
+    "mid-twentieth-century setting"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s11",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 14,
+   "label": null,
+   "title": null,
+   "author": "Siri Hustvedt",
+   "preview": "‘That is the strangeness of language; it crosses the boundaries of the body.’",
+   "type": "prose_fiction",
+   "medium": "written",
+   "wordCount": 13,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "metaphor"
+   ],
+   "themes": [
+    "language and the body",
+    "limits of language"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s12",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 14,
+   "label": null,
+   "title": null,
+   "author": null,
+   "preview": "Black and white street photograph of a shop front with the sign 'THE HIGH STREET STORE'. A man in a long overcoat and hat stands on the pavement holding a handbag and looking into the window. Inside the window two female mannequins in linge",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 0,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "gaze",
+    "salience",
+    "body_language"
+   ],
+   "themes": [
+    "gender and display",
+    "consumerism",
+    "observation and the gaze"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s2",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 5,
+   "label": null,
+   "title": null,
+   "author": null,
+   "preview": "A black-and-white image of a formal dining room. On the left, a large ornate gilt-framed painting of dogs playing poker hangs above a wooden sideboard with drawers and a fireplace. A table with turned legs and several white wheel-back chair",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 0,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "salience"
+   ],
+   "themes": [
+    "domestic disorder",
+    "the absurd",
+    "order and disruption"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s3",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 6,
+   "label": null,
+   "title": null,
+   "author": null,
+   "preview": "Black-and-white photograph of a sterile laboratory. In the foreground a glass jar containing a preserved brain sits on a steel bench. Two people in white protective coats and hoods work at laboratory equipment, and there are lights on the c",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 0,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "salience",
+    "colour"
+   ],
+   "themes": [
+    "science and experimentation",
+    "humanity and the body",
+    "technological progress",
+    "ethics of science"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s4",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 9,
+   "label": null,
+   "title": null,
+   "author": "Bernard Mannes Baruch",
+   "preview": "‘Our enemies are to be found abroad and at home. Let us never forget this.’",
+   "type": "speech",
+   "medium": "written",
+   "wordCount": 15,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "repetition"
+   ],
+   "themes": [
+    "politics",
+    "enemies and threat",
+    "vigilance"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s5",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 9,
+   "label": null,
+   "title": null,
+   "author": null,
+   "preview": "Grey placeholder box reading 'Awaiting copyright' where an image was removed; not a usable stimulus.",
+   "type": "other_visual",
+   "medium": "visual",
+   "wordCount": 0,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [],
+   "themes": [
+    "setting"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s6",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 10,
+   "label": null,
+   "title": null,
+   "author": "Isaiah Berlin and Henry Hardy",
+   "preview": "‘There is a new and restless spirit, seeking to burst through old and confining forms.’",
+   "type": "nonfiction",
+   "medium": "written",
+   "wordCount": 15,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [],
+   "themes": [
+    "change",
+    "restlessness",
+    "romanticism"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s7",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 10,
+   "label": null,
+   "title": null,
+   "author": "Giesen Design Studio",
+   "preview": "A black-and-white photograph of a formal interior room. On the left, heavy draped curtains with tassel fringe frame a bright window. A lantern-style pendant light hangs from the ceiling. A coat stand holds a hat and a dark coat. A round ped",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 0,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "framing"
+   ],
+   "themes": [
+    "domestic setting",
+    "contrast between old and new",
+    "mystery"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s8",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 11,
+   "label": null,
+   "title": null,
+   "author": null,
+   "preview": "Photograph of a Vietnamese airport visa-on-arrival counter at night. A yellow sign reading VISA ON ARRIVAL hangs above a wooden counter with glass screens, numbered windows 6 and 7, and blue signs reading VISA ON ARRIVAL PAYMENT COUNTER and",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 0,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "salience"
+   ],
+   "themes": [
+    "border crossing",
+    "bureaucracy",
+    "travel",
+    "cultural encounter"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-qO0oOIJ60IQUSbDbGF8KdV4uwEsjpKK_s9",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Extension 1/English Extension 1 HSC exam 2015.pdf",
+   "pageNumber": 13,
+   "label": null,
+   "title": null,
+   "author": "Stephen King",
+   "preview": "‘Fiction is the truth inside the lie.’",
+   "type": "other_written",
+   "medium": "written",
+   "wordCount": 7,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [],
+   "themes": [
+    "truth and fiction",
+    "deception"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-uY7MPcRYtrAM_liiYLvIr0mTfNKble4_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Newington 2024 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 3,
+   "label": "Extract from Looking for Richard",
+   "title": "Looking for Richard",
+   "author": "Al Pacino",
+   "preview": "PETER BROOK: The text is only a means of expressing what’s behind the text. So if you get obsessed with the text, this is a great barrier to American actors who get obsessed with the British way of regarding a text. That isn’t what matters.",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 64,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "framing",
+    "lighting"
+   ],
+   "themes": [
+    "the role of text in performance",
+    "authenticity in acting",
+    "interpretation of shakespeare"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-uY7MPcRYtrAM_liiYLvIr0mTfNKble4_s2",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Newington 2024 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 4,
+   "label": null,
+   "title": "Extract from The Hours",
+   "author": "Stephen Daldry",
+   "preview": "VIRGINIA WOOLF: If I were thinking clearly, Leonard, I would tell you that I wrestle alone in the dark, in the deep dark, and that only I can know. Only I can understand my condition. You live with the threat, you tell me you live with the ",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 57,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "gaze"
+   ],
+   "themes": [
+    "mental illness",
+    "mortality",
+    "marriage and care",
+    "isolation"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-uY7MPcRYtrAM_liiYLvIr0mTfNKble4_s3",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Newington 2024 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 5,
+   "label": null,
+   "title": "The Mersault Investigation",
+   "author": null,
+   "preview": "Well, the original guy was such a good storyteller, he managed to make people forget his crime, whereas the other one was a poor illiterate God created apparently for the sole purpose of taking a bullet and returning to dust – an anonymous ",
+   "type": "prose_fiction",
+   "medium": "written",
+   "wordCount": 55,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "contrast",
+    "characterisation"
+   ],
+   "themes": [
+    "identity",
+    "justice and memory",
+    "anonymity",
+    "values in texts"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-uY7MPcRYtrAM_liiYLvIr0mTfNKble4_s4",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Newington 2024 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 6,
+   "label": "Extract from W;t",
+   "title": "W;t",
+   "author": "Margaret Edson",
+   "preview": "[E. M.]: Nothing but a breath—a comma—separates life from life everlasting. It is very simple really. With the original punctuation restored, death is no longer something to act out on a stage, with exclamation points… Life, death. Soul, Go",
+   "type": "drama",
+   "medium": "written",
+   "wordCount": 60,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "metaphor",
+    "repetition"
+   ],
+   "themes": [
+    "life and death",
+    "punctuation and meaning",
+    "values beyond texts"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-uY7MPcRYtrAM_liiYLvIr0mTfNKble4_s5",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Newington 2024 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 7,
+   "label": null,
+   "title": "Bright Star",
+   "author": null,
+   "preview": "JOHN KEATS: A poem needs understanding through the senses. The point of diving in a lake is not immediately to swim to the shore but to be in the lake, to luxuriate in the sensation of water. You do not work the lake out, it is a experience",
+   "type": "photograph",
+   "medium": "visual",
+   "wordCount": 60,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "body_language"
+   ],
+   "themes": [
+    "intimacy and connection",
+    "poetry and the senses",
+    "experience beyond thought"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "1-uY7MPcRYtrAM_liiYLvIr0mTfNKble4_s6",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Newington 2024 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 8,
+   "label": "Extract from Red",
+   "title": "Red",
+   "author": "Ted Hughes",
+   "preview": "You revelled in red. I felt it raw -- like crisp gauze edges Of a stiffening wound. I could touch The open vein in it, the crusted gleam. Everything you painted you painted white Then splashed it with roses, defeated it, Leaned over it, dri",
+   "type": "poem",
+   "medium": "written",
+   "wordCount": 51,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "imagery",
+    "repetition"
+   ],
+   "themes": [
+    "violence and art",
+    "creative destruction",
+    "colour and emotion"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-uY7MPcRYtrAM_liiYLvIr0mTfNKble4_s7",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Newington 2024 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 9,
+   "label": null,
+   "title": "Hag-Seed",
+   "author": "Margaret Atwood",
+   "preview": "What to do with such a story? It was like an enormous black cloud boiling up over the horizon. He had to transform it, or at the very least enclose it.",
+   "type": "prose_fiction",
+   "medium": "written",
+   "wordCount": 31,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "simile",
+    "imagery"
+   ],
+   "themes": [
+    "storytelling and transformation",
+    "textual conversations"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "1-uY7MPcRYtrAM_liiYLvIr0mTfNKble4_s8",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 2 Advanced/Newington 2024 P2 (Adv.) - Year 12 Trial.pdf",
+   "pageNumber": 16,
+   "label": null,
+   "title": "Prescribed texts list (Module C)",
+   "author": null,
+   "preview": "Prose fiction • Chopin, Kate, The Awakening • Harrower, Elizabeth, ‘The Fun of the Fair’ • Kafka, Franz, Metamorphosis • Le, Nam, ‘Love and Honour and Pity and Pride and Compassion and Sacrifice’ • McCann, Colum, ‘Thirteen Ways of Looking’ ",
+   "type": "other_written",
+   "medium": "written",
+   "wordCount": 157,
+   "yearLevel": "Year 12",
+   "difficulty": "easy",
+   "techniqueIds": [],
+   "themes": [
+    "literary study",
+    "prescribed texts"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "104UsxYv9yyExj3SHr1TrnkLNDZHXeHLm_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 1/Killara 2020 P1 - Year 12 Trial.pdf",
+   "pageNumber": 9,
+   "label": "Text 1",
+   "title": "Happiness Kit",
+   "author": "John Holcroft",
+   "preview": "An illustration in a retro style. A red box labelled LIFE FIX with the words HAPPINESS KIT sits on a tan surface. The lid shows a smiling man and woman against a blue sunburst background. Smaller text on the box lists Health, Employment, Lo",
+   "type": "artwork",
+   "medium": "visual",
+   "wordCount": 0,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "juxtaposition",
+    "text_image_relationship",
+    "salience",
+    "colour"
+   ],
+   "themes": [
+    "happiness as a product",
+    "consumerism",
+    "life balance",
+    "commodification of wellbeing"
+   ],
+   "hasImage": true,
+   "openFlags": 0
+  },
+  {
+   "id": "104UsxYv9yyExj3SHr1TrnkLNDZHXeHLm_s2",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 1/Killara 2020 P1 - Year 12 Trial.pdf",
+   "pageNumber": 10,
+   "label": "Text 2",
+   "title": "Pursuing Happiness",
+   "author": "John Lanchester",
+   "preview": "It is the year 100,000 B.C., and two hunter-gatherers are out hunter-gathering. Let’s call them Ig and Og. Ig comes across a new kind of bush, with bright-red berries. He is hungry, as most hunter-gatherers are most of the time, and the ber",
+   "type": "nonfiction",
+   "medium": "written",
+   "wordCount": 715,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "metaphor",
+    "emotive_language",
+    "allusion",
+    "characterisation"
+   ],
+   "themes": [
+    "human nature and survival",
+    "happiness and unhappiness",
+    "evolution and fear"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "104UsxYv9yyExj3SHr1TrnkLNDZHXeHLm_s3",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 1/Killara 2020 P1 - Year 12 Trial.pdf",
+   "pageNumber": 11,
+   "label": "Text 3",
+   "title": "Learning to Leave",
+   "author": "Carol Chan",
+   "preview": "Learning to Leave The streetlamps pass us like the years: my father is driving me away from our house on that street where I learned about the shyness of the mimosa plant, whose eyelids close even in the faintest breeze. This was where I le",
+   "type": "poem",
+   "medium": "written",
+   "wordCount": 225,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [
+    "simile",
+    "imagery",
+    "personification",
+    "metaphor"
+   ],
+   "themes": [
+    "leaving home",
+    "family and change",
+    "childhood memory",
+    "uncertainty about the future"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "104UsxYv9yyExj3SHr1TrnkLNDZHXeHLm_s4",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Trial Paper 1/Killara 2020 P1 - Year 12 Trial.pdf",
+   "pageNumber": 12,
+   "label": "Text 4",
+   "title": "Text 4 – Discursive Extract",
+   "author": "Alain de Botton",
+   "preview": "A terraced house on a tree-lined street. Earlier today, the house rang with the sound of children's cries and adult voices, but since the last occupant took off (with her satchel) a few hours ago, it has been left to sample the morning by i",
+   "type": "nonfiction",
+   "medium": "written",
+   "wordCount": 515,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "personification",
+    "imagery",
+    "listing",
+    "metaphor"
+   ],
+   "themes": [
+    "home as witness",
+    "happiness and architecture",
+    "sanctuary and identity"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "10AEwlodUcDObzzk2OhaJ9rabuSnfFggl_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Extension 1 Trials/Riverview 2019 - Year 12 Extension 1 Trial.pdf",
+   "pageNumber": 3,
+   "label": "Text 1",
+   "title": "The Life to Come",
+   "author": "Michelle de Krester",
+   "preview": "He had been back in Sydney for four years and still swam gratefully in its impersonal ease. In Melbourne, where George had lived since he was six, he had wanted to write about modernism in Australian fiction for his PhD. After some difficul",
+   "type": "prose_fiction",
+   "medium": "written",
+   "wordCount": 440,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "simile",
+    "personification",
+    "imagery",
+    "listing",
+    "foreshadowing"
+   ],
+   "themes": [
+    "displacement and belonging",
+    "intellectual alienation",
+    "foreboding and catastrophe"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "10AEwlodUcDObzzk2OhaJ9rabuSnfFggl_s2",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Extension 1 Trials/Riverview 2019 - Year 12 Extension 1 Trial.pdf",
+   "pageNumber": 4,
+   "label": null,
+   "title": null,
+   "author": "Paulo Freire",
+   "preview": "‘No one is born fully-formed: it is through self-experience in the world that we become who we are.’ PAULO FREIRE",
+   "type": "poem",
+   "medium": "written",
+   "wordCount": 20,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [],
+   "themes": [
+    "self-formation",
+    "experience"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "10AEwlodUcDObzzk2OhaJ9rabuSnfFggl_s3",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/Extension 1 Trials/Riverview 2019 - Year 12 Extension 1 Trial.pdf",
+   "pageNumber": 4,
+   "label": null,
+   "title": null,
+   "author": "Salman Rushdie",
+   "preview": "‘Literature is where I go to explore the highest and lowest places in human society and in the human spirit, where I hope to find not absolute truth but the truth of the tale, of the imagination and of the heart.’ SALMAN RUSHDIE",
+   "type": "other_written",
+   "medium": "written",
+   "wordCount": 43,
+   "yearLevel": "Year 12",
+   "difficulty": "medium",
+   "techniqueIds": [],
+   "themes": [
+    "literature and imagination",
+    "truth",
+    "human spirit"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "10AkbM_2l1kC_SBysmxGLKpfKZvZqDG4J_s1",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Advanced/English Advanced HSC exam 2022 - Paper 1.pdf",
+   "pageNumber": 19,
+   "label": "Text 2",
+   "title": "Lost in a Good Book",
+   "author": "Jasper Fforde",
+   "preview": "I was in a long, dark, wood-panelled corridor lined with bookshelves that reached from the richly carpeted floor to the vaulted ceiling. The carpet was elegantly patterned and the ceiling was decorated with rich mouldings that depicted scen",
+   "type": "prose_fiction",
+   "medium": "written",
+   "wordCount": 312,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "imagery",
+    "repetition",
+    "listing",
+    "metaphor"
+   ],
+   "themes": [
+    "the power of books",
+    "reality and imagination",
+    "wonder and discovery"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "10AkbM_2l1kC_SBysmxGLKpfKZvZqDG4J_s2",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Advanced/English Advanced HSC exam 2022 - Paper 1.pdf",
+   "pageNumber": 20,
+   "label": "Text 3",
+   "title": "A line in the snow",
+   "author": "Nikki Gemmell",
+   "preview": "A line in the snow ANTARCTICA'S PRESERVATION HAS BEEN A GLORIOUS FEAT – LET'S KEEP THE CONTINENT THIS WAY At the end of our world there's a wonderland that has an innocence to it, a purity, that feels fragile and spiritual. This extraordina",
+   "type": "nonfiction",
+   "medium": "written",
+   "wordCount": 453,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "simile",
+    "metaphor",
+    "emotive_language",
+    "personification"
+   ],
+   "themes": [
+    "human impact on the environment",
+    "preservation and generosity",
+    "innocence and purity of nature"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "10AkbM_2l1kC_SBysmxGLKpfKZvZqDG4J_s3",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Advanced/English Advanced HSC exam 2022 - Paper 1.pdf",
+   "pageNumber": 21,
+   "label": "Text 4",
+   "title": "Memoir extract",
+   "author": "José Saramago",
+   "preview": "The house where I was born no longer exists, not that it matters, because I have no memory of having lived in it. The other house, the impoverished dwelling of my maternal grandparents, Josefa and Jerónimo, has also disappeared beneath a mo",
+   "type": "nonfiction",
+   "medium": "written",
+   "wordCount": 220,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "imagery",
+    "tone"
+   ],
+   "themes": [
+    "memory and nostalgia",
+    "childhood",
+    "loss of home"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  },
+  {
+   "id": "10AkbM_2l1kC_SBysmxGLKpfKZvZqDG4J_s4",
+   "status": "live",
+   "sourcePath": "English/Past Papers/Year 12/HSC Papers/Advanced/English Advanced HSC exam 2022 - Paper 1.pdf",
+   "pageNumber": 22,
+   "label": "Text 5",
+   "title": null,
+   "author": "Delia Falconer",
+   "preview": "This is my favourite Sydney story. For a few decades, in the middle of last century, a hospital on the north shore sent each mother of a newborn home with a jacaranda seedling. And so when the valleys on either side of the city’s train line",
+   "type": "nonfiction",
+   "medium": "written",
+   "wordCount": 478,
+   "yearLevel": "Year 12",
+   "difficulty": "hard",
+   "techniqueIds": [
+    "imagery",
+    "metaphor",
+    "juxtaposition"
+   ],
+   "themes": [
+    "memory and belonging",
+    "beauty and unease in nature",
+    "cultural difference",
+    "place and identity"
+   ],
+   "hasImage": false,
+   "openFlags": 0
+  }
+ ]
+}

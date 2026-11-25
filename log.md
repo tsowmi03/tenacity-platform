@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-11-26 | [Stimulus library: tutors can browse the English stimuli (RES-68)](#2026-11-26--stimulus-library-tutors-can-browse-the-english-stimuli-res-68) |
+| 2026-11-26 | [Bank gaps: an admin tab showing where maths diagrams are drawn instead of taken from the bank (RES-74)](#2026-11-26--bank-gaps-an-admin-tab-showing-where-maths-diagrams-are-drawn-instead-of-taken-from-the-bank-res-74) |
 | 2026-11-26 | [Question bank sources ready for the Year → Topic Drive layout (RES-121)](#2026-11-26--question-bank-sources-ready-for-the-year--topic-drive-layout-res-121) |
 | 2026-11-26 | [No near-blank pages; answer lines stay with their question; diagram label and spacing fixes (RES-40)](#2026-11-26--no-near-blank-pages-answer-lines-stay-with-their-question-diagram-label-and-spacing-fixes-res-40) |
 | 2026-11-26 | [Contents page shows in the PDF preview (RES-124)](#2026-11-26--contents-page-shows-in-the-pdf-preview-res-124) |
@@ -293,6 +294,43 @@ browsed by admins. Tutors pick reading texts by hand and had to search Drive.
 deployed on merge. The tutor's calls were run against production data,
 read-only: 2,788 live stimuli, each filter returns results, and browsing
 another bank, hidden stimuli or hiding one is refused.
+## 2026-11-26 — Bank gaps: an admin tab showing where maths diagrams are drawn instead of taken from the bank (RES-74)
+
+**What changed**
+- The Question bank page has a "Gaps" tab for admins:
+  - **Gaps:** each year and bank category where diagrams were drawn, most
+    often first, with why (nothing found, none suited, answer check, crop
+    unusable, question couldn't be swapped, step failed) and the likely fix
+    (add Drive material, extract more pages, answer check problem).
+  - **Demand:** what resources asked for in the last 90 days, how much came
+    from the bank and how much was drawn.
+  - **Supply:** live bank questions by diagram type and year, or by skill
+    within a type, with cells under 10 questions highlighted.
+- Every bank slot on a new resource now records the skill the question
+  tested, the diagram it asked for and the bank category it fell in, whether a
+  bank diagram was used or one was drawn. Older resources are read from their
+  saved content, so the tab has 90 days of history from day one.
+- A nightly GitHub Actions job (`question-bank-gaps-daily.yml`, 03:30 Sydney)
+  reads the bank and recent resources and writes one summary document,
+  `resourceCapabilities/bankGaps`. The page reads only that document.
+- The portal has a no-login preview with sample data for design work
+  (`npx vite --config vite.harness.config.js` in `apps/resource-portal`). It is
+  not part of the production build.
+
+**Why:** Since RES-71 a maths diagram is drawn only when the bank can't supply
+one. Nothing showed where that happens or why, so there was no way to tell
+which drawn diagrams are unavoidable and which Drive material would close a
+gap.
+
+**Status:** Live. Functions deployed and the first summary written. At launch:
+86,712 live bank questions; 27 maths resources and 232 diagram questions in 90
+days, 175 from the bank (75%) and 57 drawn. The 57 were drawn because the
+question couldn't be swapped (19), none suited (18), the answer check (16),
+nothing was found (2), the crop (1) and a failed step (1).
+
+**Next steps**
+- Seed the tab with about 30 representative requests once model API access is
+  back (RES-127).
 ## 2026-11-26 — Question bank sources ready for the Year → Topic Drive layout (RES-121)
 
 **What changed**
