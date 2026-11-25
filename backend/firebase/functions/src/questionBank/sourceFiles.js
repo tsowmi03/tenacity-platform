@@ -10,7 +10,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { promisify } = require("node:util");
 
-const { GOOGLE_DOCUMENT_MIME_TYPES, extensionOf } = require("./sourceRules");
+const { GOOGLE_DOCUMENT_MIME_TYPES, SHORTCUT_MIME_TYPE, extensionOf } = require("./sourceRules");
 
 const CONVERT_TIMEOUT_MS = 120 * 1000;
 
@@ -34,7 +34,6 @@ async function convertWithLibreOffice(buffer, name, { run = promisify(execFile),
   }
 }
 
-const SHORTCUT_MIME_TYPE = "application/vnd.google-apps.shortcut";
 
 async function fetchSourcePdf({ drive, source, convert = convertWithLibreOffice }) {
   // A Drive shortcut has no content of its own; fetch the file it points to
