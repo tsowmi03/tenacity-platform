@@ -20,10 +20,17 @@ const MAX_SOURCE_CHARS = 300000;
 function chooseLitChartFiles(files) {
   const byEntry = new Map();
   for (const file of files) {
+    // English/LitCharts/<entry>/... today; English/Texts/LitCharts/<entry>/...
+    // or English/Texts/<entry>/... in the Year → Topic layout (TP-47, RES-121).
     const parts = file.path.split("/");
-    if (parts[1] !== "LitCharts" || !/\.pdf$/i.test(file.name)) continue;
+    const litCharts = parts.findIndex((part, index) => index > 0 && index < parts.length - 1 && /^litcharts$/i.test(part));
+    const folder = litCharts > 0 ? litCharts : /^texts$/i.test(parts[1] || "") && parts.length > 2 ? 1 : -1;
+    if (folder < 0 || !/\.pdf$/i.test(file.name)) continue;
     if (!/lit-?charts?/i.test(file.name) || /translation/i.test(file.name)) continue;
-    const entry = parts[2];
+    // Under LitCharts each entry is one work (its folder, or a loose file).
+    // Under Texts a folder such as "Novel guides" holds several works, so
+    // each title is its own entry.
+    const entry = litCharts > 0 ? parts[folder + 1] : `title:${titleKey(file.name)}`;
     const current = byEntry.get(entry);
     if (!current || file.path.length < current.path.length) byEntry.set(entry, file);
   }

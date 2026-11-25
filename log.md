@@ -21,6 +21,7 @@ omitted, and open follow-ups are tracked at the bottom.
 | Date | Entry |
 | --- | --- |
 | 2026-11-26 | [Stimulus library: tutors can browse the English stimuli (RES-68)](#2026-11-26--stimulus-library-tutors-can-browse-the-english-stimuli-res-68) |
+| 2026-11-26 | [Question bank sources ready for the Year → Topic Drive layout (RES-121)](#2026-11-26--question-bank-sources-ready-for-the-year--topic-drive-layout-res-121) |
 | 2026-11-26 | [No near-blank pages; answer lines stay with their question; diagram label and spacing fixes (RES-40)](#2026-11-26--no-near-blank-pages-answer-lines-stay-with-their-question-diagram-label-and-spacing-fixes-res-40) |
 | 2026-11-26 | [Contents page shows in the PDF preview (RES-124)](#2026-11-26--contents-page-shows-in-the-pdf-preview-res-124) |
 | 2026-11-24 | [Resource assistant: the planning chat recommends what to make and knows what the generator can do (RES-102)](#2026-11-24--resource-assistant-the-planning-chat-recommends-what-to-make-and-knows-what-the-generator-can-do-res-102) |
@@ -292,6 +293,44 @@ browsed by admins. Tutors pick reading texts by hand and had to search Drive.
 deployed on merge. The tutor's calls were run against production data,
 read-only: 2,788 live stimuli, each filter returns results, and browsing
 another bank, hidden stimuli or hiding one is refused.
+## 2026-11-26 — Question bank sources ready for the Year → Topic Drive layout (RES-121)
+
+**What changed**
+- English bank: the stimulus folders (Past Papers, Practice Papers,
+  Comprehension, Creative) are now recognised at any depth, and `Creative
+  Writing` counts too. `English/Year 12/Advanced/Past Papers/…` is in scope as
+  `English/Past Papers/…` is today.
+- Maths bank: everything under `Maths/Primary (K–4)/` is below Year 5 and
+  skipped. The `Mathletics/K–04` rule stays until the move is finished.
+- A renamed or moved file is no longer extracted again. Drive stamps a new
+  last-modified time on a rename, and that time is half of a source's version.
+  While a file's checksum is unchanged, the sync keeps the version it was
+  extracted at.
+- Drive shortcuts: a shortcut to a file the bank already reads is skipped
+  (reason `shortcut`), so a multi-year book with shortcuts in several Year
+  folders is extracted once. A shortcut to a book kept under Primary, or to a
+  file outside the folder, is still read, once. A shortcut is judged by the
+  file it points to, so one without `.pdf` in its name still counts.
+- The LitCharts for the set-text bank are found under `English/Texts/` as well
+  as `English/LitCharts/`.
+
+**Why:** TP-47 moves Drive to Subject → Year → Topic and renames every file.
+Under the old rules the English bank would have dropped all 628 of its sources
+(none would be in a top-level stimulus folder), 42 primary files would have
+been extracted, and the renames would have had 2,946 maths and 628 English
+sources extracted again.
+
+**Status:** Live. The weekly bank job runs these rules from the repository
+(GitHub Actions), so no Functions deploy was needed. Checked on the real Drive listing, read-only (10,116 maths and
+3,679 English files): on today's layout every file is decided as before, and
+on a simulated new layout the in-scope and skipped counts are identical to
+today's. A rename test on a private copy confirmed Drive changes the
+last-modified time. Results are recorded on TP-47.
+
+**Next steps**
+- TP-47 can start moving files. Renaming the two shortcuts and the one Google
+  Doc among the maths sources would extract those three again (they have no
+  checksum); leave their names, or accept three re-extractions.
 
 ---
 ## 2026-11-26 — No near-blank pages; answer lines stay with their question; diagram label and spacing fixes (RES-40)
