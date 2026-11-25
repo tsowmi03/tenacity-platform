@@ -1,0 +1,62 @@
+# RES-74. Daily rebuild of the summary behind the resource portal's admin
+# "Gaps" tab: what the maths bank holds, what recent resources needed, and
+# where a diagram was drawn because the bank had none to offer. Reads the bank
+# and the last 90 days of resources and writes one document
+# (resourceCapabilities/bankGaps). No model calls.
+# See backend/firebase/functions/scripts/questionBankGaps.js.
+#
+# Runs as tenacity-prod-question-bank, the weekly bank job's account, which
+# already has roles/datastore.user.
+name: Question bank gaps (daily)
+
+on:
+  schedule:
+    # 03:30 Sydney in AEDT (02:30 in AEST), after the night's last resources.
+    - cron: "30 16 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the summary without writing it"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tenacity-question-bank-gaps
+  cancel-in-progress: false
+
+jobs:
+  summarise:
+    name: Summarise supply, demand and gaps
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: tenacity-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.23.1
+      - run: npm ci --prefix backend/firebase/functions
+      - name: Authenticate question bank runner
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: projects/398065992407/locations/global/workloadIdentityPools/github/providers/tenacity-platform
+          service_account: tenacity-prod-question-bank@tenacity-tutoring-b8eb2.iam.gserviceaccount.com
+          create_credentials_file: true
+      - name: Rebuild the gaps summary
+        env:
+          GOOGLE_CLOUD_PROJECT: tenacity-tutoring-b8eb2
+          GCLOUD_PROJECT: tenacity-tutoring-b8eb2
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        working-directory: backend/firebase/functions
+        run: |
+          flags="--commit --yes"
+          if [ "$DRY_RUN" = "true" ]; then flags=""; fi
+          node scripts/questionBankGaps.js --projectId=tenacity-tutoring-b8eb2 $flags

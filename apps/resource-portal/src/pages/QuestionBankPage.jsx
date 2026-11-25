@@ -5,6 +5,7 @@ import EmptyState from "../components/EmptyState";
 import Icon from "../components/Icon";
 import PageHeader from "../components/PageHeader";
 import BankDrawer, { StatusBadge } from "../components/bank/BankDrawer";
+import BankGapsPanel from "../components/bank/BankGapsPanel";
 import { BANKS, bankById, matchesStatus, sourceLine, statusesFor } from "../components/bank/bankConfig";
 
 const THUMBNAIL_GROUP = 6;
@@ -92,6 +93,8 @@ function resultLabel(bank, total, count) {
 
 export default function QuestionBankPage() {
   const [bankId, setBankId] = useState(BANKS[0].id);
+  // RES-74. "Gaps" sits beside the banks but lists no records of its own.
+  const [showGaps, setShowGaps] = useState(false);
   const [status, setStatus] = useState("live");
   const [filters, setFilters] = useState({});
   const [cursors, setCursors] = useState([null]); // the cursor of each page reached so far
@@ -168,6 +171,7 @@ export default function QuestionBankPage() {
   }
 
   function chooseBank(id) {
+    setShowGaps(false);
     if (id === bankId) return;
     setBankId(id);
     setStatus("live");
@@ -229,11 +233,17 @@ export default function QuestionBankPage() {
 
       <div className="tabs bank-tabs" role="tablist" aria-label="Bank">
         {BANKS.map((entry) => (
-          <button aria-selected={entry.id === bankId} className={`tab${entry.id === bankId ? " active" : ""}`} key={entry.id} onClick={() => chooseBank(entry.id)} role="tab" type="button">
+          <button aria-selected={!showGaps && entry.id === bankId} className={`tab${!showGaps && entry.id === bankId ? " active" : ""}`} key={entry.id} onClick={() => chooseBank(entry.id)} role="tab" type="button">
             {entry.label}
           </button>
         ))}
+        <button aria-selected={showGaps} className={`tab${showGaps ? " active" : ""}`} onClick={() => { setShowGaps(true); setOpen(null); }} role="tab" type="button">
+          Gaps
+        </button>
       </div>
+
+      {showGaps ? <BankGapsPanel /> : (
+      <>
 
       {optionsError ? <div className="error mb-3" role="alert">{optionsError}</div> : null}
 
@@ -318,6 +328,8 @@ export default function QuestionBankPage() {
       {open && options ? (
         <BankDrawer bank={bank} onChanged={onChanged} onClose={() => setOpen(null)} options={options} recordId={open.id} summary={open} />
       ) : null}
+      </>
+      )}
     </>
   );
 }

@@ -449,6 +449,11 @@ export function getBankOptions() {
   return callFunction("manageQuestionBank", { action: "bankOptions" });
 }
 
+// RES-74. The nightly summary of what the bank holds, what was needed and what was drawn.
+export function getBankGaps() {
+  return callFunction("manageQuestionBank", { action: "bankGaps" });
+}
+
 export function browseBank({ bank, status, filters, cursor }) {
   return callFunction("manageQuestionBank", { action: "browseBank", bank, status, filters, ...(cursor ? { cursor } : {}) });
 }

@@ -206,7 +206,7 @@ function bankSlots(parsed) {
   const counts = new Map();
   for (const owner of owners) counts.set(keyOf(owner), (counts.get(keyOf(owner)) || 0) + 1);
   for (const owner of owners) {
-    const where = slotWhere(owner);
+    const where = { ...slotWhere(owner), ...slotNeed(owner) };
     if (counts.get(keyOf(owner)) > 1) { ineligible.push({ ...where, reason: "ambiguous_number" }); continue; }
     let answerRows = [];
     if (hasAnswers) {
@@ -218,9 +218,34 @@ function bankSlots(parsed) {
       if (owner.kind !== "whole" && answerRows.length !== 1) { ineligible.push({ ...where, reason: "answer_row_unclear" }); continue; }
       if (owner.kind === "whole" && !answerRows.length) { ineligible.push({ ...where, reason: "answer_row_unclear" }); continue; }
     }
-    slots.push({ ...owner, owner: owner.node, answerRows, answers: hasAnswers ? answerRowsFor(parsed, owner.group) : null });
+    slots.push({ ...owner, owner: owner.node, answerRows, answers: hasAnswers ? answerRowsFor(parsed, owner.group) : null, need: slotNeed(owner) });
   }
   return { slots, ineligible };
+}
+
+/**
+ * RES-74. What a slot needed: the skill the question tests and the diagram it
+ * asked for. Read when the slot is found, because a swap replaces both, and
+ * recorded on the job's used and drawn entries so the bank's gaps can be
+ * grouped by what tutors actually ask for.
+ */
+function slotNeed(owner) {
+  const need = {};
+  const clean = (value) => (typeof value === "string" ? value.trim() : "");
+  const skill = clean(owner.node?.skill) || clean(owner.parent?.skill);
+  if (skill) need.skill = skill.slice(0, 120);
+  const diagramType = clean(owner.node?.diagramType) || clean(owner.node?.diagram?.type);
+  if (diagramType && diagramType !== "none") need.diagramType = diagramType;
+  return need;
+}
+
+// The bank category of a candidate, when the search saved it: where this slot
+// sits in the bank's own terms.
+function bankCell(candidate) {
+  const cell = {};
+  if (candidate?.diagramType) cell.bankDiagramType = candidate.diagramType;
+  if (candidate?.skill) cell.bankSkill = candidate.skill;
+  return cell;
 }
 
 // A booklet's sub-topic and quiz section can share a title and number; the
@@ -418,6 +443,9 @@ async function withDeadline(promise, deadline) {
 // The fields of a search hit a later worker needs to rebuild the same prompt.
 function savedCandidate(q, year) {
   const saved = { id: q.id, sourcePath: q.sourcePath || "", pageNumber: q.pageNumber ?? null, label: q.label || "", stem: q.stem || "", text: q.text || "", description: q.description || "", year: candidateYear(q, year), difficulty: q.difficulty || null, figures: (q.figures || []).map((f) => ({ storagePath: f.storagePath })) };
+  // RES-74: the bank's category for it, recorded with how the slot ended.
+  if (q.diagramType) saved.diagramType = q.diagramType;
+  if (q.skill) saved.skill = q.skill;
   if (q.bookAnswer?.answer) saved.bookAnswer = { answer: String(q.bookAnswer.answer) };
   return saved;
 }
@@ -508,7 +536,7 @@ async function applyQuestionBank({
   result.slots = slots.length;
   result.skipped.push(...ineligible);
   if (!slots.length || !db || !bucket || !callAi) {
-    if (slots.length) result.skipped.push(...slots.map((slot) => ({ ...slotWhere(slot), reason: "bank_unavailable" })));
+    if (slots.length) result.skipped.push(...slots.map((slot) => ({ ...slotWhere(slot), ...slot.need, reason: "bank_unavailable" })));
     return result;
   }
 
@@ -519,7 +547,7 @@ async function applyQuestionBank({
     ? (text) => providerBudget.run("openai", () => defaultEmbed(text))
     : defaultEmbed);
   if (!embedText) {
-    result.skipped.push(...slots.map((slot) => ({ ...slotWhere(slot), reason: "bank_unavailable" })));
+    result.skipped.push(...slots.map((slot) => ({ ...slotWhere(slot), ...slot.need, reason: "bank_unavailable" })));
     return result;
   }
   const topic = parsed.topic || (Array.isArray(parsed.topics) ? parsed.topics.join(", ") : "") || parsed.title || "maths";
@@ -539,7 +567,7 @@ async function applyQuestionBank({
     const slotKey = searchKey(slot);
     let entry = searched[slotKey];
     if (!entry) {
-      if (now() >= deadline) { result.skipped.push({ ...slotWhere(slot), reason: "out_of_time" }); continue; }
+      if (now() >= deadline) { result.skipped.push({ ...slotWhere(slot), ...slot.need, reason: "out_of_time" }); continue; }
       // The skill and the diagram it needs lead; the resource's topic list
       // ("area, surface area and volume") otherwise outweighs a 2D question
       // and returns 3D candidates. A question written without a skill searches
@@ -566,12 +594,12 @@ async function applyQuestionBank({
           if (searchedNew) await store.save({ searched });
           throw err;
         }
-        result.skipped.push({ ...slotWhere(slot), reason: `search_failed: ${String(err?.message || err).slice(0, 120)}` });
+        result.skipped.push({ ...slotWhere(slot), ...slot.need, reason: `search_failed: ${String(err?.message || err).slice(0, 120)}` });
         continue;
       }
     }
     if (entry.candidates.length) plans.push({ slot, pool: entry.candidates, difficulty: entry.difficulty ?? slotDifficulty(slot, index, slots.length) });
-    else result.skipped.push({ ...slotWhere(slot), reason: "no_candidates" });
+    else result.skipped.push({ ...slotWhere(slot), ...slot.need, reason: "no_candidates" });
   }
   if (searchedNew) await store.save({ searched });
 
@@ -767,7 +795,8 @@ async function applyQuestionBank({
     const out = outcomes[index];
     if (!out || out.skip) {
       // Firestore rejects undefined fields, so detail is added only when there is one.
-      const skipped = { ...slotWhere(plan.slot), reason: out?.skip || "failed" };
+      // The best-ranked candidate says which part of the bank fell short.
+      const skipped = { ...slotWhere(plan.slot), ...plan.slot.need, ...bankCell(plan.pool[0]), reason: out?.skip || "failed" };
       if (out?.reason) skipped.detail = String(out.reason).slice(0, 200);
       result.skipped.push(skipped);
       return;
@@ -776,7 +805,7 @@ async function applyQuestionBank({
     result.answerRows.push(...rows);
     // "new" keeps the value the portal already shows as a new question on a
     // textbook diagram.
-    const usedEntry = { ...slotWhere(plan.slot), questionId: out.candidate.id, kind: out.approach === "adapted" ? "new" : "original" };
+    const usedEntry = { ...slotWhere(plan.slot), ...plan.slot.need, ...bankCell(out.candidate), questionId: out.candidate.id, kind: out.approach === "adapted" ? "new" : "original" };
     if (plan.difficulty) usedEntry.difficulty = plan.difficulty;
     if (out.candidate.year) usedEntry.questionYear = out.candidate.year;
     if (out.answerSource) usedEntry.answerSource = out.answerSource;

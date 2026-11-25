@@ -1,0 +1,4447 @@
+{
+ "windowDays": 90,
+ "years": [
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12
+ ],
+ "thinSupply": 10,
+ "jobs": 27,
+ "supply": {
+  "total": 86712,
+  "byType": {
+   "angle_relationships": {
+    "total": 5393,
+    "byYear": {
+     "5": 77,
+     "6": 362,
+     "7": 1933,
+     "8": 915,
+     "9": 1068,
+     "10": 546,
+     "11": 358,
+     "12": 270
+    },
+    "skills": {
+     "polygon_angle_sum": {
+      "total": 744,
+      "byYear": {
+       "5": 5,
+       "6": 22,
+       "7": 122,
+       "8": 149,
+       "9": 295,
+       "10": 115,
+       "11": 50,
+       "12": 24
+      }
+     },
+     "triangle_angle_sum_exterior": {
+      "total": 800,
+      "byYear": {
+       "5": 12,
+       "6": 68,
+       "7": 195,
+       "8": 155,
+       "9": 212,
+       "10": 89,
+       "11": 47,
+       "12": 39
+      }
+     },
+     "parallel_lines_transversal": {
+      "total": 1537,
+      "byYear": {
+       "5": 6,
+       "6": 37,
+       "7": 720,
+       "8": 239,
+       "9": 231,
+       "10": 142,
+       "11": 91,
+       "12": 90
+      }
+     },
+     "point_line_vertically_opposite": {
+      "total": 1054,
+      "byYear": {
+       "5": 22,
+       "6": 129,
+       "7": 467,
+       "8": 203,
+       "9": 78,
+       "10": 69,
+       "11": 77,
+       "12": 37
+      }
+     },
+     "isosceles_equilateral": {
+      "total": 352,
+      "byYear": {
+       "5": 1,
+       "6": 15,
+       "7": 57,
+       "8": 79,
+       "9": 107,
+       "10": 52,
+       "11": 23,
+       "12": 20
+      }
+     },
+     "geometric_reasoning_proof": {
+      "total": 200,
+      "byYear": {
+       "6": 10,
+       "7": 36,
+       "8": 8,
+       "9": 45,
+       "10": 33,
+       "11": 38,
+       "12": 39
+      }
+     },
+     "other": {
+      "total": 706,
+      "byYear": {
+       "5": 31,
+       "6": 81,
+       "7": 336,
+       "8": 82,
+       "9": 100,
+       "10": 46,
+       "11": 32,
+       "12": 21
+      }
+     }
+    }
+   },
+   "shape_2d": {
+    "total": 11048,
+    "byYear": {
+     "3": 7,
+     "5": 313,
+     "6": 1035,
+     "7": 2332,
+     "8": 1359,
+     "9": 2797,
+     "10": 1294,
+     "11": 1219,
+     "12": 1165
+    },
+    "skills": {
+     "other": {
+      "total": 2281,
+      "byYear": {
+       "3": 6,
+       "5": 89,
+       "6": 217,
+       "7": 562,
+       "8": 159,
+       "9": 414,
+       "10": 255,
+       "11": 280,
+       "12": 402
+      }
+     },
+     "area_circle_sector_annulus": {
+      "total": 954,
+      "byYear": {
+       "6": 25,
+       "7": 14,
+       "8": 171,
+       "9": 324,
+       "10": 140,
+       "11": 171,
+       "12": 166
+      }
+     },
+     "missing_length_from_area_or_perimeter": {
+      "total": 560,
+      "byYear": {
+       "5": 29,
+       "6": 27,
+       "7": 94,
+       "8": 80,
+       "9": 144,
+       "10": 120,
+       "11": 41,
+       "12": 52
+      }
+     },
+     "area_composite": {
+      "total": 1992,
+      "byYear": {
+       "5": 41,
+       "6": 127,
+       "7": 313,
+       "8": 214,
+       "9": 622,
+       "10": 275,
+       "11": 231,
+       "12": 252
+      }
+     },
+     "circumference_arc_length": {
+      "total": 1043,
+      "byYear": {
+       "6": 3,
+       "7": 75,
+       "8": 247,
+       "9": 357,
+       "10": 127,
+       "11": 147,
+       "12": 155
+      }
+     },
+     "area_rectangle_triangle": {
+      "total": 1383,
+      "byYear": {
+       "5": 56,
+       "6": 220,
+       "7": 471,
+       "8": 96,
+       "9": 266,
+       "10": 134,
+       "11": 130,
+       "12": 59
+      }
+     },
+     "perimeter_polygon": {
+      "total": 1238,
+      "byYear": {
+       "5": 82,
+       "6": 207,
+       "7": 362,
+       "8": 171,
+       "9": 251,
+       "10": 92,
+       "11": 82,
+       "12": 37
+      }
+     },
+     "area_parallelogram_trapezium_rhombus_kite": {
+      "total": 760,
+      "byYear": {
+       "5": 1,
+       "6": 16,
+       "7": 97,
+       "8": 204,
+       "9": 206,
+       "10": 130,
+       "11": 113,
+       "12": 37
+      }
+     },
+     "name_classify_shapes": {
+      "total": 837,
+      "byYear": {
+       "3": 1,
+       "5": 15,
+       "6": 193,
+       "7": 344,
+       "8": 17,
+       "9": 213,
+       "10": 21,
+       "11": 24,
+       "12": 5
+      }
+     }
+    }
+   },
+   "right_triangle": {
+    "total": 7038,
+    "byYear": {
+     "5": 3,
+     "6": 27,
+     "7": 20,
+     "8": 635,
+     "9": 3491,
+     "10": 1326,
+     "11": 1231,
+     "12": 597
+    },
+    "skills": {
+     "other": {
+      "total": 907,
+      "byYear": {
+       "5": 3,
+       "6": 24,
+       "7": 18,
+       "8": 85,
+       "9": 327,
+       "10": 181,
+       "11": 116,
+       "12": 180
+      }
+     },
+     "label_sides_write_ratio": {
+      "total": 1369,
+      "byYear": {
+       "6": 1,
+       "8": 150,
+       "9": 896,
+       "10": 197,
+       "11": 153,
+       "12": 44
+      }
+     },
+     "find_hypotenuse": {
+      "total": 860,
+      "byYear": {
+       "6": 1,
+       "7": 1,
+       "8": 179,
+       "9": 419,
+       "10": 111,
+       "11": 127,
+       "12": 54
+      }
+     },
+     "find_shorter_side": {
+      "total": 549,
+      "byYear": {
+       "8": 149,
+       "9": 225,
+       "10": 75,
+       "11": 79,
+       "12": 40
+      }
+     },
+     "trig_find_angle": {
+      "total": 1017,
+      "byYear": {
+       "9": 508,
+       "10": 250,
+       "11": 239,
+       "12": 82
+      }
+     },
+     "two_triangles_multi_step": {
+      "total": 345,
+      "byYear": {
+       "6": 1,
+       "8": 14,
+       "9": 137,
+       "10": 60,
+       "11": 85,
+       "12": 49
+      }
+     },
+     "trig_find_side_numerator": {
+      "total": 895,
+      "byYear": {
+       "9": 491,
+       "10": 192,
+       "11": 182,
+       "12": 75
+      }
+     },
+     "trig_find_side_denominator": {
+      "total": 607,
+      "byYear": {
+       "9": 325,
+       "10": 141,
+       "11": 128,
+       "12": 45
+      }
+     },
+     "test_right_angled": {
+      "total": 148,
+      "byYear": {
+       "7": 1,
+       "8": 58,
+       "9": 50,
+       "10": 12,
+       "11": 25,
+       "12": 3
+      }
+     },
+     "three_dimensional": {
+      "total": 81,
+      "byYear": {
+       "9": 6,
+       "10": 37,
+       "11": 30,
+       "12": 9
+      }
+     },
+     "exact_values": {
+      "total": 260,
+      "byYear": {
+       "9": 107,
+       "10": 70,
+       "11": 67,
+       "12": 16
+      }
+     }
+    }
+   },
+   "other_curve": {
+    "total": 5329,
+    "byYear": {
+     "8": 5,
+     "9": 275,
+     "10": 965,
+     "11": 1900,
+     "12": 2230
+    },
+    "skills": {
+     "function_transformations": {
+      "total": 1015,
+      "byYear": {
+       "9": 11,
+       "10": 110,
+       "11": 419,
+       "12": 475
+      }
+     },
+     "logarithmic": {
+      "total": 117,
+      "byYear": {
+       "10": 24,
+       "11": 44,
+       "12": 49
+      }
+     },
+     "other": {
+      "total": 1619,
+      "byYear": {
+       "8": 3,
+       "9": 68,
+       "10": 248,
+       "11": 561,
+       "12": 749
+      }
+     },
+     "absolute_value": {
+      "total": 149,
+      "byYear": {
+       "9": 2,
+       "10": 3,
+       "11": 88,
+       "12": 56
+      }
+     },
+     "polynomial_sketch_roots": {
+      "total": 417,
+      "byYear": {
+       "8": 1,
+       "9": 2,
+       "10": 120,
+       "11": 158,
+       "12": 136
+      }
+     },
+     "circle_equation": {
+      "total": 297,
+      "byYear": {
+       "8": 1,
+       "9": 41,
+       "10": 123,
+       "11": 95,
+       "12": 38
+      }
+     },
+     "solve_graphically": {
+      "total": 556,
+      "byYear": {
+       "9": 20,
+       "10": 36,
+       "11": 215,
+       "12": 291
+      }
+     },
+     "hyperbola_asymptotes": {
+      "total": 242,
+      "byYear": {
+       "9": 34,
+       "10": 77,
+       "11": 60,
+       "12": 73
+      }
+     },
+     "domain_range_from_graph": {
+      "total": 153,
+      "byYear": {
+       "9": 3,
+       "10": 31,
+       "11": 76,
+       "12": 43
+      }
+     },
+     "exponential_growth_decay": {
+      "total": 607,
+      "byYear": {
+       "9": 94,
+       "10": 165,
+       "11": 122,
+       "12": 253
+      }
+     },
+     "inverse_function": {
+      "total": 157,
+      "byYear": {
+       "10": 28,
+       "11": 62,
+       "12": 67
+      }
+     }
+    }
+   },
+   "calculus_graph": {
+    "total": 3406,
+    "byYear": {
+     "5": 7,
+     "6": 8,
+     "7": 21,
+     "8": 52,
+     "9": 25,
+     "10": 150,
+     "11": 446,
+     "12": 2692
+    },
+    "skills": {
+     "area_under_between_curves": {
+      "total": 1292,
+      "byYear": {
+       "10": 7,
+       "11": 9,
+       "12": 1276
+      }
+     },
+     "sketch_derivative": {
+      "total": 338,
+      "byYear": {
+       "11": 136,
+       "12": 200
+      }
+     },
+     "tangent_gradient_at_point": {
+      "total": 244,
+      "byYear": {
+       "10": 21,
+       "11": 110,
+       "12": 113
+      }
+     },
+     "other": {
+      "total": 473,
+      "byYear": {
+       "9": 11,
+       "10": 11,
+       "11": 82,
+       "12": 368
+      }
+     },
+     "stationary_points_curve_sketch": {
+      "total": 170,
+      "byYear": {
+       "11": 40,
+       "12": 130
+      }
+     },
+     "rates_motion_graphs": {
+      "total": 889,
+      "byYear": {
+       "5": 7,
+       "6": 8,
+       "7": 21,
+       "8": 52,
+       "9": 14,
+       "10": 111,
+       "11": 69,
+       "12": 605
+      }
+     }
+    }
+   },
+   "solid_3d": {
+    "total": 8122,
+    "byYear": {
+     "4": 4,
+     "5": 223,
+     "6": 478,
+     "7": 1394,
+     "8": 658,
+     "9": 2070,
+     "10": 1434,
+     "11": 1144,
+     "12": 875
+    },
+    "skills": {
+     "other": {
+      "total": 2066,
+      "byYear": {
+       "5": 59,
+       "6": 48,
+       "7": 497,
+       "8": 121,
+       "9": 384,
+       "10": 316,
+       "11": 296,
+       "12": 379
+      }
+     },
+     "volume_prism_cylinder": {
+      "total": 1754,
+      "byYear": {
+       "4": 4,
+       "5": 40,
+       "6": 124,
+       "7": 284,
+       "8": 269,
+       "9": 485,
+       "10": 229,
+       "11": 231,
+       "12": 126
+      }
+     },
+     "surface_area_prism_cylinder": {
+      "total": 988,
+      "byYear": {
+       "5": 1,
+       "6": 1,
+       "7": 12,
+       "8": 68,
+       "9": 438,
+       "10": 244,
+       "11": 153,
+       "12": 90
+      }
+     },
+     "missing_dimension_from_volume_or_area": {
+      "total": 395,
+      "byYear": {
+       "5": 15,
+       "6": 39,
+       "7": 43,
+       "8": 45,
+       "9": 107,
+       "10": 63,
+       "11": 44,
+       "12": 66
+      }
+     },
+     "volume_pyramid_cone_sphere": {
+      "total": 578,
+      "byYear": {
+       "5": 7,
+       "9": 177,
+       "10": 162,
+       "11": 154,
+       "12": 91
+      }
+     },
+     "surface_area_pyramid_cone_sphere": {
+      "total": 343,
+      "byYear": {
+       "9": 124,
+       "10": 141,
+       "11": 61,
+       "12": 28
+      }
+     },
+     "capacity_units": {
+      "total": 151,
+      "byYear": {
+       "5": 16,
+       "6": 15,
+       "7": 20,
+       "8": 18,
+       "9": 46,
+       "10": 6,
+       "11": 23,
+       "12": 12
+      }
+     },
+     "composite_solid": {
+      "total": 732,
+      "byYear": {
+       "5": 14,
+       "6": 15,
+       "7": 87,
+       "8": 42,
+       "9": 246,
+       "10": 224,
+       "11": 47,
+       "12": 74
+      }
+     },
+     "faces_edges_vertices_nets": {
+      "total": 1115,
+      "byYear": {
+       "5": 71,
+       "6": 236,
+       "7": 451,
+       "8": 95,
+       "9": 63,
+       "10": 49,
+       "11": 135,
+       "12": 9
+      }
+     }
+    }
+   },
+   "region_inequality": {
+    "total": 1013,
+    "byYear": {
+     "6": 1,
+     "7": 12,
+     "8": 138,
+     "9": 209,
+     "10": 367,
+     "11": 236,
+     "12": 136
+    },
+    "skills": {
+     "describe_region_from_graph": {
+      "total": 256,
+      "byYear": {
+       "6": 1,
+       "7": 12,
+       "8": 16,
+       "9": 54,
+       "10": 102,
+       "11": 44,
+       "12": 43
+      }
+     },
+     "number_line_inequality": {
+      "total": 434,
+      "byYear": {
+       "8": 120,
+       "9": 100,
+       "10": 166,
+       "11": 73,
+       "12": 25
+      }
+     },
+     "linear_region": {
+      "total": 222,
+      "byYear": {
+       "9": 50,
+       "10": 90,
+       "11": 87,
+       "12": 13
+      }
+     },
+     "curved_region": {
+      "total": 68,
+      "byYear": {
+       "8": 2,
+       "9": 2,
+       "10": 2,
+       "11": 22,
+       "12": 40
+      }
+     },
+     "other": {
+      "total": 33,
+      "byYear": {
+       "9": 3,
+       "10": 7,
+       "11": 10,
+       "12": 15
+      }
+     }
+    }
+   },
+   "straight_line": {
+    "total": 4943,
+    "byYear": {
+     "6": 28,
+     "7": 189,
+     "8": 447,
+     "9": 1701,
+     "10": 890,
+     "11": 1128,
+     "12": 808
+    },
+    "skills": {
+     "other": {
+      "total": 715,
+      "byYear": {
+       "6": 3,
+       "7": 15,
+       "8": 79,
+       "9": 222,
+       "10": 136,
+       "11": 170,
+       "12": 108
+      }
+     },
+     "gradient_intercepts_from_graph": {
+      "total": 921,
+      "byYear": {
+       "8": 49,
+       "9": 438,
+       "10": 166,
+       "11": 236,
+       "12": 84
+      }
+     },
+     "simultaneous_graphical": {
+      "total": 476,
+      "byYear": {
+       "8": 50,
+       "9": 160,
+       "10": 75,
+       "11": 66,
+       "12": 148
+      }
+     },
+     "plot_from_equation_or_table": {
+      "total": 1142,
+      "byYear": {
+       "6": 4,
+       "7": 90,
+       "8": 158,
+       "9": 409,
+       "10": 214,
+       "11": 206,
+       "12": 131
+      }
+     },
+     "linear_model_real_world": {
+      "total": 684,
+      "byYear": {
+       "6": 8,
+       "7": 38,
+       "8": 43,
+       "9": 69,
+       "10": 52,
+       "11": 296,
+       "12": 204
+      }
+     },
+     "equation_from_graph": {
+      "total": 848,
+      "byYear": {
+       "7": 22,
+       "8": 55,
+       "9": 346,
+       "10": 208,
+       "11": 132,
+       "12": 128
+      }
+     },
+     "parallel_perpendicular": {
+      "total": 88,
+      "byYear": {
+       "8": 10,
+       "9": 35,
+       "10": 30,
+       "11": 9,
+       "12": 4
+      }
+     },
+     "travel_graph": {
+      "total": 69,
+      "byYear": {
+       "6": 13,
+       "7": 24,
+       "8": 3,
+       "9": 22,
+       "10": 9,
+       "11": 13,
+       "12": 1
+      }
+     }
+    }
+   },
+   "number_plane": {
+    "total": 2604,
+    "byYear": {
+     "5": 11,
+     "6": 109,
+     "7": 446,
+     "8": 232,
+     "9": 748,
+     "10": 376,
+     "11": 256,
+     "12": 494
+    },
+    "skills": {
+     "other": {
+      "total": 633,
+      "byYear": {
+       "5": 1,
+       "6": 1,
+       "7": 28,
+       "8": 69,
+       "9": 116,
+       "10": 121,
+       "11": 79,
+       "12": 217
+      }
+     },
+     "distance": {
+      "total": 375,
+      "byYear": {
+       "7": 2,
+       "8": 25,
+       "9": 199,
+       "10": 77,
+       "11": 41,
+       "12": 30
+      }
+     },
+     "gradient": {
+      "total": 385,
+      "byYear": {
+       "8": 8,
+       "9": 217,
+       "10": 89,
+       "11": 70,
+       "12": 24
+      }
+     },
+     "midpoint": {
+      "total": 209,
+      "byYear": {
+       "8": 1,
+       "9": 124,
+       "10": 41,
+       "11": 28,
+       "12": 21
+      }
+     },
+     "plot_read_points": {
+      "total": 740,
+      "byYear": {
+       "5": 8,
+       "6": 107,
+       "7": 401,
+       "8": 96,
+       "9": 40,
+       "10": 22,
+       "11": 12,
+       "12": 88
+      }
+     },
+     "shapes_on_plane": {
+      "total": 262,
+      "byYear": {
+       "5": 2,
+       "6": 1,
+       "7": 15,
+       "8": 33,
+       "9": 52,
+       "10": 26,
+       "11": 26,
+       "12": 114
+      }
+     }
+    }
+   },
+   "circle_geometry": {
+    "total": 2696,
+    "byYear": {
+     "5": 5,
+     "6": 10,
+     "7": 43,
+     "8": 141,
+     "9": 134,
+     "10": 1551,
+     "11": 381,
+     "12": 433
+    },
+    "skills": {
+     "angle_centre_circumference": {
+      "total": 306,
+      "byYear": {
+       "8": 2,
+       "9": 8,
+       "10": 233,
+       "11": 41,
+       "12": 21
+      }
+     },
+     "other": {
+      "total": 373,
+      "byYear": {
+       "6": 3,
+       "7": 6,
+       "8": 12,
+       "9": 41,
+       "10": 96,
+       "11": 70,
+       "12": 143
+      }
+     },
+     "angles_same_segment_semicircle": {
+      "total": 244,
+      "byYear": {
+       "7": 1,
+       "8": 8,
+       "9": 13,
+       "10": 173,
+       "11": 33,
+       "12": 15
+      }
+     },
+     "cyclic_quadrilateral": {
+      "total": 254,
+      "byYear": {
+       "8": 4,
+       "9": 7,
+       "10": 182,
+       "11": 30,
+       "12": 34
+      }
+     },
+     "tangent_properties": {
+      "total": 565,
+      "byYear": {
+       "7": 1,
+       "8": 9,
+       "9": 3,
+       "10": 388,
+       "11": 94,
+       "12": 70
+      }
+     },
+     "circle_proof": {
+      "total": 320,
+      "byYear": {
+       "8": 1,
+       "9": 34,
+       "10": 149,
+       "11": 40,
+       "12": 99
+      }
+     },
+     "chord_properties": {
+      "total": 415,
+      "byYear": {
+       "7": 1,
+       "8": 1,
+       "9": 16,
+       "10": 297,
+       "11": 63,
+       "12": 41
+      }
+     },
+     "parts_of_circle": {
+      "total": 219,
+      "byYear": {
+       "5": 5,
+       "6": 7,
+       "7": 34,
+       "8": 104,
+       "9": 12,
+       "10": 33,
+       "11": 10,
+       "12": 10
+      }
+     }
+    }
+   },
+   "elevation_bearings": {
+    "total": 2381,
+    "byYear": {
+     "3": 16,
+     "5": 8,
+     "6": 31,
+     "7": 28,
+     "8": 2,
+     "9": 412,
+     "10": 426,
+     "11": 735,
+     "12": 832
+    },
+    "skills": {
+     "elevation_depression": {
+      "total": 733,
+      "byYear": {
+       "7": 2,
+       "9": 184,
+       "10": 135,
+       "11": 272,
+       "12": 168
+      }
+     },
+     "other": {
+      "total": 351,
+      "byYear": {
+       "3": 1,
+       "7": 16,
+       "8": 1,
+       "9": 25,
+       "10": 47,
+       "11": 118,
+       "12": 167
+      }
+     },
+     "bearings_non_right": {
+      "total": 532,
+      "byYear": {
+       "9": 13,
+       "10": 82,
+       "11": 167,
+       "12": 298
+      }
+     },
+     "read_or_draw_bearing": {
+      "total": 526,
+      "byYear": {
+       "3": 15,
+       "5": 8,
+       "6": 15,
+       "7": 10,
+       "9": 139,
+       "10": 112,
+       "11": 111,
+       "12": 135
+      }
+     },
+     "bearing_travel_problem": {
+      "total": 239,
+      "byYear": {
+       "6": 16,
+       "8": 1,
+       "9": 51,
+       "10": 50,
+       "11": 67,
+       "12": 64
+      }
+     }
+    }
+   },
+   "data_display": {
+    "total": 12407,
+    "byYear": {
+     "3": 2,
+     "5": 237,
+     "6": 456,
+     "7": 804,
+     "8": 830,
+     "9": 2083,
+     "10": 2514,
+     "11": 2934,
+     "12": 2911
+    },
+    "skills": {
+     "scatter_plot_line_of_best_fit": {
+      "total": 1814,
+      "byYear": {
+       "8": 5,
+       "9": 23,
+       "10": 491,
+       "11": 260,
+       "12": 1074
+      }
+     },
+     "other": {
+      "total": 2682,
+      "byYear": {
+       "5": 35,
+       "6": 73,
+       "7": 151,
+       "8": 204,
+       "9": 642,
+       "10": 449,
+       "11": 753,
+       "12": 452
+      }
+     },
+     "cumulative_frequency_quartiles": {
+      "total": 540,
+      "byYear": {
+       "9": 155,
+       "10": 126,
+       "11": 193,
+       "12": 99
+      }
+     },
+     "construct_graph": {
+      "total": 590,
+      "byYear": {
+       "5": 32,
+       "6": 41,
+       "7": 41,
+       "8": 39,
+       "9": 55,
+       "10": 130,
+       "11": 179,
+       "12": 85
+      }
+     },
+     "dot_plot_stem_leaf_stats": {
+      "total": 1633,
+      "byYear": {
+       "5": 5,
+       "6": 25,
+       "7": 87,
+       "8": 144,
+       "9": 459,
+       "10": 340,
+       "11": 415,
+       "12": 240
+      }
+     },
+     "read_interpret_graph": {
+      "total": 3414,
+      "byYear": {
+       "3": 2,
+       "5": 158,
+       "6": 312,
+       "7": 517,
+       "8": 352,
+       "9": 399,
+       "10": 513,
+       "11": 726,
+       "12": 517
+      }
+     },
+     "misleading_graph": {
+      "total": 77,
+      "byYear": {
+       "5": 7,
+       "6": 5,
+       "8": 17,
+       "9": 2,
+       "10": 17,
+       "11": 23,
+       "12": 7
+      }
+     },
+     "histogram_frequency_polygon": {
+      "total": 628,
+      "byYear": {
+       "7": 8,
+       "8": 69,
+       "9": 220,
+       "10": 94,
+       "11": 163,
+       "12": 86
+      }
+     },
+     "box_plot": {
+      "total": 1029,
+      "byYear": {
+       "9": 128,
+       "10": 354,
+       "11": 222,
+       "12": 351
+      }
+     }
+    }
+   },
+   "trig_graph": {
+    "total": 1283,
+    "byYear": {
+     "9": 4,
+     "10": 189,
+     "11": 363,
+     "12": 727
+    },
+    "skills": {
+     "equation_from_graph": {
+      "total": 234,
+      "byYear": {
+       "9": 3,
+       "10": 4,
+       "11": 39,
+       "12": 188
+      }
+     },
+     "solve_trig_graphically": {
+      "total": 284,
+      "byYear": {
+       "10": 39,
+       "11": 102,
+       "12": 143
+      }
+     },
+     "other": {
+      "total": 370,
+      "byYear": {
+       "9": 1,
+       "10": 74,
+       "11": 74,
+       "12": 221
+      }
+     },
+     "sketch_amplitude_period_phase": {
+      "total": 244,
+      "byYear": {
+       "10": 25,
+       "11": 65,
+       "12": 154
+      }
+     },
+     "unit_circle_exact_values": {
+      "total": 151,
+      "byYear": {
+       "10": 47,
+       "11": 83,
+       "12": 21
+      }
+     }
+    }
+   },
+   "non_right_triangle": {
+    "total": 2113,
+    "byYear": {
+     "6": 30,
+     "7": 87,
+     "8": 36,
+     "9": 56,
+     "10": 638,
+     "11": 749,
+     "12": 558
+    },
+    "skills": {
+     "area_half_ab_sin_c": {
+      "total": 401,
+      "byYear": {
+       "9": 5,
+       "10": 131,
+       "11": 139,
+       "12": 145
+      }
+     },
+     "cosine_rule_side": {
+      "total": 272,
+      "byYear": {
+       "9": 2,
+       "10": 81,
+       "11": 122,
+       "12": 77
+      }
+     },
+     "other": {
+      "total": 496,
+      "byYear": {
+       "6": 30,
+       "7": 87,
+       "8": 36,
+       "9": 38,
+       "10": 122,
+       "11": 78,
+       "12": 104
+      }
+     },
+     "choose_rule_multi_step": {
+      "total": 153,
+      "byYear": {
+       "9": 2,
+       "10": 46,
+       "11": 68,
+       "12": 40
+      }
+     },
+     "cosine_rule_angle": {
+      "total": 252,
+      "byYear": {
+       "9": 3,
+       "10": 78,
+       "11": 112,
+       "12": 59
+      }
+     },
+     "sine_rule_side": {
+      "total": 301,
+      "byYear": {
+       "9": 6,
+       "10": 80,
+       "11": 136,
+       "12": 82
+      }
+     },
+     "sine_rule_angle": {
+      "total": 238,
+      "byYear": {
+       "10": 100,
+       "11": 94,
+       "12": 51
+      }
+     }
+    }
+   },
+   "vectors": {
+    "total": 1064,
+    "byYear": {
+     "10": 2,
+     "11": 1,
+     "12": 1061
+    },
+    "skills": {
+     "other": {
+      "total": 184,
+      "byYear": {
+       "12": 184
+      }
+     },
+     "magnitude_direction_components": {
+      "total": 183,
+      "byYear": {
+       "12": 183
+      }
+     },
+     "vector_proof": {
+      "total": 364,
+      "byYear": {
+       "10": 2,
+       "11": 1,
+       "12": 361
+      }
+     },
+     "add_subtract_diagram": {
+      "total": 299,
+      "byYear": {
+       "12": 299
+      }
+     },
+     "projection": {
+      "total": 34,
+      "byYear": {
+       "12": 34
+      }
+     }
+    }
+   },
+   "mechanics": {
+    "total": 836,
+    "byYear": {
+     "10": 3,
+     "12": 833
+    },
+    "skills": {
+     "projectile": {
+      "total": 435,
+      "byYear": {
+       "10": 3,
+       "12": 432
+      }
+     },
+     "other": {
+      "total": 97,
+      "byYear": {
+       "12": 97
+      }
+     },
+     "forces_resisted_motion": {
+      "total": 270,
+      "byYear": {
+       "12": 270
+      }
+     },
+     "simple_harmonic_motion": {
+      "total": 34,
+      "byYear": {
+       "12": 34
+      }
+     }
+    }
+   },
+   "parabola": {
+    "total": 3033,
+    "byYear": {
+     "7": 2,
+     "8": 8,
+     "9": 678,
+     "10": 821,
+     "11": 717,
+     "12": 829
+    },
+    "skills": {
+     "transformations": {
+      "total": 258,
+      "byYear": {
+       "9": 68,
+       "10": 68,
+       "11": 74,
+       "12": 48
+      }
+     },
+     "line_parabola_intersection": {
+      "total": 184,
+      "byYear": {
+       "9": 30,
+       "10": 33,
+       "11": 34,
+       "12": 87
+      }
+     },
+     "other": {
+      "total": 946,
+      "byYear": {
+       "9": 103,
+       "10": 182,
+       "11": 306,
+       "12": 355
+      }
+     },
+     "sketch_from_equation": {
+      "total": 528,
+      "byYear": {
+       "7": 2,
+       "8": 6,
+       "9": 116,
+       "10": 177,
+       "11": 150,
+       "12": 83
+      }
+     },
+     "vertex_axis_of_symmetry": {
+      "total": 339,
+      "byYear": {
+       "9": 141,
+       "10": 84,
+       "11": 27,
+       "12": 89
+      }
+     },
+     "quadratic_model": {
+      "total": 225,
+      "byYear": {
+       "9": 38,
+       "10": 41,
+       "11": 38,
+       "12": 116
+      }
+     },
+     "equation_from_graph": {
+      "total": 553,
+      "byYear": {
+       "8": 2,
+       "9": 182,
+       "10": 236,
+       "11": 88,
+       "12": 51
+      }
+     }
+    }
+   },
+   "probability_diagram": {
+    "total": 3799,
+    "byYear": {
+     "3": 2,
+     "5": 59,
+     "6": 73,
+     "7": 164,
+     "8": 357,
+     "9": 568,
+     "10": 861,
+     "11": 820,
+     "12": 992
+    },
+    "skills": {
+     "other": {
+      "total": 1444,
+      "byYear": {
+       "3": 2,
+       "5": 51,
+       "6": 57,
+       "7": 86,
+       "8": 126,
+       "9": 179,
+       "10": 184,
+       "11": 370,
+       "12": 439
+      }
+     },
+     "tree_without_replacement": {
+      "total": 317,
+      "byYear": {
+       "8": 1,
+       "9": 37,
+       "10": 45,
+       "11": 83,
+       "12": 151
+      }
+     },
+     "two_way_table_conditional": {
+      "total": 683,
+      "byYear": {
+       "5": 1,
+       "6": 12,
+       "7": 36,
+       "8": 71,
+       "9": 101,
+       "10": 204,
+       "11": 116,
+       "12": 190
+      }
+     },
+     "tree_with_replacement": {
+      "total": 425,
+      "byYear": {
+       "5": 4,
+       "6": 1,
+       "9": 69,
+       "10": 105,
+       "11": 120,
+       "12": 129
+      }
+     },
+     "venn_union_intersection_complement": {
+      "total": 930,
+      "byYear": {
+       "5": 3,
+       "6": 3,
+       "7": 42,
+       "8": 159,
+       "9": 182,
+       "10": 323,
+       "11": 131,
+       "12": 83
+      }
+     }
+    }
+   },
+   "transformations": {
+    "total": 1107,
+    "byYear": {
+     "3": 1,
+     "5": 57,
+     "6": 174,
+     "7": 530,
+     "8": 130,
+     "9": 50,
+     "10": 91,
+     "11": 69,
+     "12": 30
+    },
+    "skills": {
+     "other": {
+      "total": 38,
+      "byYear": {
+       "5": 5,
+       "6": 5,
+       "7": 11,
+       "8": 3,
+       "9": 3,
+       "10": 1,
+       "11": 3,
+       "12": 6
+      }
+     },
+     "reflect": {
+      "total": 270,
+      "byYear": {
+       "5": 13,
+       "6": 66,
+       "7": 82,
+       "8": 25,
+       "9": 12,
+       "10": 37,
+       "11": 21,
+       "12": 11
+      }
+     },
+     "describe_or_combine_transformations": {
+      "total": 126,
+      "byYear": {
+       "5": 7,
+       "6": 19,
+       "7": 61,
+       "8": 27,
+       "9": 13,
+       "10": 4,
+       "11": 8,
+       "12": 2
+      }
+     },
+     "translate": {
+      "total": 81,
+      "byYear": {
+       "5": 2,
+       "6": 10,
+       "7": 48,
+       "8": 10,
+       "9": 1,
+       "10": 16,
+       "11": 2,
+       "12": 2
+      }
+     },
+     "line_rotational_symmetry": {
+      "total": 280,
+      "byYear": {
+       "5": 6,
+       "6": 36,
+       "7": 176,
+       "8": 25,
+       "9": 9,
+       "10": 1,
+       "11": 23,
+       "12": 3
+      }
+     },
+     "rotate": {
+      "total": 149,
+      "byYear": {
+       "3": 1,
+       "5": 13,
+       "6": 18,
+       "7": 67,
+       "8": 29,
+       "9": 8,
+       "10": 28,
+       "12": 6
+      }
+     },
+     "tessellation": {
+      "total": 163,
+      "byYear": {
+       "5": 11,
+       "6": 20,
+       "7": 85,
+       "8": 11,
+       "9": 4,
+       "10": 4,
+       "11": 12
+      }
+     }
+    }
+   },
+   "normal_curve": {
+    "total": 408,
+    "byYear": {
+     "10": 16,
+     "11": 8,
+     "12": 386
+    },
+    "skills": {
+     "probability_from_area": {
+      "total": 237,
+      "byYear": {
+       "10": 3,
+       "12": 234
+      }
+     },
+     "other": {
+      "total": 26,
+      "byYear": {
+       "10": 1,
+       "11": 3,
+       "12": 24
+      }
+     },
+     "compare_distributions": {
+      "total": 39,
+      "byYear": {
+       "10": 6,
+       "11": 4,
+       "12": 29
+      }
+     },
+     "empirical_rule": {
+      "total": 26,
+      "byYear": {
+       "10": 2,
+       "11": 1,
+       "12": 23
+      }
+     },
+     "z_scores": {
+      "total": 80,
+      "byYear": {
+       "10": 4,
+       "12": 76
+      }
+     }
+    }
+   },
+   "network": {
+    "total": 1972,
+    "byYear": {
+     "3": 2,
+     "5": 7,
+     "6": 12,
+     "7": 66,
+     "8": 5,
+     "9": 27,
+     "10": 370,
+     "11": 166,
+     "12": 1321
+    },
+    "skills": {
+     "other": {
+      "total": 239,
+      "byYear": {
+       "3": 2,
+       "5": 3,
+       "6": 6,
+       "7": 5,
+       "8": 4,
+       "9": 16,
+       "10": 94,
+       "11": 18,
+       "12": 93
+      }
+     },
+     "terminology_degree_paths": {
+      "total": 823,
+      "byYear": {
+       "5": 4,
+       "6": 5,
+       "7": 52,
+       "8": 1,
+       "9": 11,
+       "10": 247,
+       "11": 109,
+       "12": 396
+      }
+     },
+     "minimum_spanning_tree": {
+      "total": 236,
+      "byYear": {
+       "10": 2,
+       "11": 16,
+       "12": 218
+      }
+     },
+     "critical_path": {
+      "total": 278,
+      "byYear": {
+       "7": 1,
+       "12": 277
+      }
+     },
+     "flow_max_min_cut": {
+      "total": 205,
+      "byYear": {
+       "12": 205
+      }
+     },
+     "shortest_path": {
+      "total": 191,
+      "byYear": {
+       "6": 1,
+       "7": 8,
+       "10": 27,
+       "11": 23,
+       "12": 132
+      }
+     }
+    }
+   },
+   "scale_drawing": {
+    "total": 916,
+    "byYear": {
+     "3": 14,
+     "5": 78,
+     "6": 129,
+     "7": 197,
+     "8": 35,
+     "9": 45,
+     "10": 19,
+     "11": 245,
+     "12": 211
+    },
+    "skills": {
+     "map_distance_or_grid_reference": {
+      "total": 179,
+      "byYear": {
+       "3": 11,
+       "5": 29,
+       "6": 24,
+       "7": 83,
+       "8": 13,
+       "9": 11,
+       "11": 19,
+       "12": 8
+      }
+     },
+     "other": {
+      "total": 316,
+      "byYear": {
+       "3": 3,
+       "5": 10,
+       "6": 42,
+       "7": 76,
+       "8": 5,
+       "9": 22,
+       "10": 8,
+       "11": 88,
+       "12": 75
+      }
+     },
+     "actual_length_from_scale": {
+      "total": 241,
+      "byYear": {
+       "5": 22,
+       "6": 45,
+       "7": 34,
+       "8": 9,
+       "9": 7,
+       "10": 7,
+       "11": 85,
+       "12": 52
+      }
+     },
+     "area_or_cost_from_plan": {
+      "total": 132,
+      "byYear": {
+       "5": 17,
+       "6": 17,
+       "7": 4,
+       "8": 3,
+       "9": 4,
+       "10": 3,
+       "11": 29,
+       "12": 59
+      }
+     },
+     "find_scale_factor": {
+      "total": 48,
+      "byYear": {
+       "6": 1,
+       "8": 5,
+       "9": 1,
+       "10": 1,
+       "11": 24,
+       "12": 17
+      }
+     }
+    }
+   },
+   "congruence_similarity": {
+    "total": 3801,
+    "byYear": {
+     "5": 5,
+     "6": 41,
+     "7": 27,
+     "8": 393,
+     "9": 1511,
+     "10": 1095,
+     "11": 420,
+     "12": 322
+    },
+    "skills": {
+     "congruence_test_proof": {
+      "total": 730,
+      "byYear": {
+       "8": 40,
+       "9": 276,
+       "10": 257,
+       "11": 64,
+       "12": 94
+      }
+     },
+     "enlargement_area_volume_ratio": {
+      "total": 182,
+      "byYear": {
+       "8": 14,
+       "9": 72,
+       "10": 80,
+       "11": 7,
+       "12": 9
+      }
+     },
+     "other": {
+      "total": 870,
+      "byYear": {
+       "5": 5,
+       "6": 11,
+       "7": 16,
+       "8": 104,
+       "9": 345,
+       "10": 220,
+       "11": 91,
+       "12": 82
+      }
+     },
+     "identify_congruent": {
+      "total": 683,
+      "byYear": {
+       "6": 30,
+       "7": 11,
+       "8": 159,
+       "9": 280,
+       "10": 109,
+       "11": 82,
+       "12": 16
+      }
+     },
+     "similar_triangles_proof": {
+      "total": 500,
+      "byYear": {
+       "8": 17,
+       "9": 181,
+       "10": 178,
+       "11": 66,
+       "12": 58
+      }
+     },
+     "similar_scale_factor_missing_side": {
+      "total": 836,
+      "byYear": {
+       "8": 59,
+       "9": 357,
+       "10": 251,
+       "11": 110,
+       "12": 63
+      }
+     }
+    }
+   }
+  }
+ },
+ "demand": {
+  "totals": {
+   "slots": 232,
+   "used": 175,
+   "drawn": 57,
+   "reasons": {
+    "none_suitable": 18,
+    "answer_check": 16,
+    "failed": 1,
+    "not_swappable": 19,
+    "no_candidates": 2,
+    "crop_unfit": 1
+   }
+  },
+  "rows": [
+   {
+    "year": 9,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "",
+    "needed": 9,
+    "used": 0,
+    "drawn": 9,
+    "reasons": {
+     "none_suitable": 2,
+     "answer_check": 4,
+     "failed": 1,
+     "not_swappable": 1,
+     "no_candidates": 1
+    },
+    "skills": [
+     {
+      "name": "angles around the centre of circles",
+      "count": 1
+     },
+     {
+      "name": "angles between intersecting diameters",
+      "count": 1
+     },
+     {
+      "name": "angles in semicircles and triangles",
+      "count": 1
+     },
+     {
+      "name": "central angles in triangles formed by radii",
+      "count": 1
+     }
+    ],
+    "supply": 5450,
+    "fix": "answer_check"
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "region_inequality",
+    "bankSkill": "linear_region",
+    "needed": 8,
+    "used": 8,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "graphing inclusive inequalities with negative gradients",
+      "count": 1
+     },
+     {
+      "name": "graphing inclusive vertical inequalities",
+      "count": 1
+     },
+     {
+      "name": "graphing strict horizontal inequalities",
+      "count": 1
+     },
+     {
+      "name": "graphing strict inequalities with positive gradients",
+      "count": 1
+     }
+    ],
+    "supply": 140
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "number_plane",
+    "bankSkill": "",
+    "needed": 7,
+    "used": 0,
+    "drawn": 7,
+    "reasons": {
+     "none_suitable": 2,
+     "answer_check": 3,
+     "not_swappable": 2
+    },
+    "skills": [
+     {
+      "name": "direct return distances and bearings",
+      "count": 1
+     },
+     {
+      "name": "graphing inclusive horizontal inequalities",
+      "count": 1
+     },
+     {
+      "name": "graphing strict horizontal inequalities",
+      "count": 1
+     },
+     {
+      "name": "intersections of horizontal and vertical half-planes",
+      "count": 1
+     }
+    ],
+    "supply": 1356,
+    "fix": "answer_check"
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "probability_diagram",
+    "bankSkill": "tree_with_replacement",
+    "needed": 7,
+    "used": 7,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "conditional probability in three selections",
+      "count": 1
+     },
+     {
+      "name": "conditional probability with complementary events",
+      "count": 1
+     },
+     {
+      "name": "path probabilities for independent events",
+      "count": 1
+     },
+     {
+      "name": "probability of at least one success",
+      "count": 1
+     }
+    ],
+    "supply": 294
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "angle_relationships",
+    "bankSkill": "point_line_vertically_opposite",
+    "needed": 6,
+    "used": 6,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "angles at a point",
+      "count": 1
+     },
+     {
+      "name": "angles on a straight line",
+      "count": 1
+     },
+     {
+      "name": "complementary angles and angles around a point",
+      "count": 1
+     },
+     {
+      "name": "use the angle sum around a point",
+      "count": 1
+     }
+    ],
+    "supply": 799
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "probability_diagram",
+    "bankSkill": "two_way_table_conditional",
+    "needed": 6,
+    "used": 6,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "probability from two-way tables",
+      "count": 2
+     },
+     {
+      "name": "conditional probability from two-way tables",
+      "count": 1
+     },
+     {
+      "name": "conditional probability with missing table entries",
+      "count": 1
+     },
+     {
+      "name": "probability of combined events from two-way tables",
+      "count": 1
+     }
+    ],
+    "supply": 421
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "probability_diagram",
+    "bankSkill": "venn_union_intersection_complement",
+    "needed": 6,
+    "used": 6,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "counting regions in venn diagrams",
+      "count": 2
+     },
+     {
+      "name": "classifying events in venn diagrams",
+      "count": 1
+     },
+     {
+      "name": "finding overlaps in venn diagrams",
+      "count": 1
+     },
+     {
+      "name": "probability of exactly one event in venn diagrams",
+      "count": 1
+     }
+    ],
+    "supply": 636
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "straight_line",
+    "bankSkill": "simultaneous_graphical",
+    "needed": 6,
+    "used": 6,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "graphing equations after rearranging",
+      "count": 2
+     },
+     {
+      "name": "graphical solutions of simultaneous equations",
+      "count": 1
+     },
+     {
+      "name": "plotting simultaneous linear equations",
+      "count": 1
+     },
+     {
+      "name": "reading fractional coordinates of intersections",
+      "count": 1
+     }
+    ],
+    "supply": 301
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "right_triangle",
+    "bankSkill": "",
+    "needed": 5,
+    "used": 0,
+    "drawn": 5,
+    "reasons": {
+     "none_suitable": 1,
+     "not_swappable": 4
+    },
+    "skills": [
+     {
+      "name": "finding angles in right-angled triangles",
+      "count": 1
+     },
+     {
+      "name": "finding the hypotenuse using cosine",
+      "count": 1
+     },
+     {
+      "name": "heights from same-side observation points",
+      "count": 1
+     },
+     {
+      "name": "identifying sides and trigonometric ratios",
+      "count": 1
+     }
+    ],
+    "supply": 5452,
+    "fix": "generator"
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "volume_prism_cylinder",
+    "needed": 5,
+    "used": 5,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "volume of cylinders",
+      "count": 1
+     },
+     {
+      "name": "volume of rectangular prisms",
+      "count": 1
+     }
+    ],
+    "supply": 983
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "elevation_bearings",
+    "bankSkill": "read_or_draw_bearing",
+    "needed": 5,
+    "used": 5,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "angles between parallel lines",
+      "count": 1
+     },
+     {
+      "name": "calculating back bearings",
+      "count": 1
+     },
+     {
+      "name": "drawing three-figure bearings",
+      "count": 1
+     },
+     {
+      "name": "missing distances and bearings in multi-leg routes",
+      "count": 1
+     }
+    ],
+    "supply": 362
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "probability_diagram",
+    "bankSkill": "tree_without_replacement",
+    "needed": 5,
+    "used": 5,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "probability of complementary events without replacement",
+      "count": 1
+     },
+     {
+      "name": "probability of exactly two successes without replacement",
+      "count": 1
+     },
+     {
+      "name": "probability of matching outcomes in three selections",
+      "count": 1
+     },
+     {
+      "name": "probability of matching outcomes without replacement",
+      "count": 1
+     }
+    ],
+    "supply": 165
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "right_triangle",
+    "bankSkill": "label_sides_write_ratio",
+    "needed": 5,
+    "used": 5,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "cosine ratios in right-angled triangles",
+      "count": 1
+     },
+     {
+      "name": "inclined lengths in right-angled triangles",
+      "count": 1
+     },
+     {
+      "name": "opposite side lengths in right-angled triangles",
+      "count": 1
+     },
+     {
+      "name": "sine ratios in right-angled triangles",
+      "count": 1
+     }
+    ],
+    "supply": 1246
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "",
+    "bankSkill": "",
+    "needed": 4,
+    "used": 0,
+    "drawn": 4,
+    "reasons": {
+     "none_suitable": 1,
+     "not_swappable": 3
+    },
+    "skills": [
+     {
+      "name": "building heights from angles of elevation and depression",
+      "count": 1
+     },
+     {
+      "name": "horizontal and line-of-sight distances",
+      "count": 1
+     },
+     {
+      "name": "horizontal distances using angles of depression",
+      "count": 1
+     }
+    ],
+    "supply": null,
+    "fix": "generator"
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "angle_relationships",
+    "bankSkill": "parallel_lines_transversal",
+    "needed": 4,
+    "used": 4,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "checking angle claims with parallel lines",
+      "count": 1
+     },
+     {
+      "name": "co-interior angles and adjacent angles on a straight line",
+      "count": 1
+     },
+     {
+      "name": "reflex angles with parallel lines",
+      "count": 1
+     },
+     {
+      "name": "use alternate angles on parallel lines",
+      "count": 1
+     }
+    ],
+    "supply": 996
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "circle_geometry",
+    "bankSkill": "angle_centre_circumference",
+    "needed": 4,
+    "used": 4,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "angles at the centre and circumference",
+      "count": 2
+     },
+     {
+      "name": "angles at the centre of circles",
+      "count": 1
+     },
+     {
+      "name": "reflex angles at the centre and angles at the circumference",
+      "count": 1
+     }
+    ],
+    "supply": 243
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "region_inequality",
+    "bankSkill": "describe_region_from_graph",
+    "needed": 4,
+    "used": 4,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "graphing inclusive inequalities in standard form",
+      "count": 1
+     },
+     {
+      "name": "graphing strict inequalities in standard form",
+      "count": 1
+     },
+     {
+      "name": "systems of inequalities from triangular regions",
+      "count": 1
+     },
+     {
+      "name": "writing linear inequalities from graphs",
+      "count": 1
+     }
+    ],
+    "supply": 172
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "area_circle_sector_annulus",
+    "needed": 4,
+    "used": 4,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "area and boundary length of annuli",
+      "count": 1
+     },
+     {
+      "name": "area and perimeter of quadrants",
+      "count": 1
+     },
+     {
+      "name": "area and perimeter of semicircles",
+      "count": 1
+     },
+     {
+      "name": "area of circles",
+      "count": 1
+     }
+    ],
+    "supply": 635
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "surface_area_prism_cylinder",
+    "needed": 4,
+    "used": 4,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "surface area of open cylinders",
+      "count": 1
+     },
+     {
+      "name": "surface area of rectangular prisms",
+      "count": 1
+     },
+     {
+      "name": "surface area of triangular prisms",
+      "count": 1
+     }
+    ],
+    "supply": 750
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "parabola",
+    "bankSkill": "other",
+    "needed": 4,
+    "used": 4,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "domain of quadratic functions",
+      "count": 1
+     },
+     {
+      "name": "range of quadratic functions",
+      "count": 1
+     },
+     {
+      "name": "reading features of quadratic graphs",
+      "count": 1
+     },
+     {
+      "name": "sketching vertically shifted parabolas",
+      "count": 1
+     }
+    ],
+    "supply": 591
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "parabola",
+    "bankSkill": "sketch_from_equation",
+    "needed": 4,
+    "used": 4,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "plotting quadratic graphs",
+      "count": 1
+     },
+     {
+      "name": "range of quadratic functions",
+      "count": 1
+     },
+     {
+      "name": "sketching parabolas with restricted domains",
+      "count": 1
+     },
+     {
+      "name": "sketching transformed quadratic graphs",
+      "count": 1
+     }
+    ],
+    "supply": 443
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "probability_diagram",
+    "bankSkill": "other",
+    "needed": 4,
+    "used": 4,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "conditional probability of an earlier event",
+      "count": 2
+     },
+     {
+      "name": "conditional probability from venn diagrams",
+      "count": 1
+     },
+     {
+      "name": "conditional probability in three selections",
+      "count": 1
+     }
+    ],
+    "supply": 733
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "trig_graph",
+    "bankSkill": "other",
+    "needed": 4,
+    "used": 4,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "acute angles in right-angled triangles",
+      "count": 2
+     },
+     {
+      "name": "coordinates and trigonometric ratios on the unit circle",
+      "count": 1
+     },
+     {
+      "name": "signs of trigonometric ratios on the unit circle",
+      "count": 1
+     }
+    ],
+    "supply": 149
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "angle_relationships",
+    "bankSkill": "",
+    "needed": 3,
+    "used": 0,
+    "drawn": 3,
+    "reasons": {
+     "none_suitable": 3
+    },
+    "skills": [
+     {
+      "name": "alternate angles and vertically opposite angles",
+      "count": 1
+     },
+     {
+      "name": "corresponding angles and angles on a straight line",
+      "count": 1
+     },
+     {
+      "name": "use the angle sum on a straight line",
+      "count": 1
+     }
+    ],
+    "supply": 3210,
+    "fix": "extract_more"
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "",
+    "needed": 3,
+    "used": 0,
+    "drawn": 3,
+    "reasons": {
+     "none_suitable": 2,
+     "answer_check": 1
+    },
+    "skills": [],
+    "supply": 4726,
+    "fix": "extract_more"
+   },
+   {
+    "year": 8,
+    "bankDiagramType": "number_plane",
+    "bankSkill": "",
+    "needed": 3,
+    "used": 0,
+    "drawn": 3,
+    "reasons": {
+     "not_swappable": 3
+    },
+    "skills": [
+     {
+      "name": "graphs of horizontal and vertical lines",
+      "count": 1
+     },
+     {
+      "name": "graphs of linear relationships",
+      "count": 1
+     },
+     {
+      "name": "graphs of straight lines with fractional gradients",
+      "count": 1
+     }
+    ],
+    "supply": 1426,
+    "fix": "generator"
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "",
+    "needed": 3,
+    "used": 0,
+    "drawn": 3,
+    "reasons": {
+     "answer_check": 3
+    },
+    "skills": [
+     {
+      "name": "surface area of closed cylinders",
+      "count": 1
+     },
+     {
+      "name": "surface area of hollow cylinders",
+      "count": 1
+     }
+    ],
+    "supply": 4162,
+    "fix": "answer_check"
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "data_display",
+    "bankSkill": "read_interpret_graph",
+    "needed": 3,
+    "used": 3,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "constructing column graphs",
+      "count": 1
+     },
+     {
+      "name": "equivalent fractions using fraction bars",
+      "count": 1
+     },
+     {
+      "name": "interpreting changes in line graphs",
+      "count": 1
+     }
+    ],
+    "supply": 470
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "area_rectangle_triangle",
+    "needed": 3,
+    "used": 3,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "calculate the area of a rectangle",
+      "count": 1
+     }
+    ],
+    "supply": 787
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "circle_geometry",
+    "bankSkill": "cyclic_quadrilateral",
+    "needed": 3,
+    "used": 3,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "angles in cyclic quadrilaterals and radius triangles",
+      "count": 1
+     },
+     {
+      "name": "exterior angles of cyclic quadrilaterals",
+      "count": 1
+     },
+     {
+      "name": "opposite angles in cyclic quadrilaterals",
+      "count": 1
+     }
+    ],
+    "supply": 193
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "circle_geometry",
+    "bankSkill": "tangent_properties",
+    "needed": 3,
+    "used": 3,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "angles between radii and tangents",
+      "count": 1
+     },
+     {
+      "name": "angles between tangents and chords",
+      "count": 1
+     },
+     {
+      "name": "base angles of triangles formed by radii",
+      "count": 1
+     }
+    ],
+    "supply": 400
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "data_display",
+    "bankSkill": "read_interpret_graph",
+    "needed": 3,
+    "used": 3,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "comparing distributions using histograms",
+      "count": 1
+     },
+     {
+      "name": "constructing histograms",
+      "count": 1
+     },
+     {
+      "name": "reading histograms",
+      "count": 1
+     }
+    ],
+    "supply": 1264
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "elevation_bearings",
+    "bankSkill": "bearings_non_right",
+    "needed": 3,
+    "used": 3,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "bearings in right-angled triangles",
+      "count": 1
+     },
+     {
+      "name": "direct distances and return bearings in right-angled routes",
+      "count": 1
+     },
+     {
+      "name": "separation distances from bearings",
+      "count": 1
+     }
+    ],
+    "supply": 262
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "",
+    "needed": 2,
+    "used": 0,
+    "drawn": 2,
+    "reasons": {
+     "none_suitable": 2
+    },
+    "skills": [],
+    "supply": 2530,
+    "fix": "extract_more"
+   },
+   {
+    "year": 8,
+    "bankDiagramType": "straight_line",
+    "bankSkill": "",
+    "needed": 2,
+    "used": 0,
+    "drawn": 2,
+    "reasons": {
+     "not_swappable": 2
+    },
+    "skills": [
+     {
+      "name": "interpreting time-series line graphs",
+      "count": 1
+     },
+     {
+      "name": "tables of values from linear graphs",
+      "count": 1
+     }
+    ],
+    "supply": 2337,
+    "fix": "generator"
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "elevation_bearings",
+    "bankSkill": "",
+    "needed": 2,
+    "used": 0,
+    "drawn": 2,
+    "reasons": {
+     "not_swappable": 2
+    },
+    "skills": [
+     {
+      "name": "heights using angles of elevation",
+      "count": 1
+     },
+     {
+      "name": "tower heights from changing angles of elevation",
+      "count": 1
+     }
+    ],
+    "supply": 840,
+    "fix": "generator"
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "",
+    "bankSkill": "",
+    "needed": 2,
+    "used": 0,
+    "drawn": 2,
+    "reasons": {
+     "answer_check": 2
+    },
+    "skills": [
+     {
+      "name": "bearings in non-right-angled triangles",
+      "count": 1
+     },
+     {
+      "name": "side lengths in right-angled triangles",
+      "count": 1
+     }
+    ],
+    "supply": null,
+    "fix": "answer_check"
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "number_plane",
+    "bankSkill": "",
+    "needed": 2,
+    "used": 0,
+    "drawn": 2,
+    "reasons": {
+     "none_suitable": 2
+    },
+    "skills": [
+     {
+      "name": "sketching downward-opening parabolas",
+      "count": 1
+     },
+     {
+      "name": "sketching square functions",
+      "count": 1
+     }
+    ],
+    "supply": 1380,
+    "fix": "extract_more"
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "area_composite",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "area of composite rectangular shapes",
+      "count": 1
+     },
+     {
+      "name": "perimeter of composite rectangular shapes",
+      "count": 1
+     }
+    ],
+    "supply": 168
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "area_composite",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "calculate the area of a composite shape by subtraction",
+      "count": 1
+     },
+     {
+      "name": "calculate the area of a trapezium",
+      "count": 1
+     }
+    ],
+    "supply": 654
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "other",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "probability from spinners",
+      "count": 1
+     },
+     {
+      "name": "representing probabilities from spinners",
+      "count": 1
+     }
+    ],
+    "supply": 938
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "surface_area_prism_cylinder",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [],
+    "supply": 81
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "volume_prism_cylinder",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [],
+    "supply": 677
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "circle_geometry",
+    "bankSkill": "angles_same_segment_semicircle",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "angles in semicircles",
+      "count": 1
+     },
+     {
+      "name": "angles in the same segment",
+      "count": 1
+     }
+    ],
+    "supply": 194
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "data_display",
+    "bankSkill": "dot_plot_stem_leaf_stats",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "constructing back-to-back stem-and-leaf plots",
+      "count": 1
+     },
+     {
+      "name": "constructing stem-and-leaf plots",
+      "count": 1
+     }
+    ],
+    "supply": 943
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "number_plane",
+    "bankSkill": "other",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "rotations on the number plane",
+      "count": 1
+     },
+     {
+      "name": "translations and reflections on the number plane",
+      "count": 1
+     }
+    ],
+    "supply": 306
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "area_composite",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "dimensions and perimeter of composite shapes",
+      "count": 1
+     },
+     {
+      "name": "perimeter and area of composite polygons",
+      "count": 1
+     }
+    ],
+    "supply": 1111
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "area_parallelogram_trapezium_rhombus_kite",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "area of parallelograms",
+      "count": 1
+     },
+     {
+      "name": "area of trapeziums",
+      "count": 1
+     }
+    ],
+    "supply": 540
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "circumference_arc_length",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "area and arc length of sectors",
+      "count": 1
+     },
+     {
+      "name": "circumference of circles",
+      "count": 1
+     }
+    ],
+    "supply": 731
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "composite_solid",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "surface area of composite prisms",
+      "count": 1
+     },
+     {
+      "name": "volume of composite prisms",
+      "count": 1
+     }
+    ],
+    "supply": 512
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "volume_pyramid_cone_sphere",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "volume of cones",
+      "count": 1
+     },
+     {
+      "name": "volume of pyramids",
+      "count": 1
+     }
+    ],
+    "supply": 339
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "straight_line",
+    "bankSkill": "equation_from_graph",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "gradients and equations of contextual graphs",
+      "count": 1
+     },
+     {
+      "name": "interpreting contextual gradients and intercepts",
+      "count": 1
+     }
+    ],
+    "supply": 609
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "other_curve",
+    "bankSkill": "domain_range_from_graph",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "domain of continuous functions",
+      "count": 1
+     },
+     {
+      "name": "range of discrete functions",
+      "count": 1
+     }
+    ],
+    "supply": 110
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "trig_graph",
+    "bankSkill": "unit_circle_exact_values",
+    "needed": 2,
+    "used": 2,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "acute angles in right-angled triangles",
+      "count": 1
+     },
+     {
+      "name": "exact coordinates on the unit circle",
+      "count": 1
+     }
+    ],
+    "supply": 130
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "none_suitable": 1
+    },
+    "skills": [
+     {
+      "name": "fractions on a number line",
+      "count": 1
+     }
+    ],
+    "supply": null,
+    "fix": "add_material"
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "data_display",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "answer_check": 1
+    },
+    "skills": [
+     {
+      "name": "equivalent fractions using circles",
+      "count": 1
+     }
+    ],
+    "supply": 693,
+    "fix": "answer_check"
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "number_plane",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "answer_check": 1
+    },
+    "skills": [
+     {
+      "name": "coordinates and directions on grid maps",
+      "count": 1
+     }
+    ],
+    "supply": 120,
+    "fix": "answer_check"
+   },
+   {
+    "year": 6,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "not_swappable": 1
+    },
+    "skills": [
+     {
+      "name": "area of partitioned rectangles",
+      "count": 1
+     }
+    ],
+    "supply": 3680,
+    "fix": "generator"
+   },
+   {
+    "year": 8,
+    "bankDiagramType": "data_display",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "not_swappable": 1
+    },
+    "skills": [
+     {
+      "name": "constructing frequency histograms and polygons",
+      "count": 1
+     }
+    ],
+    "supply": 3717,
+    "fix": "generator"
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "straight_line",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "answer_check": 1
+    },
+    "skills": [
+     {
+      "name": "intersections of contextual linear models",
+      "count": 1
+     }
+    ],
+    "supply": 3038,
+    "fix": "answer_check"
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "other_curve",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "crop_unfit": 1
+    },
+    "skills": [
+     {
+      "name": "recognising systems with no solution",
+      "count": 1
+     }
+    ],
+    "supply": 3140,
+    "fix": "review_crops"
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "probability_diagram",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "none_suitable": 1
+    },
+    "skills": [
+     {
+      "name": "probability of different outcomes without replacement",
+      "count": 1
+     }
+    ],
+    "supply": 2249,
+    "fix": "extract_more"
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "none_suitable": 1
+    },
+    "skills": [],
+    "supply": 4648,
+    "fix": "extract_more"
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "straight_line",
+    "bankSkill": "",
+    "needed": 1,
+    "used": 0,
+    "drawn": 1,
+    "reasons": {
+     "no_candidates": 1
+    },
+    "skills": [
+     {
+      "name": "graphical solutions of simultaneous equations",
+      "count": 1
+     }
+    ],
+    "supply": 3719,
+    "fix": "extract_more"
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "angle_relationships",
+    "bankSkill": "other",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "classifying and measuring angles",
+      "count": 1
+     }
+    ],
+    "supply": 112
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "data_display",
+    "bankSkill": "other",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "organising data in frequency tables",
+      "count": 1
+     }
+    ],
+    "supply": 108
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "probability_diagram",
+    "bankSkill": "other",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "probabilities with spinners",
+      "count": 1
+     }
+    ],
+    "supply": 108
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "probability_diagram",
+    "bankSkill": "two_way_table_conditional",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "probabilities with spinners",
+      "count": 1
+     }
+    ],
+    "supply": 13
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "faces_edges_vertices_nets",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "nets and properties of prisms",
+      "count": 1
+     }
+    ],
+    "supply": 307
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "volume_prism_cylinder",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "volume of rectangular prisms",
+      "count": 1
+     }
+    ],
+    "supply": 168
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "transformations",
+    "bankSkill": "line_rotational_symmetry",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "lines of symmetry of rectangles",
+      "count": 1
+     }
+    ],
+    "supply": 42
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "transformations",
+    "bankSkill": "rotate",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "rotations on a grid",
+      "count": 1
+     }
+    ],
+    "supply": 31
+   },
+   {
+    "year": 5,
+    "bankDiagramType": "transformations",
+    "bankSkill": "translate",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "translations on a grid",
+      "count": 1
+     }
+    ],
+    "supply": 12
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "angle_relationships",
+    "bankSkill": "isosceles_equilateral",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "use isosceles triangle properties and the triangle angle sum",
+      "count": 1
+     }
+    ],
+    "supply": 151
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "probability_diagram",
+    "bankSkill": "other",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "fairness of spinner games",
+      "count": 1
+     }
+    ],
+    "supply": 269
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "right_triangle",
+    "bankSkill": "other",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "calculate the area of a triangle",
+      "count": 1
+     }
+    ],
+    "supply": 127
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "area_parallelogram_trapezium_rhombus_kite",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "identify perpendicular height and calculate the area of a parallelogram",
+      "count": 1
+     }
+    ],
+    "supply": 317
+   },
+   {
+    "year": 7,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "perimeter_polygon",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [],
+    "supply": 740
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "elevation_bearings",
+    "bankSkill": "bearing_travel_problem",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [],
+    "supply": 102
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "region_inequality",
+    "bankSkill": "number_line_inequality",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "comparing linear models under constraints",
+      "count": 1
+     }
+    ],
+    "supply": 386
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "capacity_units",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "capacity bounds of cylinders",
+      "count": 1
+     }
+    ],
+    "supply": 70
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "missing_dimension_from_volume_or_area",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "heights of pyramids",
+      "count": 1
+     }
+    ],
+    "supply": 215
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "solid_3d",
+    "bankSkill": "surface_area_pyramid_cone_sphere",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "radii of cones",
+      "count": 1
+     }
+    ],
+    "supply": 265
+   },
+   {
+    "year": 9,
+    "bankDiagramType": "transformations",
+    "bankSkill": "line_rotational_symmetry",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "lines of symmetry of triangles",
+      "count": 1
+     }
+    ],
+    "supply": 35
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "data_display",
+    "bankSkill": "other",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "expected frequency from spinners",
+      "count": 1
+     }
+    ],
+    "supply": 1844
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "elevation_bearings",
+    "bankSkill": "elevation_depression",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "heights using angles of elevation",
+      "count": 1
+     }
+    ],
+    "supply": 591
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "elevation_bearings",
+    "bankSkill": "other",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "distances in right-angled triangles",
+      "count": 1
+     }
+    ],
+    "supply": 190
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "number_plane",
+    "bankSkill": "other",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "sketching exponential growth graphs",
+      "count": 1
+     }
+    ],
+    "supply": 316
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "other_curve",
+    "bankSkill": "circle_equation",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "equations of origin-centred circles",
+      "count": 1
+     }
+    ],
+    "supply": 259
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "other_curve",
+    "bankSkill": "exponential_growth_decay",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "sketching exponential decay graphs",
+      "count": 1
+     }
+    ],
+    "supply": 381
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "other_curve",
+    "bankSkill": "function_transformations",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "graphs of translated reciprocal relationships",
+      "count": 1
+     }
+    ],
+    "supply": 540
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "right_triangle",
+    "bankSkill": "trig_find_side_denominator",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "adjacent side lengths in right-angled triangles",
+      "count": 1
+     }
+    ],
+    "supply": 594
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "right_triangle",
+    "bankSkill": "trig_find_side_numerator",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "tangent ratios in right-angled triangles",
+      "count": 1
+     }
+    ],
+    "supply": 865
+   },
+   {
+    "year": 10,
+    "bankDiagramType": "shape_2d",
+    "bankSkill": "other",
+    "needed": 1,
+    "used": 1,
+    "drawn": 0,
+    "reasons": {},
+    "skills": [
+     {
+      "name": "dimensions of rectangles",
+      "count": 1
+     }
+    ],
+    "supply": 949
+   }
+  ]
+ },
+ "gaps": [
+  {
+   "year": 9,
+   "bankDiagramType": "shape_2d",
+   "bankSkill": "",
+   "needed": 9,
+   "used": 0,
+   "drawn": 9,
+   "reasons": {
+    "none_suitable": 2,
+    "answer_check": 4,
+    "failed": 1,
+    "not_swappable": 1,
+    "no_candidates": 1
+   },
+   "skills": [
+    {
+     "name": "angles around the centre of circles",
+     "count": 1
+    },
+    {
+     "name": "angles between intersecting diameters",
+     "count": 1
+    },
+    {
+     "name": "angles in semicircles and triangles",
+     "count": 1
+    },
+    {
+     "name": "central angles in triangles formed by radii",
+     "count": 1
+    }
+   ],
+   "supply": 5450,
+   "fix": "answer_check"
+  },
+  {
+   "year": 9,
+   "bankDiagramType": "number_plane",
+   "bankSkill": "",
+   "needed": 7,
+   "used": 0,
+   "drawn": 7,
+   "reasons": {
+    "none_suitable": 2,
+    "answer_check": 3,
+    "not_swappable": 2
+   },
+   "skills": [
+    {
+     "name": "direct return distances and bearings",
+     "count": 1
+    },
+    {
+     "name": "graphing inclusive horizontal inequalities",
+     "count": 1
+    },
+    {
+     "name": "graphing strict horizontal inequalities",
+     "count": 1
+    },
+    {
+     "name": "intersections of horizontal and vertical half-planes",
+     "count": 1
+    }
+   ],
+   "supply": 1356,
+   "fix": "answer_check"
+  },
+  {
+   "year": 9,
+   "bankDiagramType": "right_triangle",
+   "bankSkill": "",
+   "needed": 5,
+   "used": 0,
+   "drawn": 5,
+   "reasons": {
+    "none_suitable": 1,
+    "not_swappable": 4
+   },
+   "skills": [
+    {
+     "name": "finding angles in right-angled triangles",
+     "count": 1
+    },
+    {
+     "name": "finding the hypotenuse using cosine",
+     "count": 1
+    },
+    {
+     "name": "heights from same-side observation points",
+     "count": 1
+    },
+    {
+     "name": "identifying sides and trigonometric ratios",
+     "count": 1
+    }
+   ],
+   "supply": 5452,
+   "fix": "generator"
+  },
+  {
+   "year": 9,
+   "bankDiagramType": "",
+   "bankSkill": "",
+   "needed": 4,
+   "used": 0,
+   "drawn": 4,
+   "reasons": {
+    "none_suitable": 1,
+    "not_swappable": 3
+   },
+   "skills": [
+    {
+     "name": "building heights from angles of elevation and depression",
+     "count": 1
+    },
+    {
+     "name": "horizontal and line-of-sight distances",
+     "count": 1
+    },
+    {
+     "name": "horizontal distances using angles of depression",
+     "count": 1
+    }
+   ],
+   "supply": null,
+   "fix": "generator"
+  },
+  {
+   "year": 7,
+   "bankDiagramType": "angle_relationships",
+   "bankSkill": "",
+   "needed": 3,
+   "used": 0,
+   "drawn": 3,
+   "reasons": {
+    "none_suitable": 3
+   },
+   "skills": [
+    {
+     "name": "alternate angles and vertically opposite angles",
+     "count": 1
+    },
+    {
+     "name": "corresponding angles and angles on a straight line",
+     "count": 1
+    },
+    {
+     "name": "use the angle sum on a straight line",
+     "count": 1
+    }
+   ],
+   "supply": 3210,
+   "fix": "extract_more"
+  },
+  {
+   "year": 7,
+   "bankDiagramType": "shape_2d",
+   "bankSkill": "",
+   "needed": 3,
+   "used": 0,
+   "drawn": 3,
+   "reasons": {
+    "none_suitable": 2,
+    "answer_check": 1
+   },
+   "skills": [],
+   "supply": 4726,
+   "fix": "extract_more"
+  },
+  {
+   "year": 8,
+   "bankDiagramType": "number_plane",
+   "bankSkill": "",
+   "needed": 3,
+   "used": 0,
+   "drawn": 3,
+   "reasons": {
+    "not_swappable": 3
+   },
+   "skills": [
+    {
+     "name": "graphs of horizontal and vertical lines",
+     "count": 1
+    },
+    {
+     "name": "graphs of linear relationships",
+     "count": 1
+    },
+    {
+     "name": "graphs of straight lines with fractional gradients",
+     "count": 1
+    }
+   ],
+   "supply": 1426,
+   "fix": "generator"
+  },
+  {
+   "year": 9,
+   "bankDiagramType": "solid_3d",
+   "bankSkill": "",
+   "needed": 3,
+   "used": 0,
+   "drawn": 3,
+   "reasons": {
+    "answer_check": 3
+   },
+   "skills": [
+    {
+     "name": "surface area of closed cylinders",
+     "count": 1
+    },
+    {
+     "name": "surface area of hollow cylinders",
+     "count": 1
+    }
+   ],
+   "supply": 4162,
+   "fix": "answer_check"
+  },
+  {
+   "year": 7,
+   "bankDiagramType": "solid_3d",
+   "bankSkill": "",
+   "needed": 2,
+   "used": 0,
+   "drawn": 2,
+   "reasons": {
+    "none_suitable": 2
+   },
+   "skills": [],
+   "supply": 2530,
+   "fix": "extract_more"
+  },
+  {
+   "year": 8,
+   "bankDiagramType": "straight_line",
+   "bankSkill": "",
+   "needed": 2,
+   "used": 0,
+   "drawn": 2,
+   "reasons": {
+    "not_swappable": 2
+   },
+   "skills": [
+    {
+     "name": "interpreting time-series line graphs",
+     "count": 1
+    },
+    {
+     "name": "tables of values from linear graphs",
+     "count": 1
+    }
+   ],
+   "supply": 2337,
+   "fix": "generator"
+  },
+  {
+   "year": 9,
+   "bankDiagramType": "elevation_bearings",
+   "bankSkill": "",
+   "needed": 2,
+   "used": 0,
+   "drawn": 2,
+   "reasons": {
+    "not_swappable": 2
+   },
+   "skills": [
+    {
+     "name": "heights using angles of elevation",
+     "count": 1
+    },
+    {
+     "name": "tower heights from changing angles of elevation",
+     "count": 1
+    }
+   ],
+   "supply": 840,
+   "fix": "generator"
+  },
+  {
+   "year": 10,
+   "bankDiagramType": "",
+   "bankSkill": "",
+   "needed": 2,
+   "used": 0,
+   "drawn": 2,
+   "reasons": {
+    "answer_check": 2
+   },
+   "skills": [
+    {
+     "name": "bearings in non-right-angled triangles",
+     "count": 1
+    },
+    {
+     "name": "side lengths in right-angled triangles",
+     "count": 1
+    }
+   ],
+   "supply": null,
+   "fix": "answer_check"
+  },
+  {
+   "year": 10,
+   "bankDiagramType": "number_plane",
+   "bankSkill": "",
+   "needed": 2,
+   "used": 0,
+   "drawn": 2,
+   "reasons": {
+    "none_suitable": 2
+   },
+   "skills": [
+    {
+     "name": "sketching downward-opening parabolas",
+     "count": 1
+    },
+    {
+     "name": "sketching square functions",
+     "count": 1
+    }
+   ],
+   "supply": 1380,
+   "fix": "extract_more"
+  },
+  {
+   "year": 5,
+   "bankDiagramType": "",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "none_suitable": 1
+   },
+   "skills": [
+    {
+     "name": "fractions on a number line",
+     "count": 1
+    }
+   ],
+   "supply": null,
+   "fix": "add_material"
+  },
+  {
+   "year": 5,
+   "bankDiagramType": "data_display",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "answer_check": 1
+   },
+   "skills": [
+    {
+     "name": "equivalent fractions using circles",
+     "count": 1
+    }
+   ],
+   "supply": 693,
+   "fix": "answer_check"
+  },
+  {
+   "year": 5,
+   "bankDiagramType": "number_plane",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "answer_check": 1
+   },
+   "skills": [
+    {
+     "name": "coordinates and directions on grid maps",
+     "count": 1
+    }
+   ],
+   "supply": 120,
+   "fix": "answer_check"
+  },
+  {
+   "year": 6,
+   "bankDiagramType": "shape_2d",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "not_swappable": 1
+   },
+   "skills": [
+    {
+     "name": "area of partitioned rectangles",
+     "count": 1
+    }
+   ],
+   "supply": 3680,
+   "fix": "generator"
+  },
+  {
+   "year": 8,
+   "bankDiagramType": "data_display",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "not_swappable": 1
+   },
+   "skills": [
+    {
+     "name": "constructing frequency histograms and polygons",
+     "count": 1
+    }
+   ],
+   "supply": 3717,
+   "fix": "generator"
+  },
+  {
+   "year": 9,
+   "bankDiagramType": "straight_line",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "answer_check": 1
+   },
+   "skills": [
+    {
+     "name": "intersections of contextual linear models",
+     "count": 1
+    }
+   ],
+   "supply": 3038,
+   "fix": "answer_check"
+  },
+  {
+   "year": 10,
+   "bankDiagramType": "other_curve",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "crop_unfit": 1
+   },
+   "skills": [
+    {
+     "name": "recognising systems with no solution",
+     "count": 1
+    }
+   ],
+   "supply": 3140,
+   "fix": "review_crops"
+  },
+  {
+   "year": 10,
+   "bankDiagramType": "probability_diagram",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "none_suitable": 1
+   },
+   "skills": [
+    {
+     "name": "probability of different outcomes without replacement",
+     "count": 1
+    }
+   ],
+   "supply": 2249,
+   "fix": "extract_more"
+  },
+  {
+   "year": 10,
+   "bankDiagramType": "solid_3d",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "none_suitable": 1
+   },
+   "skills": [],
+   "supply": 4648,
+   "fix": "extract_more"
+  },
+  {
+   "year": 10,
+   "bankDiagramType": "straight_line",
+   "bankSkill": "",
+   "needed": 1,
+   "used": 0,
+   "drawn": 1,
+   "reasons": {
+    "no_candidates": 1
+   },
+   "skills": [
+    {
+     "name": "graphical solutions of simultaneous equations",
+     "count": 1
+    }
+   ],
+   "supply": 3719,
+   "fix": "extract_more"
+  }
+ ]
+}
