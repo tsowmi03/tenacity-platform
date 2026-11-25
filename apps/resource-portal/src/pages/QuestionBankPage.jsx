@@ -5,7 +5,7 @@ import EmptyState from "../components/EmptyState";
 import Icon from "../components/Icon";
 import PageHeader from "../components/PageHeader";
 import BankDrawer, { StatusBadge } from "../components/bank/BankDrawer";
-import { BANKS, bankById, matchesStatus, sourceLine, statusesFor } from "../components/bank/bankConfig";
+import { bankById, banksFor, matchesStatus, sourceLine, statusesFor } from "../components/bank/bankConfig";
 
 const THUMBNAIL_GROUP = 6;
 const SKELETON_ROWS = 8;
@@ -58,7 +58,7 @@ function Thumb({ loaded, src }) {
   return <span className={`bank-thumb empty${loaded ? "" : " loading"}`}><Icon name="file-text" size={18} /></span>;
 }
 
-function Row({ bank, onOpen, record, thumb, thumbLoaded }) {
+function Row({ bank, onOpen, readOnly, record, thumb, thumbLoaded }) {
   const subtitle = bank.subtitle?.(record);
   const chips = bank.chips(record).filter(Boolean);
   return (
@@ -75,7 +75,7 @@ function Row({ bank, onOpen, record, thumb, thumbLoaded }) {
         </span>
         <span className="bank-row-end">
           {record.openFlags > 0 ? <span className="bank-flag-count"><Icon name="alert" size={13} />{record.openFlags}</span> : null}
-          <StatusBadge status={record.status} />
+          {readOnly ? null : <StatusBadge status={record.status} />}
           <Icon className="bank-row-chevron" name="chevron-right" size={16} />
         </span>
       </button>
@@ -90,8 +90,11 @@ function resultLabel(bank, total, count) {
   return `${total.toLocaleString()} ${noun}`;
 }
 
-export default function QuestionBankPage() {
-  const [bankId, setBankId] = useState(BANKS[0].id);
+// `readOnly` (RES-68): a tutor's view. Only the banks a tutor may read, only
+// what is live, and nothing that changes the bank.
+export default function QuestionBankPage({ readOnly = false }) {
+  const banks = banksFor(readOnly);
+  const [bankId, setBankId] = useState(banks[0].id);
   const [status, setStatus] = useState("live");
   const [filters, setFilters] = useState({});
   const [cursors, setCursors] = useState([null]); // the cursor of each page reached so far
@@ -223,29 +226,35 @@ export default function QuestionBankPage() {
     <>
       <PageHeader
         crumbs={[]}
-        subtitle="Everything the generator can draw on. Hide what shouldn't be used and correct what's wrong."
-        title="Question bank"
+        subtitle={readOnly
+          ? "Texts and images from past papers and comprehension books, with their questions and marking guides. Find one by text type, year, technique, theme or length."
+          : "Everything the generator can draw on. Hide what shouldn't be used and correct what's wrong."}
+        title={readOnly ? "Stimulus library" : "Question bank"}
       />
 
-      <div className="tabs bank-tabs" role="tablist" aria-label="Bank">
-        {BANKS.map((entry) => (
-          <button aria-selected={entry.id === bankId} className={`tab${entry.id === bankId ? " active" : ""}`} key={entry.id} onClick={() => chooseBank(entry.id)} role="tab" type="button">
-            {entry.label}
-          </button>
-        ))}
-      </div>
+      {banks.length > 1 ? (
+        <div className="tabs bank-tabs" role="tablist" aria-label="Bank">
+          {banks.map((entry) => (
+            <button aria-selected={entry.id === bankId} className={`tab${entry.id === bankId ? " active" : ""}`} key={entry.id} onClick={() => chooseBank(entry.id)} role="tab" type="button">
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {optionsError ? <div className="error mb-3" role="alert">{optionsError}</div> : null}
 
       <div className="bank-toolbar">
-        <div className="bank-segment" role="radiogroup" aria-label="Status">
-          {statuses.map((entry) => (
-            <button aria-checked={entry.value === status} className={entry.value === status ? "on" : ""} key={entry.value} onClick={() => chooseStatus(entry.value)} role="radio" type="button">
-              {entry.label}{" "}
-              {entry.count ? <span className="bank-segment-count">{entry.count}</span> : null}
-            </button>
-          ))}
-        </div>
+        {readOnly ? <span /> : (
+          <div className="bank-segment" role="radiogroup" aria-label="Status">
+            {statuses.map((entry) => (
+              <button aria-checked={entry.value === status} className={entry.value === status ? "on" : ""} key={entry.value} onClick={() => chooseStatus(entry.value)} role="radio" type="button">
+                {entry.label}{" "}
+                {entry.count ? <span className="bank-segment-count">{entry.count}</span> : null}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="bank-result-label" aria-live="polite">{loading && !records.length ? "" : label}</div>
       </div>
 
@@ -293,6 +302,7 @@ export default function QuestionBankPage() {
                 bank={bank}
                 key={record.id}
                 onOpen={setOpen}
+                readOnly={readOnly}
                 record={record}
                 thumb={thumbs[`${bankId}:${record.id}`]}
                 thumbLoaded={Boolean(thumbsDone[`${bankId}:${record.id}`])}
@@ -316,7 +326,7 @@ export default function QuestionBankPage() {
       ) : null}
 
       {open && options ? (
-        <BankDrawer bank={bank} onChanged={onChanged} onClose={() => setOpen(null)} options={options} recordId={open.id} summary={open} />
+        <BankDrawer bank={bank} onChanged={onChanged} onClose={() => setOpen(null)} options={options} readOnly={readOnly} recordId={open.id} summary={open} />
       ) : null}
     </>
   );

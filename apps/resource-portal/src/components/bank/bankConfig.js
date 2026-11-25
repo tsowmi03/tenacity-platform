@@ -61,6 +61,8 @@ export const BANKS = [
     singular: "English stimulus",
     noun: ["stimulus", "stimuli"],
     images: true,
+    // RES-68. Tutors browse this bank read-only, as the stimulus library.
+    tutorReadable: true,
     filters: [
       yearFilter,
       { key: "type", label: "Text type", kind: "select", choices: (o) => choicesOf(o.stimulusTypes) },
@@ -144,6 +146,11 @@ const VISUAL_TYPES = new Set(["poster", "advertisement", "cartoon", "photograph"
 
 export function bankById(id) {
   return BANKS.find((bank) => bank.id === id) || BANKS[0];
+}
+
+/** The banks a viewer may open: all of them for an admin, the readable ones for a tutor. */
+export function banksFor(readOnly) {
+  return readOnly ? BANKS.filter((bank) => bank.tutorReadable) : BANKS;
 }
 
 export function statusesFor(bank, openFlags) {

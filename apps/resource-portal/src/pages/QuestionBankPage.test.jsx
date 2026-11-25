@@ -204,3 +204,79 @@ describe("working out what an edit changed", () => {
     expect(changedFields(fields, record, draft)).toEqual({ themes: ["hope", "loss"], author: null });
   });
 });
+
+describe("Stimulus library for tutors (RES-68)", () => {
+  const stimulusRow = {
+    id: "s1", status: "live", sourcePath: "English/Year 10/Past Papers/Trial 2020.pdf", pageNumber: 3, label: "Text 1", title: "The Road Not Taken",
+    author: "Robert Frost", preview: "Two roads diverged in a yellow wood", type: "poem", medium: "written", wordCount: 144, yearLevel: "Year 10", hasImage: false, openFlags: 0,
+  };
+  const stimulusDetail = {
+    record: {
+      ...stimulusRow, text: "Two roads diverged in a yellow wood,\nAnd sorry I could not travel both", publication: "Mountain Interval", themes: ["choice"],
+      techniques: [{ technique: "metaphor", evidence: "two roads" }], pages: [3],
+      driveUrl: "https://drive.google.com/file/d/1AbcDEFghiJKLmnop/view",
+    },
+    images: [], flags: [], history: [],
+    links: {
+      questions: [{ id: "q1", status: "live", label: "1", text: "How does the poet present choice?", marks: 4 }],
+      guides: [{ id: "g1", status: "live", questionId: "q1", criteria: "Explains the extended metaphor", sampleAnswer: "" }],
+    },
+  };
+
+  beforeEach(() => {
+    Object.values(api).forEach((fn) => fn.mockReset());
+    api.getBankOptions.mockResolvedValue({ ...options, openFlags: 0 });
+    api.browseBank.mockResolvedValue({ records: [stimulusRow], nextCursor: null, total: 1 });
+    api.getBankImages.mockResolvedValue({ images: {} });
+    api.getBankRecord.mockResolvedValue(stimulusDetail);
+  });
+
+  const renderLibrary = () => render(<ToastProvider><QuestionBankPage readOnly /></ToastProvider>);
+
+  it("opens on the stimuli, with no other bank and no status switch", async () => {
+    renderLibrary();
+    expect(await screen.findByRole("heading", { name: "Stimulus library" })).toBeInTheDocument();
+    expect(await screen.findByText("The Road Not Taken")).toBeInTheDocument();
+    expect(api.browseBank).toHaveBeenCalledWith({ bank: "stimuli", status: "live", filters: {}, cursor: null });
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Status" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Maths questions")).not.toBeInTheDocument();
+  });
+
+  it("filters by text type, year, technique, length and theme", async () => {
+    renderLibrary();
+    await screen.findByText("The Road Not Taken");
+    fireEvent.change(screen.getByLabelText("Text type"), { target: { value: "poem" } });
+    fireEvent.change(screen.getByLabelText("Year"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Technique"), { target: { value: "imagery" } });
+    fireEvent.change(screen.getByLabelText("Length"), { target: { value: "short" } });
+    fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "choice" } });
+    await waitFor(() => expect(api.browseBank).toHaveBeenLastCalledWith({
+      bank: "stimuli", status: "live", cursor: null,
+      filters: { type: "poem", year: 10, technique: "imagery", length: "short", theme: "choice" },
+    }));
+  });
+
+  it("shows the stimulus, its attribution, its questions and guide, and a link to the Drive file, with nothing to change", async () => {
+    renderLibrary();
+    fireEvent.click(await screen.findByText("The Road Not Taken"));
+    const drawer = await screen.findByRole("dialog", { name: "English stimulus" });
+    expect(await within(drawer).findByText(/Two roads diverged in a yellow wood,/)).toBeInTheDocument();
+    expect(within(drawer).getByText("Robert Frost")).toBeInTheDocument();
+    expect(within(drawer).getByText("Mountain Interval")).toBeInTheDocument();
+    expect(within(drawer).getByText("How does the poet present choice?")).toBeInTheDocument();
+    expect(within(drawer).getByText("Explains the extended metaphor")).toBeInTheDocument();
+    const link = within(drawer).getByRole("link", { name: "Open the file in Drive (page 3)" });
+    expect(link).toHaveAttribute("href", "https://drive.google.com/file/d/1AbcDEFghiJKLmnop/view");
+    expect(link).toHaveAttribute("target", "_blank");
+    for (const name of ["Edit", "Hide", "Restore"]) expect(within(drawer).queryByRole("button", { name })).not.toBeInTheDocument();
+    expect(within(drawer).queryByText("Live")).not.toBeInTheDocument();
+  });
+
+  it("keeps every control for an admin", async () => {
+    render(<ToastProvider><QuestionBankPage /></ToastProvider>);
+    expect(await screen.findByRole("heading", { name: "Question bank" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist")).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Status" })).toBeInTheDocument();
+  });
+});

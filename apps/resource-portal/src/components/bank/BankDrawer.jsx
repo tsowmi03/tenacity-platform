@@ -87,8 +87,10 @@ function detailRows(bankId, r) {
   return [["Author", r.author], ["Form", humanise(r.form)], ["Themes", list(r.themes)], ["Characters", (r.characters || []).join(", ")], ["Key quotes", r.quoteCount || null]];
 }
 
-function Body({ bank, detail }) {
+function Body({ bank, detail, readOnly }) {
   const { record: r, links } = detail;
+  // A tutor only ever sees live records, so the badge would say nothing.
+  const Status = ({ status }) => (readOnly ? null : <StatusBadge status={status} />);
   const guidesFor = (questionId) => (links.guides || []).filter((guide) => guide.questionId === questionId);
   return (
     <>
@@ -122,7 +124,7 @@ function Body({ bank, detail }) {
         <Section title="Stimulus">
           <ul className="bank-linked">
             {links.stimuli.map((stimulus) => (
-              <li key={stimulus.id}><div className="bank-linked-head"><strong>{stimulus.title || humanise(stimulus.type)}</strong><StatusBadge status={stimulus.status} /></div></li>
+              <li key={stimulus.id}><div className="bank-linked-head"><strong>{stimulus.title || humanise(stimulus.type)}</strong><Status status={stimulus.status} /></div></li>
             ))}
           </ul>
         </Section>
@@ -132,11 +134,11 @@ function Body({ bank, detail }) {
           <ul className="bank-linked">
             {links.questions.map((question) => (
               <li key={question.id}>
-                <div className="bank-linked-head"><strong>{question.label ? `Question ${question.label}` : "Question"}</strong><StatusBadge status={question.status} /></div>
+                <div className="bank-linked-head"><strong>{question.label ? `Question ${question.label}` : "Question"}</strong><Status status={question.status} /></div>
                 <span className="bank-muted">{question.text}</span>
                 {guidesFor(question.id).map((guide) => (
                   <div className="bank-linked-guide" key={guide.id}>
-                    <div className="bank-linked-head"><span>Marking guide</span><StatusBadge status={guide.status} /></div>
+                    <div className="bank-linked-head"><span>Marking guide</span><Status status={guide.status} /></div>
                     <span className="bank-muted">{guide.criteria || guide.sampleAnswer}</span>
                   </div>
                 ))}
@@ -148,11 +150,20 @@ function Body({ bank, detail }) {
       {bank.id === "englishQuestions" && links.guides?.length ? (
         <Section title="Marking guide">
           <ul className="bank-linked">
-            {links.guides.map((guide) => <li key={guide.id}><div className="bank-linked-head"><span className="bank-muted">{guide.criteria || guide.sampleAnswer}</span><StatusBadge status={guide.status} /></div></li>)}
+            {links.guides.map((guide) => <li key={guide.id}><div className="bank-linked-head"><span className="bank-muted">{guide.criteria || guide.sampleAnswer}</span><Status status={guide.status} /></div></li>)}
           </ul>
         </Section>
       ) : null}
-      <Section title="Source"><div className="bank-source">{r.sourcePath || "Unknown"}{r.pageNumber ? `, page ${r.pageNumber}` : ""}{r.label ? `, ${r.label}` : ""}</div></Section>
+      <Section title="Source">
+        <div className="bank-source">{r.sourcePath || "Unknown"}{r.pageNumber ? `, page ${r.pageNumber}` : ""}{r.label ? `, ${r.label}` : ""}</div>
+        {/* Drive has no link to a page, so the page to turn to is named beside it (RES-68). */}
+        {r.driveUrl ? (
+          <a className="bank-drive-link" href={r.driveUrl} rel="noreferrer" target="_blank">
+            <Icon name="external-link" size={14} />
+            {r.pageNumber ? `Open the file in Drive (page ${r.pageNumber})` : "Open the file in Drive"}
+          </a>
+        ) : null}
+      </Section>
       {detail.history.length ? (
         <Section title="History">
           <ul className="bank-history">
@@ -173,7 +184,7 @@ function Body({ bank, detail }) {
   );
 }
 
-export default function BankDrawer({ bank, onChanged, onClose, options, recordId, summary }) {
+export default function BankDrawer({ bank, onChanged, onClose, options, readOnly = false, recordId, summary }) {
   const toast = useToast();
   const [detail, setDetail] = useState(null);
   const [loadError, setLoadError] = useState("");
@@ -268,7 +279,7 @@ export default function BankDrawer({ bank, onChanged, onClose, options, recordId
               <div className="bank-eyebrow">{bank.singular}</div>
               <h3>{title}</h3>
               <div className="bank-drawer-sub">
-                {record ? <StatusBadge status={record.status} /> : null}
+                {record && !readOnly ? <StatusBadge status={record.status} /> : null}
                 {(record || summary) ? <span className="bank-muted">{sourceLine(record || summary)}</span> : null}
               </div>
             </div>
@@ -332,8 +343,9 @@ export default function BankDrawer({ bank, onChanged, onClose, options, recordId
                 {record.hiddenBecauseOfStimulus && record.status === "hidden" ? (
                   <div className="bank-note">Hidden along with its stimulus. Restoring the stimulus brings this back too.</div>
                 ) : null}
-                <Body bank={bank} detail={detail} />
+                <Body bank={bank} detail={detail} readOnly={readOnly} />
               </div>
+              {readOnly ? null : (
               <div className="bank-drawer-foot">
                 {record.status === "live" || record.status === "hidden" ? (
                   <Button disabled={busy} icon="edit" onClick={() => setEditing(true)} variant="secondary">Edit</Button>
@@ -350,6 +362,7 @@ export default function BankDrawer({ bank, onChanged, onClose, options, recordId
                 ) : null}
                 {record.status === "hidden" ? <Button icon="refresh" loading={busy} onClick={restore} variant="primary">Restore</Button> : null}
               </div>
+              )}
             </>
           ) : null}
         </aside>

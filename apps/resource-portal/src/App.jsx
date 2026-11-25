@@ -1,7 +1,8 @@
 import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "./components/ToastProvider";
-import { AdminRoute, ResourceRoute } from "./ProtectedRoute";
+import { useAuth } from "./AuthProvider";
+import { ResourceRoute } from "./ProtectedRoute";
 import ResourcePortalShell from "./layout/ResourcePortalShell";
 import LoginPage from "./pages/LoginPage";
 import QuestionBankPage from "./pages/QuestionBankPage";
@@ -17,13 +18,16 @@ function ResourcePortalPage() {
   );
 }
 
+// Admins manage the whole bank here. Tutors get the same page read-only, as a
+// library of the English stimuli (RES-68).
 function QuestionBankRoute() {
+  const { isAdmin } = useAuth();
   return (
-    <AdminRoute>
+    <ResourceRoute>
       <ResourcePortalShell>
-        <QuestionBankPage />
+        <QuestionBankPage readOnly={!isAdmin} />
       </ResourcePortalShell>
-    </AdminRoute>
+    </ResourceRoute>
   );
 }
 

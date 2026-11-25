@@ -27,7 +27,7 @@ describe("ResourcePortalShell", () => {
 
   it("gives tutors a dedicated resource surface with visible sign out", async () => {
     const user = userEvent.setup();
-    render(<ResourcePortalShell><div>Resource content</div></ResourcePortalShell>);
+    render(<MemoryRouter><ResourcePortalShell><div>Resource content</div></ResourcePortalShell></MemoryRouter>);
 
     expect(screen.getByText("Resource content")).toBeInTheDocument();
     expect(screen.getByText("Tenacity Tutoring")).toBeInTheDocument();
@@ -38,7 +38,7 @@ describe("ResourcePortalShell", () => {
   });
 
   it("shows the signed-in identity and role", () => {
-    render(<ResourcePortalShell><div>Resource content</div></ResourcePortalShell>);
+    render(<MemoryRouter><ResourcePortalShell><div>Resource content</div></ResourcePortalShell></MemoryRouter>);
 
     expect(screen.getByText("tutor@tenacitytutoring.com")).toBeInTheDocument();
     expect(screen.getByText("tutor")).toBeInTheDocument();
@@ -70,8 +70,10 @@ describe("ResourcePortalShell", () => {
     expect(screen.getByRole("link", { name: "Question bank" })).toHaveAttribute("href", "/question-bank");
   });
 
-  it("does not show tutors the question bank", () => {
-    render(<ResourcePortalShell><div>Content</div></ResourcePortalShell>);
+  it("shows tutors the stimulus library, not the question bank (RES-68)", () => {
+    render(<MemoryRouter><ResourcePortalShell><div>Content</div></ResourcePortalShell></MemoryRouter>);
     expect(screen.queryByRole("link", { name: "Question bank" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Stimulus library" })).toHaveAttribute("href", "/question-bank");
+    expect(screen.getByRole("link", { name: "Resources" })).toHaveAttribute("href", "/");
   });
 });

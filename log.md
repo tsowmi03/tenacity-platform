@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-26 | [Stimulus library: tutors can browse the English stimuli (RES-68)](#2026-11-26--stimulus-library-tutors-can-browse-the-english-stimuli-res-68) |
 | 2026-11-26 | [No near-blank pages; answer lines stay with their question; diagram label and spacing fixes (RES-40)](#2026-11-26--no-near-blank-pages-answer-lines-stay-with-their-question-diagram-label-and-spacing-fixes-res-40) |
 | 2026-11-26 | [Contents page shows in the PDF preview (RES-124)](#2026-11-26--contents-page-shows-in-the-pdf-preview-res-124) |
 | 2026-11-24 | [Resource assistant: the planning chat recommends what to make and knows what the generator can do (RES-102)](#2026-11-24--resource-assistant-the-planning-chat-recommends-what-to-make-and-knows-what-the-generator-can-do-res-102) |
@@ -269,6 +270,30 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-11-26 — Stimulus library: tutors can browse the English stimuli (RES-68)
+
+**What changed**
+- Tutors have a "Stimulus library" in the resource portal's top bar. It is the
+  admin Question bank page (RES-104) in a read-only form: the English stimuli
+  only, live ones only, with nothing to hide, restore or edit.
+- Filters: text type, year, technique, length and theme.
+- Opening a stimulus shows its text or image, author and publication, its
+  techniques, and its questions with their marking guides.
+- "Open the file in Drive" links to the source file, for tutors and admins,
+  with the page to turn to. Drive has no link to a page inside a file.
+- The server enforces the same limits: a tutor can read the live stimuli and
+  their live questions and guides, and nothing else. Hidden records, the other
+  banks, history, flags and every change stay admin only.
+
+**Why:** The stimuli extracted for the English bank (RES-66) could only be
+browsed by admins. Tutors pick reading texts by hand and had to search Drive.
+
+**Status:** Live. Functions deployed (`manageQuestionBank`); the portal
+deployed on merge. The tutor's calls were run against production data,
+read-only: 2,788 live stimuli, each filter returns results, and browsing
+another bank, hidden stimuli or hiding one is refused.
+
+---
 ## 2026-11-26 — No near-blank pages; answer lines stay with their question; diagram label and spacing fixes (RES-40)
 
 **What changed**
