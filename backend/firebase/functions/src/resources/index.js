@@ -4293,6 +4293,8 @@ async function recordResourceTiming({ db, job }) {
       activeMs: job.activeElapsedMs,
       phaseMs: phaseDurations(progress.phaseStarts, job.activeElapsedMs),
       predictedMs: progress.initialEstimateMs,
+      // RES-93. Real time from the last counted item to now, the end of the run.
+      ...(progress.countsDoneAtMs > 0 ? { tailMs: Math.max(0, Date.now() - progress.countsDoneAtMs) } : {}),
     });
   } catch (err) {
     resourceEvent(job, "timing.unrecorded", { reason: String(err?.code || "write_failed") }, "warn");

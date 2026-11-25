@@ -1,5 +1,5 @@
 "use strict";
-const { it } = require("node:test");
+const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const { estimateProgress, addSample, fitFromStats, phaseForStage, phaseDurations, kindKey, noteProgress } = require("../../src/resources/progressModel");
 const { createDurableCaller } = require("../../src/resources/durableStages");
@@ -281,4 +281,94 @@ it("does not learn from a run too short to have generated anything", async () =>
   assert.equal(writes, 0);
   await recordTimingSample(db, job, { questions: 10, activeMs: MIN_SAMPLE_ACTIVE_MS, phaseMs: { write: MIN_SAMPLE_ACTIVE_MS } });
   assert.equal(writes, 2);
+});
+
+// RES-93. What follows the counted work takes a roughly fixed time, which the
+// ETA used to show as a few seconds.
+describe("finishing time after the counted work (RES-93)", () => {
+  const { countedWorkDone, learntTailMs } = require("../../src/resources/progressModel");
+  const maths = { resourceType: "worksheet", subject: "maths", answerMode: "answers" };
+  const key = kindKey(maths);
+  const history = (tails) => ({ [key]: { ...[1, 2, 3, 4].reduce((s) => addSample(s, { questions: 10, activeMs: 300_000 }), null), tails } });
+  const diagramsUnderWay = { phase: "diagrams", questionsDone: 10, questionCount: 10, diagramsDone: 2, diagramCount: 4 };
+  const estimate = (extra) => estimateProgress({ job: maths, tracker: diagramsUnderWay, activeMs: 200_000, phaseStarts: { plan: 0, write: 20_000, diagrams: 150_000 }, ...extra });
+
+  it("keeps the last ten finishing times and uses their median, capped at three minutes", () => {
+    let stats = null;
+    for (let i = 1; i <= 12; i++) stats = addSample(stats, { questions: 10, activeMs: 300_000, tailMs: i * 10_000 });
+    assert.deepEqual(stats.tails, [30, 40, 50, 60, 70, 80, 90, 100, 110, 120]);
+    assert.equal(learntTailMs(stats), 75_000);
+    assert.equal(learntTailMs({ tails: [20, 1921, 25] }), 25_000, "one 32-minute stall does not move the median");
+    assert.equal(learntTailMs({ tails: [400, 500, 600] }), 180_000);
+    assert.equal(learntTailMs({ tails: [20, 30] }), 0, "too little history to go on");
+    assert.equal(learntTailMs(null), 0);
+    // A sample without a finishing time leaves the list alone.
+    assert.deepEqual(addSample(stats, { questions: 10, activeMs: 300_000 }).tails, stats.tails);
+  });
+
+  it("knows when the counted work is done", () => {
+    assert.equal(countedWorkDone({ phase: "diagrams", questionsDone: 10, questionCount: 10, diagramsDone: 3, diagramCount: 4 }, maths), false);
+    assert.equal(countedWorkDone({ phase: "diagrams", questionsDone: 10, questionCount: 10, diagramsDone: 4, diagramCount: 4 }, maths), true);
+    // Maths goes on to its diagram step, whose count is not known until it starts.
+    assert.equal(countedWorkDone({ phase: "write", questionsDone: 10, questionCount: 10 }, maths), false);
+    assert.equal(countedWorkDone({ phase: "check", questionsDone: 10, questionCount: 10 }, maths), true);
+    // English has nothing to count after its questions.
+    assert.equal(countedWorkDone({ phase: "write", questionsDone: 6, questionCount: 6 }, { subject: "english" }), true);
+    assert.equal(countedWorkDone({ phase: "write", questionsDone: 5, questionCount: 6 }, { subject: "english" }), false);
+    assert.equal(countedWorkDone({}, maths), false);
+  });
+
+  it("adds the learnt finishing time to the ETA while the counted work is going", () => {
+    const without = estimate({ statsByKey: history(undefined) });
+    const withTail = estimate({ statsByKey: history([20, 30, 40]) });
+    assert.equal(without.tailAllowanceMs, 0);
+    assert.equal(withTail.tailAllowanceMs, 30_000);
+    assert.equal(withTail.modelRemainingMs, without.remainingMs, "the model's own figure is unchanged");
+    assert.equal(withTail.remainingMs, without.remainingMs + 30_000);
+    assert.ok(withTail.lowMs < withTail.remainingMs && withTail.highMs > withTail.remainingMs);
+  });
+
+  it("counts the finishing time down once it has begun", () => {
+    const stats = history([20, 30, 40]);
+    const done = { ...diagramsUnderWay, diagramsDone: 4 };
+    const at = (countsDoneAgoMs) => estimateProgress({ job: maths, statsByKey: stats, tracker: done, activeMs: 240_000, phaseStarts: { plan: 0, write: 20_000, diagrams: 150_000 }, countsDoneAgoMs });
+    assert.equal(at(0).tailAllowanceMs, 30_000);
+    assert.equal(at(12_000).tailAllowanceMs, 18_000);
+    assert.equal(at(45_000).tailAllowanceMs, 0, "a run past its usual finishing time is not promised more");
+  });
+
+  it("blends the next report with the model's figure, so the allowance is never added twice", () => {
+    const stats = history([20, 30, 40]);
+    const first = estimate({ statsByKey: stats });
+    // Ten seconds on with the same work done, from the model's own previous figure.
+    const next = estimate({ statsByKey: stats, activeMs: 210_000, previous: { fraction: first.fraction, remainingMs: first.modelRemainingMs, elapsedMs: 10_000 } });
+    assert.equal(next.remainingMs, next.modelRemainingMs + 30_000);
+    assert.ok(Math.abs(next.modelRemainingMs - (first.modelRemainingMs - 10_000)) < 20_000, "the ETA moves on by about the time that passed");
+  });
+});
+
+describe("measuring the ETA from logs (scripts/measureEtaAccuracy)", () => {
+  const { errorByThird, formatRow, runsFrom } = require("../../scripts/measureEtaAccuracy");
+  const at = (seconds) => new Date(Date.parse("2026-11-20T00:00:00Z") + seconds * 1000).toISOString();
+  // A 300-second run; each report says how long it believed was left.
+  const run = (jobId, etas) => [
+    ...etas.map(([second, etaSeconds]) => ({ event: "progress.reported", jobId, runId: "r1", timestamp: at(second), etaMs: etaSeconds * 1000 })),
+    { event: "job.completed", jobId, runId: "r1", timestamp: at(300) },
+  ];
+
+  it("compares each ETA with the time the run really had left, by third", () => {
+    const events = [
+      // Exact at the start, 50% low in the middle, twice too high near the end.
+      ...run("a", [[0, 300], [30, 270], [120, 90], [150, 75], [240, 120], [270, 60], [298, 60]]),
+      // No completion logged: left out. So is a run with too few reports.
+      { event: "progress.reported", jobId: "b", runId: "r1", timestamp: at(0), etaMs: 1000 },
+      ...run("c", [[0, 10], [100, 10]]),
+    ];
+    const runs = runsFrom(events);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0].reports.length, 6, "the report two seconds from the end is ignored");
+    assert.deepEqual(errorByThird(runs).map((value) => Math.round(value * 100)), [0, 50, 100]);
+    assert.match(formatRow("maths", runs), /maths\s+runs\s+1\s+first\s+0%\s+middle\s+50%\s+last\s+100%/);
+    assert.equal(runsFrom(events, { since: "2026-12-01" }).length, 0);
+  });
 });

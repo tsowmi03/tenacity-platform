@@ -5,7 +5,7 @@ const { withTransientRetries } = require("./providerBudget");
 const { providerForModel } = require("./modelRegistry");
 const { resourceEvent, resourceStage } = require("./resourceLog");
 const { fromDate } = require("../shared/timestamps");
-const { estimateProgress, loadTimingStats, noteProgress, phaseForStage, phaseIndex, trackWait } = require("./progressModel");
+const { countedWorkDone, estimateProgress, loadTimingStats, noteProgress, phaseForStage, phaseIndex, trackWait } = require("./progressModel");
 
 const STAGE_TIMEOUT_MS = 360_000;
 // Optional work (a content review, an optional diagram fill) never gets the full
@@ -76,16 +76,25 @@ function createDurableCaller({ job, db, storage, callAi, providerBudget = null, 
     if (tracker.phase && phaseStarts[tracker.phase] == null) phaseStarts[tracker.phase] = activeMs;
     const prevUpdatedMs = typeof prev.updatedAt?.toMillis === "function" ? prev.updatedAt.toMillis()
       : prev.updatedAt instanceof Date ? prev.updatedAt.getTime() : null;
-    const previous = Number.isFinite(prev.fraction) ? { fraction: prev.fraction, remainingMs: prev.remainingMs,
+    // The model's own figure, before the finishing-time allowance (RES-93), so
+    // the allowance is never blended into the next report and added again.
+    const previous = Number.isFinite(prev.fraction) ? { fraction: prev.fraction, remainingMs: prev.modelRemainingMs ?? prev.remainingMs,
       elapsedMs: prevUpdatedMs ? now.getTime() - prevUpdatedMs : 0 } : null;
     const wait = trackWait(prev.wait, { nowMs: now.getTime(), activeMs });
     // When the current step's count (questions written, diagram questions
     // settled) last moved, in worker time.
     const countKey = `${tracker.phase}:${tracker.questionsDone || 0}:${tracker.diagramsDone || 0}`;
     const countChangedAtMs = prev.countKey === countKey && Number.isFinite(prev.countChangedAtMs) ? prev.countChangedAtMs : activeMs;
-    const estimate = estimateProgress({ job: current.resourceType ? current : job, statsByKey: stats, tracker, activeMs,
-      wallMs: Math.max(activeMs, now.getTime() - firstStartedAtMs), phaseStarts, requestedQuestions, previous, recentWait: wait, countChangedAtMs });
-    return { message, completedStages: completed, updatedAt: fromDate(now), runId, firstStartedAtMs, phaseStarts, wait, countKey, countChangedAtMs, ...estimate,
+    // RES-93. When the last question was written or the last diagram question
+    // settled: what remains after that is the run's finishing time.
+    const estimateJob = current.resourceType ? current : job;
+    const countsDoneAtMs = prev.countsDoneAtMs || (countedWorkDone(tracker, estimateJob) ? now.getTime() : null);
+    const wallMs = Math.max(activeMs, now.getTime() - firstStartedAtMs);
+    const estimate = estimateProgress({ job: estimateJob, statsByKey: stats, tracker, activeMs,
+      wallMs, phaseStarts, requestedQuestions, previous, recentWait: wait, countChangedAtMs,
+      countsDoneAgoMs: countsDoneAtMs ? now.getTime() - countsDoneAtMs : null });
+    return { message, completedStages: completed, updatedAt: fromDate(now), runId, firstStartedAtMs, phaseStarts, wait, countKey, countChangedAtMs,
+      ...(countsDoneAtMs ? { countsDoneAtMs } : {}), activeMs, wallMs, ...estimate,
       initialEstimateMs: prev.initialEstimateMs || estimate.expectedTotalMs };
   };
   const progress = async (message, executing = false, recovery = {}) => {
@@ -106,9 +115,14 @@ function createDurableCaller({ job, db, storage, callAi, providerBudget = null, 
     });
     // RES-84. What the tutor was shown, so ETA accuracy can be measured
     // against when the resource actually finished.
+    // RES-93 adds the model's inputs, so a later calibration can replay the
+    // model on these reports instead of approximating it.
     if (reported) resourceEvent(job, "progress.reported", { progressPhase: reported.phase, progressFraction: reported.fraction,
       etaMs: reported.remainingMs, questionsDone: reported.questionsDone, questionCount: reported.questionCount,
-      diagramsDone: reported.diagramsDone, diagramCount: reported.diagramCount });
+      diagramsDone: reported.diagramsDone, diagramCount: reported.diagramCount,
+      activeMs: reported.activeMs, wallMs: reported.wallMs, expectedTotalMs: reported.expectedTotalMs,
+      modelEtaMs: reported.modelRemainingMs, tailAllowanceMs: reported.tailAllowanceMs,
+      countsDone: Boolean(reported.countsDoneAtMs), phaseStarts: reported.phaseStarts });
     return result;
   };
   const durableCall = async (request) => {
