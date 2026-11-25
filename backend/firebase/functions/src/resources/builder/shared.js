@@ -94,6 +94,68 @@ function mathRenderingEnabled() {
   return store ? store.enabled : true;
 }
 
+// RES-40. Layout adjustments carried on the resource (`resource.layout`), read
+// while its document is assembled. Today that is `joinBefore`: section
+// headings that should follow straight on from the page before instead of
+// starting a new one (see joinSections).
+const layoutStore = new AsyncLocalStorage();
+
+function runWithLayout(layout, fn) {
+  return layoutStore.run({ layout: layout && typeof layout === "object" ? layout : {} }, fn);
+}
+
+function headingKey(text) {
+  return cleanText(text).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// Every page break and section heading is noted as it is made, so the finished
+// list of blocks can be adjusted in one place (finishPageBreaks) without each
+// builder knowing how.
+const pageBreaks = new WeakMap(); // break paragraph -> { joinable }
+const headings = new WeakMap(); // heading paragraph -> { key, options }
+
+function sectionHeadingParagraph(options, text) {
+  const heading = new Paragraph(options);
+  headings.set(heading, { key: headingKey(text), options });
+  return heading;
+}
+
+/**
+ * Settles the page breaks of a finished document (RES-40).
+ *
+ * A break before a section heading becomes "page break before" on the heading
+ * itself. As a paragraph of its own, a break that no longer fitted at the foot
+ * of a full page moved to the next page and broke from there, leaving that
+ * page blank.
+ *
+ * A joinable break is dropped altogether when the heading after it is named
+ * in `layout.joinBefore`: that section follows on the same page. A reading
+ * text that runs three lines on to a second page otherwise leaves the page
+ * empty before the questions start on a third.
+ */
+function finishPageBreaks(children) {
+  const wanted = (layoutStore.getStore()?.layout?.joinBefore || []).map(headingKey).filter(Boolean);
+  const joins = (key) => wanted.some((want) => want === key || want.startsWith(key) || key.startsWith(want));
+  const finished = [];
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index];
+    const pageBreak = pageBreaks.get(child);
+    const heading = pageBreak ? headings.get(children[index + 1]) : null;
+    if (!heading) {
+      finished.push(child);
+      continue;
+    }
+    if (pageBreak.joinable && joins(heading.key)) {
+      finished.push(new Paragraph({ keepNext: true, spacing: { before: 0, after: 200 } }));
+      finished.push(children[index + 1]);
+    } else {
+      finished.push(new Paragraph({ ...heading.options, pageBreakBefore: true }));
+    }
+    index += 1;
+  }
+  return finished;
+}
+
 // Control characters that XML 1.0 forbids in element content: everything below
 // U+0020 except tab (U+0009), line feed (U+000A) and carriage return (U+000D).
 // The `docx` library XML-escapes &, < and > but does NOT strip these, so a stray
@@ -463,7 +525,12 @@ function breakableChunks(nodes) {
   return chunks;
 }
 
-function mathSpanRuns(value, opts = {}) {
+// `trailing` is the punctuation written straight after the maths ("so
+// x = \frac{1}{2}."). It is set inside the equation, as upright text, so it
+// sits on the equation's own baseline. LibreOffice draws an inline equation a
+// little lower than the words around it, and a full stop left in the text
+// then hung above the last digit: "19." printed like "19·" (RES-40).
+function mathSpanRuns(value, opts = {}, trailing = "") {
   const parsed = parseMath(mathText(value));
   if (parsed.ok) {
     currentMathStyle = { size: opts.size || BRAND.FONT_SIZE_BODY, color: opts.color, bold: opts.bold };
@@ -474,14 +541,15 @@ function mathSpanRuns(value, opts = {}) {
       currentMathStyle = {};
     }
     if (children.length) {
-      return breakableChunks(parsed.nodes).flatMap((chunk, index) => {
+      return breakableChunks(parsed.nodes).flatMap((chunk, index, chunks) => {
         currentMathStyle = { size: opts.size || BRAND.FONT_SIZE_BODY, color: opts.color, bold: opts.bold };
         try {
+          const closing = trailing && index === chunks.length - 1 ? [mathRun(trailing, { plain: true })] : [];
           return [
             // The space before each piece's operator is ordinary text: it keeps
             // the operator's gap and is where the line may break.
             ...(index ? [new TextRun({ text: " ", size: opts.size || BRAND.FONT_SIZE_BODY })] : []),
-            new DocxMath({ children: ommlChildren(chunk) }),
+            new DocxMath({ children: [...ommlChildren(chunk), ...closing] }),
           ];
         } finally {
           currentMathStyle = {};
@@ -491,7 +559,7 @@ function mathSpanRuns(value, opts = {}) {
   }
   const shownAs = readableFallback(value);
   recordMathIssue({ source: value, shownAs });
-  return [rawTextRun(shownAs, opts)];
+  return [rawTextRun(`${shownAs}${trailing}`, opts)];
 }
 
 // Span grammar. An ATOM is one indivisible piece of maths; a TERM is atoms
@@ -743,6 +811,9 @@ function maskUnits(value) {
   return { text, masked };
 }
 
+// One punctuation mark that ends a clause, before a space or the end of the text.
+const TRAILING_PUNCTUATION = /^[.,;:?!](?=\s|$)/;
+
 function mathAwareTextRuns(input, opts = {}) {
   if (!input) return [rawTextRun("", opts)];
   const { text: value, masked } = maskUnits(input);
@@ -756,8 +827,11 @@ function mathAwareTextRuns(input, opts = {}) {
     if (span.index > cursor) {
       runs.push(rawTextRun(value.slice(cursor, span.index), opts));
     }
-    runs.push(...mathSpanRuns(span.text, opts));
     cursor = span.index + span.text.length;
+    // Sentence punctuation closing the maths goes into the equation with it.
+    const trailing = TRAILING_PUNCTUATION.exec(value.slice(cursor))?.[0] || "";
+    runs.push(...mathSpanRuns(span.text, opts, trailing));
+    cursor += trailing.length;
   }
 
   if (cursor < value.length) {
@@ -835,23 +909,22 @@ function makeContentsHeading(text, opts = {}) {
   if (opts.section === true) {
     return makeSectionHeading(text, { heading });
   }
-  return paragraph(text, {
+  return sectionHeadingParagraph({
     heading,
-    bold: true,
-    color: BRAND.NAVY,
-    size: BRAND.FONT_SIZE_H3,
     spacing: { before: 240, after: 120 },
     keepLines: true,
     keepNext: true,
     border: {
       left: { style: BorderStyle.SINGLE, size: 18, color: BRAND.NAVY, space: 8 },
     },
-  });
+    children: richTextRuns(text, { bold: true, color: BRAND.NAVY, size: BRAND.FONT_SIZE_H3 }),
+  }, text);
 }
 
-// A contents page that lists only two entries (say "Questions" and "Answers")
-// costs a page and helps nobody find anything, so it is left out.
-const MIN_CONTENTS_ENTRIES = 3;
+// A contents page for a short resource costs a page and helps nobody find
+// anything: three or fewer sections (say a stimulus booklet, Questions and a
+// marking guide) go without one (RES-40). Sub-headings don't count as sections.
+const MAX_SECTIONS_WITHOUT_CONTENTS = 3;
 
 function makeTableOfContents(entries = []) {
   const listed = entries
@@ -860,7 +933,8 @@ function makeTableOfContents(entries = []) {
       level: entry?.level === 2 ? 2 : 1,
     }))
     .filter((entry) => entry.title);
-  if (listed.length < MIN_CONTENTS_ENTRIES) return [];
+  const sections = listed.filter((entry) => entry.level === 1).length;
+  if (sections <= MAX_SECTIONS_WITHOUT_CONTENTS) return [];
   const contentChildren = listed
     .map((entry) => new Paragraph({
       indent: entry.level === 2 ? { left: 360 } : undefined,
@@ -1030,7 +1104,7 @@ function makeSectionHeading(text, opts = {}) {
     color: BRAND.NAVY,
     space: SECTION_HEADING_SIDE_SPACE,
   };
-  return new Paragraph({
+  return sectionHeadingParagraph({
     heading: opts.heading,
     keepNext: true,
     keepLines: true,
@@ -1043,7 +1117,7 @@ function makeSectionHeading(text, opts = {}) {
       color: BRAND.WHITE,
       size: BRAND.FONT_SIZE_H3,
     }),
-  });
+  }, text);
 }
 
 function makeSubHeading(text) {
@@ -1082,7 +1156,7 @@ function makeQuestionParagraph(number, stem, marks, opts = {}) {
   }
   return new Paragraph({
     spacing: { before: 220, after: 100 },
-    keepNext: true,
+    keepNext: opts.keepNext !== false,
     // Beside a diagram the marks sit at the end of the text column, not the
     // page margin under the picture.
     tabStops: [{ type: TabStopType.RIGHT, position: opts.tabPosition || PAGE.CONTENT_WIDTH }],
@@ -1107,11 +1181,23 @@ function makePartParagraph(label, stem, marks, opts = {}) {
   return new Paragraph({
     spacing: { before: 100, after: 80 },
     indent: { left: 360 },
-    keepNext: true,
+    keepNext: opts.keepNext !== false,
     tabStops: [{ type: TabStopType.RIGHT, position: opts.tabPosition || PAGE.CONTENT_WIDTH }],
     children,
   });
 }
+
+// Answer lines kept on one page with their question: up to 12 lines is 8.5 cm,
+// a third of the page body. A longer block may run on to the next page, but
+// the first four lines stay with the question and the last ten stay together,
+// so what lands on the next page is never a near-blank strip (ten lines is
+// 7 cm, over a quarter of the page).
+const KEEP_WHOLE_LINES = 12;
+const KEEP_FIRST_LINES = 4;
+const KEEP_LAST_LINES = 10;
+const RULED_LINE_TWIPS = 400;
+// Blank working space always printed with its question; the rest gives way.
+const BLANK_SPACE_FIRM_LINES = 6;
 
 function makeRuledLines(count, border, opts = {}) {
   // Twenty-mark extended responses need 60 lines under the marks policy. The
@@ -1128,13 +1214,25 @@ function makeRuledLines(count, border, opts = {}) {
   const alternateColor = Number.isFinite(lastNibble)
     ? `${baseColor.slice(0, -1)}${((lastNibble + 15) % 16).toString(16).toUpperCase()}`
     : baseColor;
-  // The first few lines carry keepNext so a question never ends a page with
-  // its text and no room to start working.
+  // Page flow (RES-40). With `keepFirst`, the lines belong to a question:
+  // - A short block stays whole and on its question's page. Before, only the
+  //   first two lines were held, so the last one or two were printed alone at
+  //   the top of the next page, away from their question, and a page break
+  //   after them left that page blank.
+  // - A long block (an extended response) may run on to the next page, but
+  //   the first KEEP_FIRST_LINES stay with the question and the last
+  //   KEEP_LAST_LINES stay together.
   const keepFirst = Math.max(0, Number(opts.keepFirst) || 0);
+  const keepWhole = keepFirst > 0 && safeCount <= KEEP_WHOLE_LINES;
+  const heldWithNext = (i) => {
+    if (!keepFirst || i === safeCount - 1) return false;
+    if (keepWhole) return true;
+    return i < Math.max(keepFirst, KEEP_FIRST_LINES) - 1 || i >= safeCount - KEEP_LAST_LINES;
+  };
   const lines = [];
   for (let i = 0; i < safeCount; i += 1) {
     lines.push(new Paragraph({
-      keepNext: i < keepFirst,
+      keepNext: heldWithNext(i),
       border: ruled ? {
         // Alternating by one imperceptible colour step prevents Word and
         // LibreOffice from merging consecutive borders into one outer box.
@@ -1164,8 +1262,30 @@ function makeWorkingLines(count, opts = {}) {
 
 // Maths questions answered on the page itself (graphing, constructions,
 // sketches, completing a table) need open space, not lines to write on (RES-20).
+//
+// The space is two paragraphs (RES-40). The first is a firm block, up to
+// BLANK_SPACE_FIRM_LINES tall, that always prints with its question. The rest
+// is spacing after a one-point paragraph, which Word and LibreOffice cut off
+// at the foot of a page: as separate empty lines it ran on to the next page
+// and, before a page break, left that page with nothing on it at all.
+function blankSpaceParts(count) {
+  const total = Math.max(0, Math.min(120, Number.parseInt(count, 10) || 0));
+  const firm = Math.min(total, BLANK_SPACE_FIRM_LINES);
+  return { firm, rest: total - firm };
+}
+
 function makeBlankSpace(count, opts = {}) {
-  return makeRuledLines(count, null, opts);
+  const { firm, rest } = blankSpaceParts(count);
+  if (!firm) return [];
+  const blank = (line, after, keepNext) => new Paragraph({
+    keepNext,
+    spacing: { before: 0, after, line, lineRule: LineRuleType.EXACT },
+    children: [new TextRun({ text: "\u00A0", font: BRAND.FONT, size: 2 })],
+  });
+  const held = Number(opts.keepFirst) > 0;
+  const parts = [blank(firm * RULED_LINE_TWIPS, 0, held && rest > 0)];
+  if (rest) parts.push(blank(20, rest * RULED_LINE_TWIPS - 20, false));
+  return parts;
 }
 
 // English responses need familiar ruled writing space rather than the dotted
@@ -1435,12 +1555,26 @@ function makeAnswerRow(number, answer, opts = {}) {
   });
 }
 
-function makePageBreak() {
-  return new Paragraph({ children: [new PageBreak()] });
+// The break sits in a paragraph one point high. A full-height one that did not
+// fit at the foot of a full page moved to the next page and broke from there,
+// leaving that page blank (RES-40).
+function makePageBreak({ joinable = false } = {}) {
+  const pageBreak = new Paragraph({
+    spacing: { before: 0, after: 0, line: 20, lineRule: LineRuleType.EXACT },
+    children: [new TextRun({ size: 2, children: [new PageBreak()] })],
+  });
+  // `joinable`: the section after this break may follow on the same page when
+  // the page before it would otherwise be left nearly empty (finishPageBreaks).
+  pageBreaks.set(pageBreak, { joinable });
+  return pageBreak;
 }
 
 module.exports = {
+  blankSpaceParts,
   cleanText,
+  headingKey,
+  finishPageBreaks,
+  runWithLayout,
   formatMarks,
   formatSubject,
   makeAnswerRow,

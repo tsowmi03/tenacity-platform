@@ -18,6 +18,10 @@
 
 const { lazyRequire } = require("../shared/lazyRequire");
 
+const { LABEL_FONT, labelFontFor, useBundledFonts } = require("./diagramFonts");
+
+// Before sharp draws any text: fontconfig reads its settings once (RES-40).
+useBundledFonts();
 const loadSharp = lazyRequire(() => require("sharp"));
 const sharp = (...args) => loadSharp()(...args);
 const { displayTextLength, svgTextContent } = require("./mathNotation");
@@ -46,7 +50,7 @@ const S = {
   dash: "#1C71AF",   // Dashed construction lines
   bg: "#FFFFFF",     // Canvas background (needed for trim to work)
   lw: 2.5,           // Default stroke width
-  font: "DejaVu Sans, Arial, sans-serif",
+  font: LABEL_FONT,
 };
 
 // Canvas is intentionally generous — the SVG is trimmed after rasterisation, so
@@ -158,7 +162,7 @@ function text(x, y, str, opts = {}) {
   }
 
   const rotate = opts.rotate ? ` transform="rotate(${opts.rotate} ${x} ${y})"` : "";
-  return `<text x="${x}" y="${y}" fill="${fill}" font-family="${S.font}" font-size="${size}" font-weight="${weight}" font-style="${style}" text-anchor="${anchor}" dominant-baseline="middle"${haloAttrs}${rotate}>${content}</text>`;
+  return `<text x="${x}" y="${y}" fill="${fill}" font-family="${labelFontFor(str)}" font-size="${size}" font-weight="${weight}" font-style="${style}" text-anchor="${anchor}" dominant-baseline="middle"${haloAttrs}${rotate}>${content}</text>`;
 }
 
 function formatAngleLabelForDisplay(label) {
@@ -3611,7 +3615,17 @@ GENERATORS["dot-plot"] = (spec) => {
 
   let svg = svgOpen(w, h);
 
-  if (spec.title) svg += text(w / 2, 26, spec.title, { bold: true, size: 19, color: S.label });
+  // Dots stack vertically above each value.
+  const dotR = 7;
+  const dotSpacing = 17;
+  const maxStack = Math.floor((lineY - 40) / dotSpacing);
+
+  // The title sits just above the tallest stack. At a fixed spot at the top of
+  // the canvas, a plot with short stacks printed with a wide empty band
+  // between its title and its dots (RES-40).
+  const tallest = Math.min(maxStack, Math.max(1, ...Object.values(counts).map((count) => Number(count) || 0)));
+  const stackTop = lineY - 14 - (tallest - 1) * dotSpacing - dotR;
+  if (spec.title) svg += text(w / 2, Math.max(26, stackTop - 34), spec.title, { bold: true, size: 19, color: S.label });
 
   // Axis line
   svg += line(lineLeft - 10, lineY, lineRight + 10, lineY, { width: 2 });
@@ -3624,11 +3638,6 @@ GENERATORS["dot-plot"] = (spec) => {
     const disp = Math.abs(v) < 1e-9 ? "0" : String(Math.round(v * 100) / 100);
     svg += text(x, lineY + 20, disp, { size: 14 });
   }
-
-  // Dots — stack vertically above each value
-  const dotR = 7;
-  const dotSpacing = 17;
-  const maxStack = Math.floor((lineY - 40) / dotSpacing);
 
   for (const [valStr, count] of Object.entries(counts)) {
     const val = Number(valStr);
@@ -4339,7 +4348,10 @@ GENERATORS["pictograph"] = (spec) => {
   });
 
   if (spec.key) {
-    svg += text(w / 2, h - PAD + 6, spec.key, { color: S.label, size: 16, italic: true });
+    // Straight under the last row, not at the foot of the canvas: a short
+    // pictograph printed with half a page of nothing above its key (RES-40).
+    const keyY = Math.min(h - PAD + 6, startY + Math.max(rows.length, 1) * rowH + 26);
+    svg += text(w / 2, keyY, spec.key, { color: S.label, size: 16, italic: true });
   }
 
   svg += svgClose;
@@ -4463,7 +4475,9 @@ GENERATORS["clock"] = (spec) => {
   const minute = spec.minute || 0;
   const hourAngle = ((hour + minute / 60) * 30 - 90) * Math.PI / 180;
   const minAngle = (minute * 6 - 90) * Math.PI / 180;
-  const hourLen = r * 0.55, minLen = r * 0.78;
+  // The minute hand stops short of the numerals (centred 36 in from the rim):
+  // at half past it ran through the 6 (RES-40).
+  const hourLen = r * 0.55, minLen = Math.min(r * 0.78, r - 66);
   svg += line(cx, cy, cx + hourLen * Math.cos(hourAngle), cy + hourLen * Math.sin(hourAngle), { width: 5 });
   svg += line(cx, cy, cx + minLen * Math.cos(minAngle), cy + minLen * Math.sin(minAngle), { width: 3 });
   svg += `<circle cx="${cx}" cy="${cy}" r="6" fill="${S.line}"/>`;

@@ -66,6 +66,7 @@ const {
 } = require("./sourcedText");
 const { createPdfPreviewConverter } = require("./pdfPreview");
 const { findLayoutFaults, layoutWarnings, planLayoutFixes, visualCheckModel } = require("./visualCheck");
+const { joinShortSections } = require("./layoutPass");
 const { responseLineCount } = require("./builder/shared");
 const { writeAuditLog } = require("../shared/auditLog");
 const { toHttpsError } = require("../shared/errors");
@@ -1844,7 +1845,9 @@ async function runVisualCheck(args) {
   return resourceStage(args.job, "visual.check", () => runVisualCheckLogged(args), {}, (result) => result.summary?.outcome || "skipped");
 }
 
-async function runVisualCheckLogged({ job, built, fileName, pdfConverter, callAi, signal, rebuild, repairMath }) {
+async function runVisualCheckLogged({ job, built: firstBuilt, fileName, pdfConverter, callAi, signal, rebuild, repairMath, readPages }) {
+  // Replaced by the layout pass's rebuild when that saves a page (RES-40).
+  let built = firstBuilt;
   const unchanged = (pdf = null, summary = null) => ({ built, pdf, warnings: [], summary });
   const skip = (reason) => {
     resourceEvent(job, "stage.skipped", { stageId: "visual.check", reason });
@@ -1865,8 +1868,30 @@ async function runVisualCheckLogged({ job, built, fileName, pdfConverter, callAi
     }
   };
 
-  const firstPdf = await convert(built.buffer);
+  let firstPdf = await convert(built.buffer);
   if (!firstPdf) return unchanged(null, { outcome: "unavailable", reason: "conversion_failed" });
+
+  // RES-40. A page left with a few lines before a new section: let the section
+  // follow on. Measured on the converted pages, no model call. Any failure
+  // keeps the first build.
+  try {
+    const joined = await joinShortSections({
+      built,
+      pdf: firstPdf,
+      clone: cloneGeneratedResource,
+      convert,
+      rebuild: (resource) => resourceStage(job, "layout.rebuild", () => rebuild(resource)),
+      ...(readPages ? { readPages } : {}),
+    });
+    if (joined.joined.length) {
+      built = joined.built;
+      firstPdf = joined.pdf;
+      resourceEvent(job, "layout.sections_joined", { count: joined.joined.length, pagesSaved: joined.pagesSaved });
+    }
+  } catch (err) {
+    if (mustPropagate(err)) throw err;
+    resourceEvent(job, "layout.join_failed", { errorCode: err?.code || "LAYOUT_PASS_FAILED" }, "warn");
+  }
 
   let faults;
   try {

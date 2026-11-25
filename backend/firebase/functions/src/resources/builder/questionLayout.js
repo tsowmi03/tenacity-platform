@@ -82,12 +82,21 @@ function textItem({ render, estimate, hasTable = false }) {
   return { kind: "text", render, estimate, hasTable };
 }
 
-function lineItems(paragraphs, lineHeight) {
-  return paragraphs.map((paragraph) => ({ kind: "line", paragraph, estimate: () => lineHeight }));
+// `loose` holds the same lines with no keep-with-next, for a question that
+// ends inside its side-by-side table (see sideBySide).
+function lineItems(paragraphs, lineHeight, loose = paragraphs) {
+  return paragraphs.map((paragraph, index) => ({
+    kind: "line",
+    paragraph,
+    loose: loose[index] || paragraph,
+    estimate: () => lineHeight,
+  }));
 }
 
-function renderItems(items, width) {
-  return items.flatMap((item) => (item.kind === "line" ? [item.paragraph] : item.render(width)));
+function renderItems(items, width, flow = {}) {
+  return items.flatMap((item) => (item.kind === "line"
+    ? [flow.loose ? item.loose : item.paragraph]
+    : item.render(width, flow)));
 }
 
 function fitSize(image, maxWidth, maxHeight, minWidth) {
@@ -149,6 +158,14 @@ function sideBySide(image, lead, follow, alignBefore, factor = 1) {
   const textWidth = PAGE.CONTENT_WIDTH - imageWidth - COLUMN_GUTTER;
   const items = [...lead, ...follow];
   const count = columnCount(lead, follow, textWidth, alignBefore + imageHeight);
+  // A question that ends inside the table needs no keep-with-next: the row
+  // never splits. Left on, LibreOffice keeps the whole table with the next
+  // question's table, and that one with the one after, so a run of diagram
+  // questions had to fit one page together. The first of them left its page
+  // and took the "Questions" heading with it, leaving page 1 with a name line
+  // and nothing else (RES-40). Lines that carry on below the table still hold
+  // it to them.
+  const endsInTable = count >= items.length;
 
   const row = new TableRow({
     cantSplit: true,
@@ -158,7 +175,7 @@ function sideBySide(image, lead, follow, alignBefore, factor = 1) {
         borders: noBorders,
         verticalAlign: VerticalAlign.TOP,
         margins: { top: 0, bottom: 0, left: 0, right: COLUMN_GUTTER },
-        children: renderItems(items.slice(0, count), textWidth),
+        children: renderItems(items.slice(0, count), textWidth, { loose: endsInTable }),
       }),
       new TableCell({
         width: { size: imageWidth, type: WidthType.DXA },
@@ -168,7 +185,7 @@ function sideBySide(image, lead, follow, alignBefore, factor = 1) {
         children: [
           new Paragraph({
             alignment: AlignmentType.RIGHT,
-            keepNext: true,
+            keepNext: !endsInTable,
             // Level with the first line of the question text.
             spacing: { before: alignBefore, after: 0 },
             children: [diagramImageRun(image, size)],

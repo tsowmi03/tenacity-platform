@@ -207,9 +207,14 @@ describe("worksheet DOCX builder", () => {
 
     // Working lines only for 2(a) (1 mark) and Q4, which says nothing and keeps lines.
     assert.equal((xml.match(/w:color="BBBBB[AB]"/g) || []).length, 6);
-    // Blank space keeps the same height: Q1 (2 marks) and 2(b) (3 marks) as
-    // borderless 20 pt rows, alongside the six ruled ones.
-    assert.equal((xml.match(/w:line="400" w:lineRule="exact"/g) || []).length, 6 + 15);
+    assert.equal((xml.match(/w:line="400" w:lineRule="exact"/g) || []).length, 6);
+    // Blank space keeps the same height (20 pt a line) without lines of its
+    // own. Up to six lines' worth is one firm block that prints with the
+    // question: Q1 (2 marks, six lines) and the first six of 2(b)'s nine.
+    assert.equal((xml.match(/w:line="2400" w:lineRule="exact"/g) || []).length, 2);
+    // The rest is spacing after a one-point paragraph, which is cut off at the
+    // foot of a page instead of running on to the next one (RES-40).
+    assert.equal((xml.match(/<w:spacing w:after="1180" w:before="0" w:line="20" w:lineRule="exact"\/>/g) || []).length, 1);
   });
 
   it("shows whole-question and part marks when requested without changing writing space", async () => {

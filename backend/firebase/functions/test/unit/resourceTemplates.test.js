@@ -300,21 +300,19 @@ describe("resource template dispatcher", () => {
     });
   }
 
-  it("adds a live table of contents only to the three navigable booklet types", async () => {
-    const included = ["topic-booklet", "study-guide", "worksheet"];
+  it("adds a live table of contents to booklets and study guides with more than three sections", async () => {
+    const included = ["topic-booklet", "study-guide"];
     const excluded = Object.keys(samples).filter((resourceType) => !included.includes(resourceType));
-    // Enough sections that every navigable type lists at least three entries.
+    // Enough sections that each lists at least four: three or fewer go
+    // without a contents page (RES-40).
     const navigable = {
-      "topic-booklet": samples["topic-booklet"],
+      "topic-booklet": {
+        ...samples["topic-booklet"],
+        subTopics: [0, 1].map((i) => ({ ...samples["topic-booklet"].subTopics[0], title: `Skill ${i + 1}` })),
+      },
       "study-guide": {
         ...samples["study-guide"],
-        sections: [0, 1, 2].map((i) => ({ ...samples["study-guide"].sections[0], title: `Part ${i + 1}` })),
-      },
-      worksheet: {
-        title: "Reading Worksheet", subject: "english", year: 10, topic: "Growing up", totalMarks: 2,
-        stimulus: [{ label: "Text 1", textType: "poem", title: "A Sourced Poem", author: "Real Poet", source: "Wikisource (https://en.wikisource.org/wiki/x)", body: "line one\nline two" }],
-        questions: [{ number: 1, stem: "Analyse Text 1.", marks: 2, workingLines: 4, parts: null }],
-        markingGuide: [{ questionNumber: 1, partLabel: null, suggestedResponse: "Explains the technique.", markingCriteria: ["Names a technique."], marks: 2 }],
+        sections: [0, 1, 2, 3].map((i) => ({ ...samples["study-guide"].sections[0], title: `Part ${i + 1}` })),
       },
     };
 
@@ -333,6 +331,16 @@ describe("resource template dispatcher", () => {
       assert.match(xml, /<w:pStyle w:val="Heading1"\/>/);
       assert.match(extractXmlText(buffer, "word/document.xml"), /Contents/);
       assert.match(settings, /<w:updateFields\/>/);
+
+      // RES-124. LibreOffice, which makes the PDF preview, rebuilds the list
+      // from outline levels and printed an empty Contents page without them.
+      const styles = extractZipEntry(buffer, "word/styles.xml").toString("utf8");
+      const style = (id) => styles.match(new RegExp(`<w:style [^>]*w:styleId="${id}".*?</w:style>`, "s"))?.[0] || "";
+      assert.match(style("Heading1"), /<w:outlineLvl w:val="0"\/>/, `${resourceType} Heading 1 outline level`);
+      assert.match(style("Heading2"), /<w:outlineLvl w:val="1"\/>/, `${resourceType} Heading 2 outline level`);
+      // The rebuilt entries take these styles: page numbers at a dotted right tab.
+      assert.match(style("TOC1"), /<w:tab w:val="right" w:pos="9026" w:leader="dot"\/>/);
+      assert.match(style("TOC2"), /<w:ind w:left="360"\/>/);
     }
 
     for (const resourceType of excluded) {
@@ -347,16 +355,85 @@ describe("resource template dispatcher", () => {
     }
   });
 
-  it("leaves out a contents page that would list fewer than three entries", async () => {
-    const buffer = await buildResourceDocx("worksheet", samples.worksheet, {
-      studentName: "Mei Tanaka",
-      subject: "maths",
-      year: samples.worksheet.year,
-      answerMode: "answers",
+  it("leaves out a contents page for three or fewer sections (RES-40)", async () => {
+    const short = {
+      // Questions and Answers.
+      worksheet: [samples.worksheet, "maths"],
+      // One sub-topic, the quiz and Answers; the quiz's sub-heading is not a section.
+      "topic-booklet": [samples["topic-booklet"], "maths"],
+    };
+    for (const [resourceType, [sample, subject]] of Object.entries(short)) {
+      const buffer = await buildResourceDocx(resourceType, sample, {
+        studentName: "Mei Tanaka",
+        subject,
+        year: sample.year,
+        answerMode: "answers",
+      });
+      const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
+      assert.doesNotMatch(xml, /<w:instrText[^>]*>TOC/, resourceType);
+      assert.doesNotMatch(extractXmlText(buffer, "word/document.xml"), /Contents/, resourceType);
+    }
+
+    // An English worksheet with a stimulus booklet has three sections too.
+    const reading = {
+      title: "Reading Worksheet", subject: "english", year: 10, topic: "Growing up", totalMarks: 2,
+      stimulus: [{ label: "Text 1", textType: "poem", title: "A Sourced Poem", author: "Real Poet", source: "Wikisource (https://en.wikisource.org/wiki/x)", body: "line one\nline two" }],
+      questions: [{ number: 1, stem: "Analyse Text 1.", marks: 2, workingLines: 4, parts: null }],
+      markingGuide: [{ questionNumber: 1, partLabel: null, suggestedResponse: "Explains the technique.", markingCriteria: ["Names a technique."], marks: 2 }],
+    };
+    const buffer = await buildResourceDocx("worksheet", reading, { studentName: "Mei Tanaka", subject: "english", year: 10, answerMode: "answers" });
+    assert.doesNotMatch(extractZipEntry(buffer, "word/document.xml").toString("utf8"), /<w:instrText[^>]*>TOC/);
+  });
+
+  describe("page breaks (RES-40)", () => {
+    const stimulus = [{ label: "Text 1", textType: "prose", title: "The welcome desk", author: "Tenacity Original", source: "Tenacity Original", body: "A short text.\nIts second paragraph." }];
+    const paper = { ...englishMarkingSamples["practice-paper"], stimulus };
+    const build = async (resource) => extractZipEntry(await buildResourceDocx("practice-paper", resource, {
+      studentName: "Mei Tanaka", subject: "english", year: 8, answerMode: "answers",
+    }), "word/document.xml").toString("utf8");
+    const paragraphs = (xml) => xml.match(/<w:p>.*?<\/w:p>|<w:p [^>]*>.*?<\/w:p>/gs) || [];
+    const headingOf = (xml, text) => paragraphs(xml).find((p) => p.includes(`>${text}</w:t>`) && p.includes("<w:pBdr>"));
+
+    it("breaks the page on the section heading itself, not in a paragraph before it", async () => {
+      const xml = await build(paper);
+      // A break in its own paragraph that did not fit at the foot of a full
+      // page moved to the next one and left it blank.
+      for (const heading of ["Stimulus booklet", "Section A", "Marking Guide"]) {
+        assert.match(headingOf(xml, heading), /<w:pageBreakBefore\/>/, heading);
+      }
+      assert.doesNotMatch(xml, /<w:br w:type="page"\/>/);
     });
-    const xml = extractZipEntry(buffer, "word/document.xml").toString("utf8");
-    assert.doesNotMatch(xml, /<w:instrText[^>]*>TOC/);
-    assert.doesNotMatch(extractXmlText(buffer, "word/document.xml"), /Contents/);
+
+    it("lets a section follow the stimulus on the same page when the resource asks", async () => {
+      const xml = await build({ ...paper, layout: { joinBefore: ["Section A"] } });
+      assert.doesNotMatch(headingOf(xml, "Section A"), /<w:pageBreakBefore\/>/);
+      assert.doesNotMatch(xml, /<w:br w:type="page"\/>/);
+      // The other sections still start their pages.
+      assert.match(headingOf(xml, "Stimulus booklet"), /<w:pageBreakBefore\/>/);
+      assert.match(headingOf(xml, "Marking Guide"), /<w:pageBreakBefore\/>/);
+    });
+
+    it("never joins answers or a marking guide to the student's last question", async () => {
+      const xml = await build({ ...paper, layout: { joinBefore: ["Marking Guide", "Stimulus booklet"] } });
+      assert.match(headingOf(xml, "Marking Guide"), /<w:pageBreakBefore\/>/);
+      assert.match(headingOf(xml, "Stimulus booklet"), /<w:pageBreakBefore\/>/);
+    });
+
+    it("builds every resource type without a page break paragraph before a heading", async () => {
+      for (const [resourceType, sample] of Object.entries(samples)) {
+        const xml = extractZipEntry(await buildResourceDocx(resourceType, sample, {
+          studentName: "Mei Tanaka", subject: sample.subject, year: sample.year, answerMode: "answers",
+        }), "word/document.xml").toString("utf8");
+        const all = paragraphs(xml);
+        all.forEach((p, index) => {
+          if (!p.includes('<w:br w:type="page"/>')) return;
+          assert.ok(!(all[index + 1] || "").includes("<w:pBdr>") || !(all[index + 1] || "").includes("<w:keepLines/>"),
+            `${resourceType}: a page break paragraph sits before a heading`);
+          // What is left (a cover page, say) is one point high, so it always fits.
+          assert.match(p, /w:line="20" w:lineRule="exact"/, resourceType);
+        });
+      }
+    });
   });
 
   for (const [resourceType, sample] of Object.entries(englishMarkingSamples)) {
