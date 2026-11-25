@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-26 | [Generation ETA measured from logged reports; finishing time added (RES-93, partly)](#2026-11-26--generation-eta-measured-from-logged-reports-finishing-time-added-res-93-partly) |
 | 2026-11-26 | [Question bank sources ready for the Year → Topic Drive layout (RES-121)](#2026-11-26--question-bank-sources-ready-for-the-year--topic-drive-layout-res-121) |
 | 2026-11-26 | [No near-blank pages; answer lines stay with their question; diagram label and spacing fixes (RES-40)](#2026-11-26--no-near-blank-pages-answer-lines-stay-with-their-question-diagram-label-and-spacing-fixes-res-40) |
 | 2026-11-26 | [Contents page shows in the PDF preview (RES-124)](#2026-11-26--contents-page-shows-in-the-pdf-preview-res-124) |
@@ -270,6 +271,56 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-11-26 — Generation ETA measured from logged reports; finishing time added (RES-93, partly)
+
+**What changed**
+- Measured the ETA tutors were shown against when each resource really
+  finished, from the `progress.reported` events of 29 completed production
+  runs (3 to 25 November). Median error for the first / middle / last third of
+  a run:
+
+  | Runs | First | Middle | Last |
+  | --- | --- | --- | --- |
+  | All 29 | 39% | 57% | 66% |
+  | Maths (22) | 56% | 63% | 57% |
+  | English (7) | 33% | 44% | 128% |
+  | Since 13 November (10) | 36% | 48% | 63% |
+
+- The ETA now includes a learnt finishing time. After the last question is
+  written or the last diagram question settled, a run still verifies answers,
+  builds the document and checks its pages. That took 15–30 seconds at the
+  median and 1–3 minutes at the long end, while the ETA showed 3–15 seconds.
+  Each completed run records how long this took; the median of the last ten
+  for that kind of resource (at most three minutes) is added to the ETA and
+  counted down once the finishing work starts.
+- Applied to the logged ETAs of the ten runs since 13 November, in the order
+  they happened, this gives 35% / 41% / 54% (from 36% / 48% / 63%).
+- Each progress report now also logs the model's inputs (worker and real time,
+  expected total, the step start times, the model's own figure and the
+  allowance), so the next calibration can replay the model exactly.
+- New script `scripts/measureEtaAccuracy.js` prints the table above from Cloud
+  Logging at any time.
+
+**Why:** RES-84 made the ETA steady but not accurate. This is the calibration
+the ticket planned once about 20 runs had logged their reports.
+
+**Status:** Live. Functions deployed. The ticket's target (under 25% in the
+last third) is **not met**, so RES-93 stays open. Three findings explain why:
+- The ETA mostly runs low: in the diagram step it showed 45% of the time
+  really left (runs since 13 November).
+- Runs before 13 November queued behind each other (up to 53 minutes, 163
+  seconds queued at the median), which no estimate could foresee. Since the
+  two-job change they take 6 minutes at the median.
+- Per-step corrections learnt from earlier runs did not help when tried on the
+  logged ETAs (last third 66% → 68–83%): the error is spread from run to run,
+  not a constant factor. Tuning step shares and pace needs the model replayed
+  on real inputs, which the old reports did not log.
+
+**Next steps**
+- Once about 20 runs have completed with the new log fields (three to four
+  weeks at the current rate), replay the model on them, tune the diagram
+  step's projection and the step shares, and re-measure with
+  `scripts/measureEtaAccuracy.js --since=2026-11-26` (RES-93, about a day).
 ## 2026-11-26 — Question bank sources ready for the Year → Topic Drive layout (RES-121)
 
 **What changed**

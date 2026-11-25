@@ -1901,7 +1901,7 @@ async function runVisualCheckLogged({ job, built: firstBuilt, fileName, pdfConve
       // from, so its warning would otherwise be lost.
       built = { ...joined.built, warnings: mergeWarnings(built.warnings, joined.built.warnings) };
       firstPdf = joined.pdf;
-      resourceEvent(job, "layout.sections_joined", { count: joined.joined.length, pagesSaved: joined.pagesSaved });
+      resourceEvent(job, "layout.sections_joined", { fixedCount: joined.joined.length, pagesSaved: joined.pagesSaved });
     }
   } catch (err) {
     if (mustPropagate(err)) throw err;
@@ -4311,6 +4311,8 @@ async function recordResourceTiming({ db, job }) {
       activeMs: job.activeElapsedMs,
       phaseMs: phaseDurations(progress.phaseStarts, job.activeElapsedMs),
       predictedMs: progress.initialEstimateMs,
+      // RES-93. Real time from the last counted item to now, the end of the run.
+      ...(progress.countsDoneAtMs > 0 ? { tailMs: Math.max(0, Date.now() - progress.countsDoneAtMs) } : {}),
     });
   } catch (err) {
     resourceEvent(job, "timing.unrecorded", { reason: String(err?.code || "write_failed") }, "warn");
