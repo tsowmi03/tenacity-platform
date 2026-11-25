@@ -29,6 +29,23 @@ describe("English set-text reference bank", () => {
     ]);
   });
 
+  it("finds the LitCharts under Texts in the Year → Topic layout (RES-121)", () => {
+    const chosen = chooseLitChartFiles([
+      file("English/Texts/LitCharts/AnimalFarm/Word version/Animal-Farm-LitChart.pdf"),
+      file("English/Texts/LitCharts/Macbeth LitCharts/Macbeth-LitChart.pdf"),
+      file("English/Texts/LitCharts/Macbeth LitCharts/Macbeth Teacher/Macbeth-LitChart.pdf"),
+      file("English/Texts/Mr-Pip-LitChart.pdf"),
+      file("English/Texts/Novel guides/Of-Mice-and-Men-LitChart.pdf"),
+      file("English/Year 9/Comprehension/Some-LitChart.pdf"),
+    ]);
+    assert.deepEqual(chosen.map((f) => f.path), [
+      "English/Texts/LitCharts/AnimalFarm/Word version/Animal-Farm-LitChart.pdf",
+      "English/Texts/LitCharts/Macbeth LitCharts/Macbeth-LitChart.pdf",
+      "English/Texts/Mr-Pip-LitChart.pdf",
+      "English/Texts/Novel guides/Of-Mice-and-Men-LitChart.pdf",
+    ]);
+  });
+
   it("matches the same title however LitCharts named the file", () => {
     assert.equal(titleKey("Mr-Pip-LitChart.pdf"), titleKey("LitCharts-mr-pip.pdf"));
     assert.equal(titleKey("Lamb-to-the-Slaughter-LitChart (2).pdf"), "lamb to the slaughter");

@@ -17,6 +17,19 @@ function versionOf(file) {
 }
 
 /**
+ * The version to record for a file the sync has seen before. Renaming a file
+ * in Drive changes its last-modified time but not its contents, and the
+ * modified time is half of the version, so a rename looked like a changed
+ * file and had it extracted again (RES-121: TP-47 renames every file). While
+ * the checksum is the same the version stays what it was. Google-native files
+ * have no checksum; for them the modified time is all there is.
+ */
+function versionFor(plan, current) {
+  if (current?.version && current.md5 && current.md5 === plan.md5) return current.version;
+  return versionOf(plan);
+}
+
+/**
  * Compares the planned sources with what Firestore holds and returns only the
  * docs that need writing. Pure, so it is unit testable.
  *
@@ -30,8 +43,8 @@ function planSourceWrites(existing, plans, { fields = SYNCED_FIELDS } = {}) {
   const seen = new Set();
   for (const plan of plans) {
     seen.add(plan.id);
-    const record = Object.fromEntries(fields.map((field) => [field, field === "version" ? versionOf(plan) : plan[field] ?? null]));
     const current = existing.get(plan.id);
+    const record = Object.fromEntries(fields.map((field) => [field, field === "version" ? versionFor(plan, current) : plan[field] ?? null]));
     if (!current) {
       writes.push({ id: plan.id, change: "new", data: record });
     } else if (fields.some((field) => (current[field] ?? null) !== record[field])) {
@@ -67,5 +80,6 @@ module.exports = {
   applySourceWrites,
   loadSources,
   planSourceWrites,
+  versionFor,
   versionOf,
 };

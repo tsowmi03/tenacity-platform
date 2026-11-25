@@ -17,7 +17,8 @@ const MATHS_FOLDER_ID = "1ExbOl6WoAtz6Rg-ZhNp_nvU50coC_IHV";
 // Resources/English, for the English bank (RES-65).
 const ENGLISH_FOLDER_ID = "1mBijQF-8YuCf8gEqNvFe4EimoF8r9ps_";
 const QUESTION_BANK_DRIVE_ACCOUNT = "question-bank-drive@tenacity-tutoring-b8eb2.iam.gserviceaccount.com";
-const FILE_FIELDS = "id,name,mimeType,size,md5Checksum,modifiedTime";
+// shortcutDetails: a shortcut is planned by the file it points to (RES-121).
+const FILE_FIELDS = "id,name,mimeType,size,md5Checksum,modifiedTime,shortcutDetails(targetId,targetMimeType)";
 const PAGE_SIZE = 1000;
 
 /**
@@ -129,6 +130,8 @@ async function listTree(drive, rootFolderId = MATHS_FOLDER_ID, rootName = "Maths
             bytes: item.size ? Number(item.size) : null,
             md5: item.md5Checksum || null,
             modifiedTime: item.modifiedTime || null,
+            shortcutTargetId: item.shortcutDetails?.targetId || null,
+            shortcutTargetMimeType: item.shortcutDetails?.targetMimeType || null,
           });
         }
       }
