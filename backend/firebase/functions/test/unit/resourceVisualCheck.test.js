@@ -231,6 +231,32 @@ describe("runVisualCheck", () => {
     assert.equal(result.summary.outcome, "passed");
   });
 
+  it("keeps the first build's warnings when a rebuild replaces it (RES-40)", async () => {
+    const omitted = { code: "OPTIONAL_DIAGRAM_OMITTED", message: "Question 4's diagram could not be drawn and was left out." };
+    const notation = { code: "MATH_NOTATION_FALLBACK", message: "Some maths is shown as plain text." };
+    const first = () => ({ ...built(), warnings: [omitted, notation] });
+    const layouts = pagesOf({
+      "%PDF of PK first": [longPage(1, "Stimulus booklet"), page(2, "the last two lines"), longPage(3, "Section A")],
+      "%PDF of PK joined": [longPage(1, "Stimulus booklet"), longPage(2, "the last two lines")],
+    });
+    // The layout pass changes no content: every earlier warning still holds.
+    const joined = await runVisualCheck({
+      job, built: first(), fileName: "a.docx", pdfConverter: converter(), callAi: async () => ({ parsed: { faults: [] } }),
+      rebuild: async (resource) => ({ buffer: Buffer.from("PK joined"), warnings: [notation], resource }), readPages: layouts,
+    });
+    assert.deepEqual(joined.built.warnings, [omitted, notation]);
+
+    // A visual fix changes the content, so the rebuild speaks for itself,
+    // apart from the diagram it can no longer know was left out.
+    const fixedUp = await runVisualCheck({
+      job, built: first(), fileName: "a.docx", pdfConverter: converter(),
+      callAi: async () => ({ parsed: { faults: [fault("diagram_clipped", "1")] } }),
+      rebuild: async (resource) => ({ buffer: Buffer.from("PK second"), warnings: [], resource }),
+      readPages: async () => [longPage(1, "Questions")],
+    });
+    assert.deepEqual(fixedUp.built.warnings, [omitted]);
+  });
+
   it("keeps the first build when joining saves no page, or the layout pass fails (RES-40)", async () => {
     const original = built();
     const same = [longPage(1, "Questions"), page(2, "one line"), longPage(3, "Answers")];

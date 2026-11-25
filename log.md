@@ -297,6 +297,9 @@ omitted, and open follow-ups are tracked at the bottom.
 - Punctuation straight after an equation is set inside the equation. In the
   preview a full stop used to sit above the last digit, so "19." read like
   "19·".
+- A rebuild after the page check (this one, or the visual check's) keeps the
+  first build's warning that a diagram was left out. The rebuild starts from
+  the resource without that diagram, so it could not raise the warning again.
 - Diagram labels with a combining mark (x̄, a recurring decimal's dot) print
   correctly on the server. DejaVu Sans now ships with the functions and is used
   for those labels only; before, the bar printed beside the x and the dot was
