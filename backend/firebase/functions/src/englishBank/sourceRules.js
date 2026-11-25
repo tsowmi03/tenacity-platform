@@ -5,12 +5,16 @@
 // each guide belongs to. Pure functions over Drive listings, like the maths
 // rules in src/questionBank/sourceRules.js, whose copy handling it shares.
 
-const { SKIP_REASONS, baseName, extensionOf, isDocument, skipCopies } = require("../questionBank/sourceRules");
+const { SKIP_REASONS, baseName, extensionOf, isDocument, skipCopies, skipShortcuts } = require("../questionBank/sourceRules");
 
-// Top-level folders under English that hold stimuli. LitCharts has its own
-// reference bank (RES-67); Grammar Spelling, Essay, Writing, Examples and
-// Misc. are out of scope.
-const IN_SCOPE_FOLDERS = new Set(["past papers", "practice papers", "comprehension", "creative"]);
+// Folders under English that hold stimuli, wherever they sit. Before the
+// Subject → Year → Topic layout (TP-47) they were top-level folders
+// (English/Past Papers/...); in it they are under a year, and for Years 11 and
+// 12 under a course too (English/Year 12/Advanced/Past Papers/...). "Creative"
+// becomes "Creative Writing" (RES-121). Texts (LitCharts and the like) has its
+// own reference bank (RES-67); Grammar & Spelling, Essay & Persuasive, the
+// HSC modules, Examples and Misc. are out of scope.
+const IN_SCOPE_FOLDERS = new Set(["past papers", "practice papers", "comprehension", "creative", "creative writing"]);
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
 
 const ENGLISH_SKIP_REASONS = Object.freeze({
@@ -32,8 +36,10 @@ const PAIRING_NOISE = new Set([
   "12", "w", "sol", "pdf", "the", "and", "of",
 ]);
 
-function topFolder(path) {
-  return String(path).split("/")[1]?.toLowerCase() ?? "";
+// The path is "English/<folder>/.../<file name>": every folder below the root
+// counts, the file's own name does not.
+function inScope(path) {
+  return String(path).split("/").slice(1, -1).some((folder) => IN_SCOPE_FOLDERS.has(folder.trim().toLowerCase()));
 }
 
 function isImage(file) {
@@ -76,9 +82,11 @@ function planEnglishSources(files) {
   const pending = () => [...plans.values()].filter((plan) => plan.status === "pending");
 
   for (const plan of pending()) {
-    if (!IN_SCOPE_FOLDERS.has(topFolder(plan.path))) skip(plan, ENGLISH_SKIP_REASONS.outOfScope);
+    if (!inScope(plan.path)) skip(plan, ENGLISH_SKIP_REASONS.outOfScope);
     else if (!isDocument(plan) && !isImage(plan)) skip(plan, ENGLISH_SKIP_REASONS.notDocument);
   }
+  // After the per-file rules: a shortcut is judged by its target's status.
+  skipShortcuts([...plans.values()], skip);
   skipCopies(pending(), skip);
   for (const plan of pending()) plan.role = roleOf(plan);
 
@@ -102,6 +110,7 @@ module.exports = {
   ENGLISH_SKIP_REASONS,
   IN_SCOPE_FOLDERS,
   ROLES,
+  inScope,
   isImage,
   pairingKey,
   planEnglishSources,

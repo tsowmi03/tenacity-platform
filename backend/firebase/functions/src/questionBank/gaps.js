@@ -55,33 +55,45 @@ function skillKey(skill) {
   return String(skill || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-/** Live bank questions by diagram type, skill and year. */
+/**
+ * Live bank questions by diagram type, skill and year. `byYear` counts a
+ * question under each of its years (the supply table's columns). `byReach`
+ * counts it once for every year whose search can reach it: a search for Year 9
+ * takes questions for Years 8 to 10 (RES-76), so five questions tagged for
+ * Years 9 and 10 are five within reach of Year 9, not ten.
+ */
 function summariseSupply(rows) {
   const byType = {};
   let total = 0;
+  const empty = () => ({ total: 0, byYear: {}, byReach: {} });
   for (const row of rows) {
     if (row?.status !== "live") continue;
     const type = DIAGRAM_TYPES[row.diagramType] ? row.diagramType : "other";
     const skill = typeof row.skill === "string" && row.skill ? row.skill : "other";
-    const entry = byType[type] || (byType[type] = { total: 0, byYear: {}, skills: {} });
-    const cell = entry.skills[skill] || (entry.skills[skill] = { total: 0, byYear: {} });
+    const entry = byType[type] || (byType[type] = { ...empty(), skills: {} });
+    const cell = entry.skills[skill] || (entry.skills[skill] = empty());
     entry.total += 1;
     cell.total += 1;
     total += 1;
-    for (const year of Array.isArray(row.years) ? row.years : []) {
-      if (!Number.isInteger(year)) continue;
+    const years = [...new Set((Array.isArray(row.years) ? row.years : []).filter(Number.isInteger))];
+    const reach = new Set(years.flatMap((year) => [year - 1, year, year + 1]));
+    for (const year of years) {
       entry.byYear[year] = (entry.byYear[year] || 0) + 1;
       cell.byYear[year] = (cell.byYear[year] || 0) + 1;
+    }
+    for (const year of reach) {
+      entry.byReach[year] = (entry.byReach[year] || 0) + 1;
+      cell.byReach[year] = (cell.byReach[year] || 0) + 1;
     }
   }
   return { total, byType };
 }
 
-/** Bank questions for a skill within a year either side, the range a search uses (RES-76). */
+/** Bank questions for a skill that a search for `year` can reach, each counted once. */
 function supplyFor(supply, diagramType, skill, year) {
   const cell = supply?.byType?.[diagramType]?.skills?.[skill];
-  if (!cell || !Number.isInteger(year)) return cell ? cell.total : 0;
-  return [year - 1, year, year + 1].reduce((sum, y) => sum + (cell.byYear[y] || 0), 0);
+  if (!cell) return 0;
+  return Number.isInteger(year) ? cell.byReach?.[year] || 0 : cell.total;
 }
 
 /**
@@ -186,11 +198,9 @@ function topOf(counts, limit) {
   return Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit).map(([name, count]) => ({ name, count }));
 }
 
-/** Bank questions of a diagram type within a year either side. */
+/** Bank questions of a diagram type that a search for `year` can reach, each counted once. */
 function typeSupplyFor(supply, diagramType, year) {
-  const entry = supply?.byType?.[diagramType];
-  if (!entry) return 0;
-  return [year - 1, year, year + 1].reduce((sum, y) => sum + (entry.byYear[y] || 0), 0);
+  return supply?.byType?.[diagramType]?.byReach?.[year] || 0;
 }
 
 /** What would most likely stop these diagrams being drawn. */

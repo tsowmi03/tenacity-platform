@@ -32,7 +32,7 @@ describe("bank supply (RES-74)", () => {
     ]);
     assert.equal(supply.total, 4);
     assert.deepEqual(supply.byType.right_triangle.byYear, { 9: 2, 10: 2 });
-    assert.deepEqual(supply.byType.right_triangle.skills.find_hypotenuse, { total: 2, byYear: { 9: 2, 10: 1 } });
+    assert.deepEqual(supply.byType.right_triangle.skills.find_hypotenuse, { total: 2, byYear: { 9: 2, 10: 1 }, byReach: { 8: 2, 9: 2, 10: 2, 11: 1 } });
     assert.equal(supply.byType.other.skills.other.total, 1);
   });
 
@@ -43,6 +43,21 @@ describe("bank supply (RES-74)", () => {
     assert.equal(supplyFor(supply, "right_triangle", "missing_skill", 8), 0);
     assert.equal(typeSupplyFor(supply, "right_triangle", 10), 2);
     assert.equal(typeSupplyFor(supply, "parabola", 10), 0);
+  });
+
+  it("counts a question tagged for several years once within a search's reach", () => {
+    // Five questions for Years 9 and 10: a Year 9 search can return five, not ten.
+    const supply = summariseSupply(Array.from({ length: 5 }, () => question({ years: [9, 10] })));
+    assert.equal(supplyFor(supply, "right_triangle", "find_hypotenuse", 9), 5);
+    assert.equal(typeSupplyFor(supply, "right_triangle", 9), 5);
+    assert.equal(supplyFor(supply, "right_triangle", "find_hypotenuse", 11), 5);
+    assert.equal(supplyFor(supply, "right_triangle", "find_hypotenuse", 12), 0);
+    // So five in reach stays under the thin-supply line and asks for more material.
+    const summary = buildSummary({ questions: Array.from({ length: 5 }, () => question({ years: [9, 10] })), bankQuestions: new Map(), jobs: [
+      { subject: "maths", year: 9, questionBankUsage: { used: [], skipped: [{ questionNumber: 1, reason: "none_suitable", bankDiagramType: "right_triangle", bankSkill: "find_hypotenuse" }] } },
+    ] });
+    assert.equal(summary.gaps[0].supply, 5);
+    assert.equal(summary.gaps[0].fix, "add_material");
   });
 });
 
