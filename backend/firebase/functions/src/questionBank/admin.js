@@ -1,8 +1,13 @@
 "use strict";
 
 // RES-104. What the admin "Question bank" page does: browse the whole bank,
-// open a record, hide or restore it, and correct it. Every action is admin
-// only and is served by the manageQuestionBank callable in review.js.
+// open a record, hide or restore it, and correct it. Every action is served by
+// the manageQuestionBank callable in review.js.
+//
+// RES-68. Tutors may read the English stimuli (browse, thumbnails, open one
+// with its questions and marking guide), and only what is live: nothing
+// hidden, no history, no flags. Every change, and every other bank, stays
+// admin only.
 //
 // Browsing uses equality and array-contains filters ordered by document ID,
 // which Firestore serves by merging its single-field indexes, so no composite
@@ -15,6 +20,7 @@ const admin = require("firebase-admin");
 
 const { lazyRequire } = require("../shared/lazyRequire");
 const { BANKS, FILTER_OPTIONS, MATHS_COLLECTION } = require("./banks");
+const { loadBankGaps } = require("./gaps");
 const { GUIDES_COLLECTION, QUESTIONS_COLLECTION: ENGLISH_QUESTIONS_COLLECTION, STIMULI_COLLECTION } = require("../englishBank/collections");
 const { id, invalid, oneOf, requireAdmin, text } = require("./validate");
 
@@ -37,6 +43,20 @@ const FIRESTORE_IN_LIMIT = 30;
 function bankOf(payload) {
   const name = oneOf(payload.bank, "bank", Object.keys(BANKS));
   return { name, bank: BANKS[name] };
+}
+
+const TUTOR_READABLE_BANKS = ["stimuli"];
+const isAdmin = (actor) => actor.role === "admin";
+
+/** Admins read every bank; a tutor reads the ones in TUTOR_READABLE_BANKS. */
+function requireReader(actor, name) {
+  if (!isAdmin(actor) && !TUTOR_READABLE_BANKS.includes(name)) requireAdmin(actor);
+}
+
+/** Where a record came from in Drive. Drive has no link to a page, so the page number is shown beside it. */
+function driveUrlOf(data) {
+  const sourceId = typeof data.sourceId === "string" ? data.sourceId : "";
+  return /^[A-Za-z0-9_-]{10,}$/.test(sourceId) ? `https://drive.google.com/file/d/${sourceId}/view` : null;
 }
 
 function cleanFilters(filters) {
@@ -117,9 +137,10 @@ async function countOf(query) {
 }
 
 async function browse({ db, actor, payload }) {
-  requireAdmin(actor);
-  const { bank } = bankOf(payload);
+  const { name, bank } = bankOf(payload);
+  requireReader(actor, name);
   const status = oneOf(payload.status || "live", "status", bank.flaggable ? [...STATUSES, "flagged"] : STATUSES);
+  if (!isAdmin(actor) && status !== "live") requireAdmin(actor);
   const requested = payload.pageSize === undefined ? DEFAULT_PAGE_SIZE : payload.pageSize;
   if (!Number.isInteger(requested) || requested < 1) throw invalid("pageSize must be a positive whole number");
   const pageSize = Math.min(requested, MAX_PAGE_SIZE);
@@ -164,7 +185,8 @@ async function browse({ db, actor, payload }) {
 }
 
 async function options({ db, actor }) {
-  requireAdmin(actor);
+  // The filter lists are the taxonomy, not bank data; flags are admin business.
+  if (!isAdmin(actor)) return { ...FILTER_OPTIONS(), openFlags: 0 };
   // Questions, not flags, so it matches the length of the flagged list.
   const flags = await db.collection(FLAGS_COLLECTION).where("status", "==", "open").limit(MAX_OPEN_FLAGS).select("questionId").get();
   return { ...FILTER_OPTIONS(), openFlags: new Set(flags.docs.map((doc) => doc.get("questionId"))).size };
@@ -197,14 +219,15 @@ async function downloadThumbnail(bucket, storagePath) {
 
 /** Thumbnails for a page of results, which the page asks for a few at a time. */
 async function images({ db, bucket, actor, payload }) {
-  requireAdmin(actor);
-  const { bank } = bankOf(payload);
+  const { name, bank } = bankOf(payload);
+  requireReader(actor, name);
   if (!Array.isArray(payload.ids) || payload.ids.length > MAX_IMAGE_IDS) throw invalid(`ids must be a list of at most ${MAX_IMAGE_IDS}`);
   const ids = payload.ids.map((value) => id(value, "ids"));
   if (!ids.length) return { images: {} };
   const docs = await db.getAll(...ids.map((recordId) => db.collection(bank.collection).doc(recordId)));
   const entries = await Promise.all(docs.map(async (doc) => {
-    const [storagePath] = doc.exists ? bank.crops(doc.data()) : [];
+    const visible = doc.exists && (isAdmin(actor) || doc.get("status") === "live");
+    const [storagePath] = visible ? bank.crops(doc.data()) : [];
     return [doc.id, storagePath ? await downloadThumbnail(bucket, storagePath) : null];
   }));
   return { images: Object.fromEntries(entries) };
@@ -280,34 +303,43 @@ async function openFlagsOf(db, questionId) {
     .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
 
-async function detailOf({ db, bucket, name, bank, recordId }) {
+/** A tutor sees a stimulus's live questions and guides; a guide goes with its question. */
+function liveLinks(links) {
+  const questions = (links.questions || []).filter((question) => question.status === "live");
+  const shown = new Set(questions.map((question) => question.id));
+  return { questions, guides: (links.guides || []).filter((guide) => guide.status === "live" && shown.has(guide.questionId)) };
+}
+
+async function detailOf({ db, bucket, name, bank, recordId, readOnly = false }) {
   const doc = await db.collection(bank.collection).doc(recordId).get();
-  if (!doc.exists) throw new HttpsError("not-found", "Record not found");
+  // To a tutor, a hidden record is one that isn't there.
+  if (!doc.exists || (readOnly && doc.get("status") !== "live")) throw new HttpsError("not-found", "Record not found");
   const data = doc.data();
   const [flags, links, history, crops] = await Promise.all([
-    bank.flaggable ? openFlagsOf(db, recordId) : [],
+    bank.flaggable && !readOnly ? openFlagsOf(db, recordId) : [],
     linksOf(db, name, doc),
-    historyOf(db, name, recordId),
+    readOnly ? [] : historyOf(db, name, recordId),
     Promise.all(bank.crops(data).map((storagePath) => downloadImage(bucket, storagePath))),
   ]);
   return {
     record: {
       ...summarise(bank, doc, { openFlags: flags.length }),
       ...bank.detail(data),
+      driveUrl: driveUrlOf(data),
       hiddenBecauseOfStimulus: Boolean(data.hiddenWith),
       heldByFlag: heldByFlag(data),
     },
     images: crops.filter(Boolean),
     flags,
-    links,
+    links: readOnly ? liveLinks(links) : links,
     history,
   };
 }
 
 async function record({ db, bucket, actor, payload }) {
-  requireAdmin(actor);
   const { name, bank } = bankOf(payload);
-  return detailOf({ db, bucket, name, bank, recordId: id(payload.id, "id") });
+  requireReader(actor, name);
+  return detailOf({ db, bucket, name, bank, recordId: id(payload.id, "id"), readOnly: !isAdmin(actor) });
 }
 
 /** A batch that splits itself to stay under Firestore's write limit. */
@@ -449,7 +481,14 @@ async function edit({ db, bucket, actor, payload, now }) {
   return detailOf({ db, bucket, name, bank, recordId });
 }
 
+/** RES-74. The daily summary of what the bank holds, what was needed and what was drawn instead. */
+async function gaps({ db, actor }) {
+  requireAdmin(actor);
+  return { summary: await loadBankGaps(db) };
+}
+
 const ADMIN_ACTIONS = Object.freeze({
+  bankGaps: gaps,
   bankOptions: options,
   browseBank: browse,
   bankRecord: record,

@@ -127,13 +127,13 @@ export default function ResourcesPage() {
 
     if (submitted) {
       toast.success(
-        submitted === 1 ? "1 job queued" : `${submitted} jobs queued`,
-        "The queue will update when Firestore receives the new job."
+        submitted === 1 ? "1 resource queued" : `${submitted} resources queued`,
+        "It will appear under In progress in a moment."
       );
     }
 
     if (Object.keys(errors).length) {
-      toast.error("Some jobs were not submitted", "Review the staged job errors and retry.");
+      toast.error("Some resources were not submitted", "Check the ones marked below and try again.");
       return { ok: false, errors };
     }
 
@@ -145,7 +145,7 @@ export default function ResourcesPage() {
       <PageHeader
         crumbs={[]}
         title="Teaching resources"
-        subtitle="Generate branded teaching resources as ready-to-print DOCX files."
+        subtitle="Make a worksheet, paper or booklet for a student, ready to print."
       />
 
       {studentsError ? (
@@ -167,7 +167,7 @@ export default function ResourcesPage() {
           students={students}
           studentsLoading={studentsLoading}
         />
-        {/* RES-102: the resource assistant sits above the queue. */}
+        {/* RES-85: what is being made comes first, then the assistant (RES-102), then history. The order is set in CSS. */}
         <div className="rg-side">
           <div className="rg-assistant-host" ref={setAssistantHost} />
           <ResourceQueuePanel

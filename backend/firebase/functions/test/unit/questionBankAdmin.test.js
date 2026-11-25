@@ -86,10 +86,16 @@ const stimulus = (extra = {}) => ({
 });
 
 describe("browsing the bank (RES-104)", () => {
-  it("is admin only", async () => {
+  it("is admin only, apart from a tutor reading the stimuli (RES-68)", async () => {
     const db = fakeDb();
-    for (const action of ["bankOptions", "browseBank", "bankRecord", "bankImages", "hideRecord", "restoreRecord", "editRecord"]) {
-      await assert.rejects(call(db, { action, bank: "maths", id: "q1" }, tutorAuth), { code: "permission-denied" });
+    for (const bank of ["maths", "englishQuestions", "guides", "setTexts"]) {
+      for (const action of ["browseBank", "bankRecord", "bankImages", "hideRecord", "restoreRecord", "editRecord"]) {
+        await assert.rejects(call(db, { action, bank, id: "q1", ids: ["q1"] }, tutorAuth), { code: "permission-denied" }, `${action} ${bank}`);
+      }
+    }
+    // A tutor never changes the bank, the stimuli included.
+    for (const action of ["hideRecord", "restoreRecord", "editRecord"]) {
+      await assert.rejects(call(db, { action, bank: "stimuli", id: "s1", updates: { title: "x" } }, tutorAuth), { code: "permission-denied" }, action);
     }
   });
 
@@ -177,6 +183,73 @@ describe("browsing the bank (RES-104)", () => {
     assert.deepEqual(detail.links.questions.map((q) => q.id), ["q1"]);
     assert.deepEqual(detail.links.guides.map((g) => g.status), ["hidden"]);
     assert.equal(detail.history[0].action, "edit");
+  });
+});
+
+describe("a tutor browsing the stimuli (RES-68)", () => {
+  const library = () => fakeDb({
+    "englishStimuli/live": stimulus({ sourceId: "1AbcDEFghiJKLmnop_QRS-tuv", author: "Robert Frost", publication: "Mountain Interval" }),
+    "englishStimuli/hidden": stimulus({ status: "hidden", title: "Withdrawn" }),
+    "englishStimuli/photo": stimulus({ medium: "visual", type: "poster", title: "Festival poster", text: "", pageCrops: [{ storagePath: "crops/p.png" }] }),
+    "englishStimuli/hiddenPhoto": stimulus({ status: "hidden", medium: "visual", type: "poster", pageCrops: [{ storagePath: "crops/h.png" }] }),
+    "englishQuestions/q1": { status: "live", stimulusIds: ["live"], label: "1", text: "Why two roads?", marks: 3 },
+    "englishQuestions/q2": { status: "hidden", stimulusIds: ["live"], label: "2", text: "Withdrawn question" },
+    "englishGuides/g1": { status: "live", questionId: "q1", criteria: "Explains the metaphor" },
+    "englishGuides/g2": { status: "hidden", questionId: "q1", criteria: "Old criteria" },
+    "englishGuides/g3": { status: "live", questionId: "q2", criteria: "For the hidden question" },
+    "questionBankAudit/x": { bank: "stimuli", recordId: "live", action: "edit", fields: ["title"], actorName: "Admin One", at: "2026-11-10" },
+    "questionBankFlags/f1": { status: "open", questionId: "someMathsQuestion" },
+  });
+
+  it("lists live stimuli with every filter, and nothing hidden", async () => {
+    const db = library();
+    const all = await call(db, { action: "browseBank", bank: "stimuli" }, tutorAuth);
+    assert.deepEqual(all.records.map((r) => r.id), ["live", "photo"]);
+    const filtered = await call(db, { action: "browseBank", bank: "stimuli", filters: { year: 10, type: "poem", technique: "imagery", theme: "choice", length: "short" } }, tutorAuth);
+    assert.deepEqual(filtered.records.map((r) => r.id), ["live"]);
+    for (const status of ["hidden", "all"]) {
+      await assert.rejects(call(db, { action: "browseBank", bank: "stimuli", status }, tutorAuth), { code: "permission-denied" }, status);
+    }
+  });
+
+  it("gets the filter lists without the admin's flag count", async () => {
+    const options = await call(library(), { action: "bankOptions" }, tutorAuth);
+    assert.ok(options.stimulusTypes.length > 0 && options.techniques.length > 0);
+    assert.equal(options.openFlags, 0);
+  });
+
+  it("opens a stimulus with its attribution, live questions and guide, and a link to the Drive file", async () => {
+    const detail = await call(library(), { action: "bankRecord", bank: "stimuli", id: "live" }, tutorAuth);
+    assert.equal(detail.record.title, "The Road");
+    assert.equal(detail.record.author, "Robert Frost");
+    assert.equal(detail.record.publication, "Mountain Interval");
+    assert.equal(detail.record.text, "two roads");
+    assert.equal(detail.record.driveUrl, "https://drive.google.com/file/d/1AbcDEFghiJKLmnop_QRS-tuv/view");
+    assert.deepEqual(detail.record.pages, [2]);
+    // Hidden questions and guides, and the guide of a hidden question, stay out.
+    assert.deepEqual(detail.links.questions.map((q) => q.id), ["q1"]);
+    assert.deepEqual(detail.links.guides.map((g) => g.id), ["g1"]);
+    // Who corrected what is admin business.
+    assert.deepEqual(detail.history, []);
+    assert.deepEqual(detail.flags, []);
+  });
+
+  it("cannot open a hidden stimulus or see its picture", async () => {
+    const db = library();
+    await assert.rejects(call(db, { action: "bankRecord", bank: "stimuli", id: "hidden" }, tutorAuth), { code: "not-found" });
+    const { images } = await call(db, { action: "bankImages", bank: "stimuli", ids: ["photo", "hiddenPhoto"] }, tutorAuth);
+    assert.match(images.photo, /^data:image\/webp;base64,/);
+    assert.equal(images.hiddenPhoto, null);
+  });
+
+  it("gives an admin the Drive link too, and no link without a Drive file ID", async () => {
+    const db = library();
+    assert.match((await call(db, { action: "bankRecord", bank: "stimuli", id: "live" })).record.driveUrl, /^https:\/\/drive\.google\.com\/file\/d\//);
+    assert.equal((await call(db, { action: "bankRecord", bank: "stimuli", id: "photo" })).record.driveUrl, null);
+    // An admin still sees the hidden guide and the history.
+    const detail = await call(db, { action: "bankRecord", bank: "stimuli", id: "live" });
+    assert.deepEqual(detail.links.guides.map((g) => g.id).sort(), ["g1", "g2", "g3"]);
+    assert.equal(detail.history.length, 1);
   });
 });
 

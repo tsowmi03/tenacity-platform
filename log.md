@@ -20,6 +20,9 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-26 | [Resource portal: one calmer, clearer look across every page (RES-85)](#2026-11-26--resource-portal-one-calmer-clearer-look-across-every-page-res-85) |
+| 2026-11-26 | [Stimulus library: tutors can browse the English stimuli (RES-68)](#2026-11-26--stimulus-library-tutors-can-browse-the-english-stimuli-res-68) |
+| 2026-11-26 | [Bank gaps: an admin tab showing where maths diagrams are drawn instead of taken from the bank (RES-74)](#2026-11-26--bank-gaps-an-admin-tab-showing-where-maths-diagrams-are-drawn-instead-of-taken-from-the-bank-res-74) |
 | 2026-11-26 | [Generation ETA measured from logged reports; finishing time added (RES-93, partly)](#2026-11-26--generation-eta-measured-from-logged-reports-finishing-time-added-res-93-partly) |
 | 2026-11-26 | [Question bank sources ready for the Year → Topic Drive layout (RES-121)](#2026-11-26--question-bank-sources-ready-for-the-year--topic-drive-layout-res-121) |
 | 2026-11-26 | [No near-blank pages; answer lines stay with their question; diagram label and spacing fixes (RES-40)](#2026-11-26--no-near-blank-pages-answer-lines-stay-with-their-question-diagram-label-and-spacing-fixes-res-40) |
@@ -271,6 +274,85 @@ omitted, and open follow-ups are tracked at the bottom.
 
 ---
 
+## 2026-11-26 — Resource portal: one calmer, clearer look across every page (RES-85)
+
+**What changed**
+- The whole resource portal (sign-in, Resources, Question bank, Stimulus library, Gaps) now shares one look: the device's own system font, softer cards with larger corners, quieter borders and one set of button, input and tab styles.
+- The header stays at the top as a light, see-through bar. The page links are a segmented switch, and on a phone they sit on their own row.
+- Resources page: the form is on the left; on the right the order is now In progress, then the assistant, then History, so a tutor sees their running job first. The Submit bar stays in view while the form scrolls.
+- Plainer words: "Live queue" is "In progress", "Staged jobs" is "Ready to submit", and messages say what happens next ("It will appear under In progress in a moment.").
+- History search box is full width and styled like every other input (it was an unstyled browser box).
+- Gaps tab shows plain names ("2D shapes", "Right-angled triangles") instead of internal diagram codes.
+- Sign-in page is a single short form. Pressing Enter signs in. The three decorative chips that looked like buttons are gone.
+- Buttons respond the moment they are pressed. Windows and side panels blur and dim the page behind them. People who ask their device for less motion, less transparency or more contrast get that.
+- Checked at phone, tablet and desktop widths with no sideways scrolling.
+- The no-login preview (`apps/resource-portal/harness`) gained sample jobs, a tutor view (`?role=tutor`) and a signed-out view (`?role=none`).
+
+**Why:** The portal had grown page by page and looked heavier and busier than the work needs. Tutors mostly do two things: ask for a resource and collect it. Those now come first.
+
+**Status:** Live. Deployed to the resource portal with the stimulus library (RES-68) and Gaps tab (RES-74).
+
+---
+
+## 2026-11-26 — Stimulus library: tutors can browse the English stimuli (RES-68)
+
+**What changed**
+- Tutors have a "Stimulus library" in the resource portal's top bar. It is the
+  admin Question bank page (RES-104) in a read-only form: the English stimuli
+  only, live ones only, with nothing to hide, restore or edit.
+- Filters: text type, year, technique, length and theme.
+- Opening a stimulus shows its text or image, author and publication, its
+  techniques, and its questions with their marking guides.
+- "Open the file in Drive" links to the source file, for tutors and admins,
+  with the page to turn to. Drive has no link to a page inside a file.
+- The server enforces the same limits: a tutor can read the live stimuli and
+  their live questions and guides, and nothing else. Hidden records, the other
+  banks, history, flags and every change stay admin only.
+
+**Why:** The stimuli extracted for the English bank (RES-66) could only be
+browsed by admins. Tutors pick reading texts by hand and had to search Drive.
+
+**Status:** Live. Functions deployed (`manageQuestionBank`); the portal
+deployed on merge. The tutor's calls were run against production data,
+read-only: 2,788 live stimuli, each filter returns results, and browsing
+another bank, hidden stimuli or hiding one is refused.
+## 2026-11-26 — Bank gaps: an admin tab showing where maths diagrams are drawn instead of taken from the bank (RES-74)
+
+**What changed**
+- The Question bank page has a "Gaps" tab for admins:
+  - **Gaps:** each year and bank category where diagrams were drawn, most
+    often first, with why (nothing found, none suited, answer check, crop
+    unusable, question couldn't be swapped, step failed) and the likely fix
+    (add Drive material, extract more pages, answer check problem).
+  - **Demand:** what resources asked for in the last 90 days, how much came
+    from the bank and how much was drawn.
+  - **Supply:** live bank questions by diagram type and year, or by skill
+    within a type, with cells under 10 questions highlighted.
+- Every bank slot on a new resource now records the skill the question
+  tested, the diagram it asked for and the bank category it fell in, whether a
+  bank diagram was used or one was drawn. Older resources are read from their
+  saved content, so the tab has 90 days of history from day one.
+- A nightly GitHub Actions job (`question-bank-gaps-daily.yml`, 03:30 Sydney)
+  reads the bank and recent resources and writes one summary document,
+  `resourceCapabilities/bankGaps`. The page reads only that document.
+- The portal has a no-login preview with sample data for design work
+  (`npx vite --config vite.harness.config.js` in `apps/resource-portal`). It is
+  not part of the production build.
+
+**Why:** Since RES-71 a maths diagram is drawn only when the bank can't supply
+one. Nothing showed where that happens or why, so there was no way to tell
+which drawn diagrams are unavoidable and which Drive material would close a
+gap.
+
+**Status:** Live. Functions deployed and the first summary written. At launch:
+86,712 live bank questions; 27 maths resources and 232 diagram questions in 90
+days, 175 from the bank (75%) and 57 drawn. The 57 were drawn because the
+question couldn't be swapped (19), none suited (18), the answer check (16),
+nothing was found (2), the crop (1) and a failed step (1).
+
+**Next steps**
+- Seed the tab with about 30 representative requests once model API access is
+  back (RES-127).
 ## 2026-11-26 — Generation ETA measured from logged reports; finishing time added (RES-93, partly)
 
 **What changed**

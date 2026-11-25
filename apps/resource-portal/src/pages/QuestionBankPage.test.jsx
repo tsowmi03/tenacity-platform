@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   browseBank: vi.fn(),
   editBankRecord: vi.fn(),
+  getBankGaps: vi.fn(),
   getBankImages: vi.fn(),
   getBankOptions: vi.fn(),
   getBankRecord: vi.fn(),
@@ -202,5 +203,165 @@ describe("working out what an edit changed", () => {
     const record = { title: "A", themes: ["hope"], author: "B" };
     const draft = { ...draftOf(fields, record), themes: "hope, loss", author: " " };
     expect(changedFields(fields, record, draft)).toEqual({ themes: ["hope", "loss"], author: null });
+  });
+});
+
+describe("Stimulus library for tutors (RES-68)", () => {
+  const stimulusRow = {
+    id: "s1", status: "live", sourcePath: "English/Year 10/Past Papers/Trial 2020.pdf", pageNumber: 3, label: "Text 1", title: "The Road Not Taken",
+    author: "Robert Frost", preview: "Two roads diverged in a yellow wood", type: "poem", medium: "written", wordCount: 144, yearLevel: "Year 10", hasImage: false, openFlags: 0,
+  };
+  const stimulusDetail = {
+    record: {
+      ...stimulusRow, text: "Two roads diverged in a yellow wood,\nAnd sorry I could not travel both", publication: "Mountain Interval", themes: ["choice"],
+      techniques: [{ technique: "metaphor", evidence: "two roads" }], pages: [3],
+      driveUrl: "https://drive.google.com/file/d/1AbcDEFghiJKLmnop/view",
+    },
+    images: [], flags: [], history: [],
+    links: {
+      questions: [{ id: "q1", status: "live", label: "1", text: "How does the poet present choice?", marks: 4 }],
+      guides: [{ id: "g1", status: "live", questionId: "q1", criteria: "Explains the extended metaphor", sampleAnswer: "" }],
+    },
+  };
+
+  beforeEach(() => {
+    Object.values(api).forEach((fn) => fn.mockReset());
+    api.getBankOptions.mockResolvedValue({ ...options, openFlags: 0 });
+    api.browseBank.mockResolvedValue({ records: [stimulusRow], nextCursor: null, total: 1 });
+    api.getBankImages.mockResolvedValue({ images: {} });
+    api.getBankRecord.mockResolvedValue(stimulusDetail);
+  });
+
+  const renderLibrary = () => render(<ToastProvider><QuestionBankPage readOnly /></ToastProvider>);
+
+  it("opens on the stimuli, with no other bank and no status switch", async () => {
+    renderLibrary();
+    expect(await screen.findByRole("heading", { name: "Stimulus library" })).toBeInTheDocument();
+    expect(await screen.findByText("The Road Not Taken")).toBeInTheDocument();
+    expect(api.browseBank).toHaveBeenCalledWith({ bank: "stimuli", status: "live", filters: {}, cursor: null });
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Status" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Maths questions")).not.toBeInTheDocument();
+  });
+
+  it("filters by text type, year, technique, length and theme", async () => {
+    renderLibrary();
+    await screen.findByText("The Road Not Taken");
+    fireEvent.change(screen.getByLabelText("Text type"), { target: { value: "poem" } });
+    fireEvent.change(screen.getByLabelText("Year"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Technique"), { target: { value: "imagery" } });
+    fireEvent.change(screen.getByLabelText("Length"), { target: { value: "short" } });
+    fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "choice" } });
+    await waitFor(() => expect(api.browseBank).toHaveBeenLastCalledWith({
+      bank: "stimuli", status: "live", cursor: null,
+      filters: { type: "poem", year: 10, technique: "imagery", length: "short", theme: "choice" },
+    }));
+  });
+
+  it("shows the stimulus, its attribution, its questions and guide, and a link to the Drive file, with nothing to change", async () => {
+    renderLibrary();
+    fireEvent.click(await screen.findByText("The Road Not Taken"));
+    const drawer = await screen.findByRole("dialog", { name: "English stimulus" });
+    expect(await within(drawer).findByText(/Two roads diverged in a yellow wood,/)).toBeInTheDocument();
+    expect(within(drawer).getByText("Robert Frost")).toBeInTheDocument();
+    expect(within(drawer).getByText("Mountain Interval")).toBeInTheDocument();
+    expect(within(drawer).getByText("How does the poet present choice?")).toBeInTheDocument();
+    expect(within(drawer).getByText("Explains the extended metaphor")).toBeInTheDocument();
+    const link = within(drawer).getByRole("link", { name: "Open the file in Drive (page 3)" });
+    expect(link).toHaveAttribute("href", "https://drive.google.com/file/d/1AbcDEFghiJKLmnop/view");
+    expect(link).toHaveAttribute("target", "_blank");
+    for (const name of ["Edit", "Hide", "Restore"]) expect(within(drawer).queryByRole("button", { name })).not.toBeInTheDocument();
+    expect(within(drawer).queryByText("Live")).not.toBeInTheDocument();
+  });
+
+  it("keeps every control for an admin", async () => {
+    render(<ToastProvider><QuestionBankPage /></ToastProvider>);
+    expect(await screen.findByRole("heading", { name: "Question bank" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist")).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Status" })).toBeInTheDocument();
+  });
+});
+
+describe("Gaps tab (RES-74)", () => {
+  const summary = {
+    updatedAt: "2026-11-25T16:30:00.000Z", windowDays: 90, years: [5, 6, 7, 8, 9, 10, 11, 12], thinSupply: 10, jobs: 27,
+    supply: { total: 86712, byType: {
+      right_triangle: { total: 5452, byYear: { 9: 3000, 10: 2452 }, skills: { find_hypotenuse: { total: 900, byYear: { 9: 800, 10: 4 } } } },
+      vectors: { total: 6, byYear: { 12: 6 }, skills: { other: { total: 6, byYear: { 12: 6 } } } },
+    } },
+    demand: {
+      totals: { slots: 232, used: 175, drawn: 57, reasons: { none_suitable: 18, answer_check: 16 } },
+      rows: [
+        { year: 9, bankDiagramType: "right_triangle", bankSkill: "find_hypotenuse", needed: 20, used: 20, drawn: 0, reasons: {}, skills: [{ name: "finding the hypotenuse", count: 12 }], supply: 804 },
+        { year: 9, bankDiagramType: "shape_2d", bankSkill: "", needed: 9, used: 0, drawn: 9, reasons: { answer_check: 4, none_suitable: 2 }, skills: [{ name: "angles in circles", count: 2 }], supply: 5450, fix: "answer_check" },
+      ],
+    },
+    gaps: [
+      { year: 9, bankDiagramType: "shape_2d", bankSkill: "", needed: 9, used: 0, drawn: 9, reasons: { answer_check: 4, none_suitable: 2 }, skills: [{ name: "angles in circles", count: 2 }], supply: 5450, fix: "answer_check" },
+      { year: 5, bankDiagramType: "", bankSkill: "", needed: 1, used: 0, drawn: 1, reasons: { none_suitable: 1 }, skills: [{ name: "fractions on a number line", count: 1 }], supply: null, fix: "add_material" },
+    ],
+  };
+
+  beforeEach(() => {
+    Object.values(api).forEach((fn) => fn.mockReset());
+    api.getBankOptions.mockResolvedValue(options);
+    api.browseBank.mockResolvedValue({ records: [row], nextCursor: null, total: 1 });
+    api.getBankImages.mockResolvedValue({ images: {} });
+    api.getBankGaps.mockResolvedValue({ summary });
+  });
+
+  const openGaps = async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Gaps" }));
+  };
+
+  it("shows how much came from the bank and when the summary was made", async () => {
+    await openGaps();
+    expect(await screen.findByText("86,712")).toBeInTheDocument();
+    expect(screen.getByText("75%")).toBeInTheDocument(); // 175 of 232 from the bank
+    expect(screen.getByText("25%")).toBeInTheDocument();
+    expect(screen.getByText("27 maths resources")).toBeInTheDocument();
+    expect(screen.getByText(/Rebuilt every night/)).toBeInTheDocument();
+    // The list of bank records gives way to the summary.
+    expect(screen.queryByText("Find x.")).not.toBeInTheDocument();
+  });
+
+  it("ranks the gaps with why each diagram was drawn and the likely fix", async () => {
+    await openGaps();
+    const gaps = within(await screen.findByRole("region", { name: "Gaps" }));
+    const rows = gaps.getAllByRole("row").slice(1);
+    expect(within(rows[0]).getByText("2D shapes")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("angles in circles")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("Answer check ×4")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("None suited ×2")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("Answer check problem")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Not in the bank's categories")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Add Drive material")).toBeInTheDocument();
+  });
+
+  it("lists demand, and supply by year with thin cells marked", async () => {
+    await openGaps();
+    const demand = within(await screen.findByRole("region", { name: "Demand" }));
+    expect(demand.getByText("Right-angled triangles: find hypotenuse")).toBeInTheDocument();
+    const supply = within(screen.getByRole("region", { name: "Supply" }));
+    // The name is also an option in the type picker; the table cell is the one wanted.
+    const vectors = supply.getByText("Vectors", { selector: "td" }).closest("tr");
+    expect(within(vectors).getByText("6", { selector: "td" })).toHaveClass("bank-gap-thin");
+    fireEvent.change(supply.getByLabelText("Diagram type"), { target: { value: "right_triangle" } });
+    const skill = supply.getByText("Find hypotenuse", { selector: "td" }).closest("tr");
+    expect(within(skill).getByText("800")).not.toHaveClass("bank-gap-thin");
+    expect(within(skill).getByText("4")).toHaveClass("bank-gap-thin");
+  });
+
+  it("says so when there is no summary yet, and offers a retry when loading fails", async () => {
+    api.getBankGaps.mockResolvedValueOnce({ summary: null });
+    await openGaps();
+    expect(await screen.findByText("No summary yet")).toBeInTheDocument();
+    api.getBankGaps.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ summary });
+    fireEvent.click(screen.getByRole("tab", { name: "Maths questions" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Gaps" }));
+    expect(await screen.findByText("offline")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("86,712")).toBeInTheDocument();
   });
 });

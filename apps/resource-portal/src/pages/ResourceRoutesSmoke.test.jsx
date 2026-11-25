@@ -79,7 +79,7 @@ describe("resource portal route smoke checks", () => {
     renderAt("/");
 
     expect(await screen.findByRole("heading", { level: 1, name: "Teaching resources" })).toBeInTheDocument();
-    expect(await screen.findByText("Nothing generating right now")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing is being made right now")).toBeInTheDocument();
     expect(screen.queryByLabelText("Open navigation")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Resource portal home" })).toHaveAttribute("href", "/");
     await waitFor(() => {

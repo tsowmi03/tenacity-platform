@@ -444,9 +444,15 @@ export function resolveBankFlag({ flagId, resolution, updates }) {
   return callFunction("manageQuestionBank", { action: "resolve", flagId, resolution, ...(updates ? { updates } : {}) });
 }
 
-// RES-104. The admin Question bank page. Every call below is admin only.
+// RES-104. The Question bank page. Admin only, except that a tutor may read
+// the live English stimuli (options, browse, images, record): RES-68.
 export function getBankOptions() {
   return callFunction("manageQuestionBank", { action: "bankOptions" });
+}
+
+// RES-74. The nightly summary of what the bank holds, what was needed and what was drawn.
+export function getBankGaps() {
+  return callFunction("manageQuestionBank", { action: "bankGaps" });
 }
 
 export function browseBank({ bank, status, filters, cursor }) {

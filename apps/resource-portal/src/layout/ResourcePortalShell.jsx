@@ -34,12 +34,11 @@ export default function ResourcePortalShell({ children }) {
             </span>
           </a>
 
-          {isAdmin ? (
-            <nav aria-label="Portal" className="resource-portal-nav">
-              <NavLink end to="/">Resources</NavLink>
-              <NavLink to="/question-bank">Question bank</NavLink>
-            </nav>
-          ) : null}
+          {/* Admins manage the whole bank; tutors browse its English stimuli (RES-68). */}
+          <nav aria-label="Portal" className="resource-portal-nav">
+            <NavLink end to="/">Resources</NavLink>
+            <NavLink to="/question-bank">{isAdmin ? "Question bank" : "Stimulus library"}</NavLink>
+          </nav>
 
           <div className="resource-portal-account">
             <div className="resource-portal-identity">

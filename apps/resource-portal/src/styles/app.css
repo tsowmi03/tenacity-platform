@@ -112,26 +112,31 @@ input, select, textarea {
 .avatar.sm { width: 26px; height: 26px; font-size: 10.5px; }
 
 /* Dedicated teaching-resource surface. The same build can be attached to the
-   resources custom domain without exposing the admin navigation to tutors. */
+   resources custom domain without exposing the admin navigation to tutors.
+
+   RES-85. The bar is a translucent layer the page scrolls under, not a solid
+   block: the brand lives in the mark, the navy of the selected tab and the
+   primary buttons, and the content keeps the eye. */
 .resource-portal-shell {
   min-height: 100vh;
   background: var(--ink-50);
 }
 
 .resource-portal-header {
-  min-height: 78px;
+  position: sticky;
+  top: 0;
+  z-index: 40;
   padding: 0 var(--s-7);
-  background:
-    radial-gradient(circle at 28% -120%, rgba(51, 171, 234, 0.26), transparent 38%),
-    linear-gradient(112deg, var(--brand-navy-900), var(--brand-navy) 68%, var(--brand-navy-700));
-  border-bottom: 3px solid var(--brand-blue);
-  box-shadow: var(--shadow-sm);
+  background: var(--chrome);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--hairline);
 }
 
 .resource-portal-header-inner {
   width: 100%;
   max-width: var(--content-max);
-  min-height: 78px;
+  min-height: var(--topbar-h);
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -141,24 +146,23 @@ input, select, textarea {
 .resource-portal-brand {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
-  color: var(--white);
+  gap: 10px;
+  color: var(--ink-900);
   min-width: 0;
 }
 
-.resource-portal-brand:hover { color: var(--white); }
+.resource-portal-brand:hover { color: var(--ink-900); }
 
 .resource-portal-logo-mark {
-  width: 46px;
-  height: 46px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: var(--r-md);
+  padding: 5px;
+  border-radius: 10px;
   background: var(--white);
-  box-shadow: 0 6px 20px rgba(5, 30, 58, 0.22);
+  box-shadow: 0 0 0 1px var(--hairline), 0 1px 2px rgba(11, 18, 32, 0.06);
 }
 
 .resource-portal-logo-mark img {
@@ -174,102 +178,110 @@ input, select, textarea {
 }
 
 .resource-portal-brand-name {
-  color: var(--brand-blue-300);
-  font-size: 10px;
+  color: var(--brand-blue-600);
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .resource-portal-brand-product {
-  margin-top: 5px;
-  color: var(--white);
+  margin-top: 3px;
+  color: var(--brand-navy);
   font-family: var(--font-display);
-  font-size: var(--fs-xl);
+  font-size: var(--fs-md);
   font-weight: 700;
+  letter-spacing: -0.012em;
   white-space: nowrap;
+}
+
+/* The two places a signed-in person can be, as one segmented control. */
+.resource-portal-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: var(--s-3);
+  padding: 3px;
+  border-radius: var(--r-full);
+  background: var(--fill);
+}
+
+.resource-portal-nav a {
+  padding: 6px 14px;
+  border-radius: var(--r-full);
+  color: var(--ink-600);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.resource-portal-nav a:hover { color: var(--ink-900); }
+.resource-portal-nav a:active { transform: scale(0.97); }
+
+.resource-portal-nav a.active {
+  color: var(--brand-navy);
+  background: var(--white);
+  box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 3px rgba(11, 18, 32, 0.10);
 }
 
 .resource-portal-account {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2);
 }
 
 .resource-portal-identity {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 5px 11px 5px 5px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: var(--r-full);
-  background: rgba(255, 255, 255, 0.08);
+  padding-right: var(--s-2);
 }
 
 .resource-portal-avatar {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
   border-radius: var(--r-full);
-  background: var(--brand-blue);
+  background: linear-gradient(140deg, var(--brand-navy) 10%, var(--brand-blue) 110%);
   color: var(--white);
   font-size: var(--fs-xs);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .resource-portal-identity-copy {
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .resource-portal-identity-copy > span:first-child {
-  color: var(--white);
+  color: var(--ink-900);
   font-size: var(--fs-sm);
   font-weight: 600;
 }
 
 .resource-portal-identity-copy > span:last-child {
-  color: var(--brand-blue-200);
+  color: var(--ink-500);
   font-size: var(--fs-xs);
   text-transform: capitalize;
 }
 
-.resource-portal-admin-link,
 .resource-portal-sign-out {
   height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--r-sm);
-  color: var(--white);
   font-size: var(--fs-sm);
   font-weight: 600;
 }
 
-.resource-portal-admin-link {
-  padding: 0 13px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.resource-portal-admin-link:hover {
-  color: var(--white);
-  border-color: rgba(255, 255, 255, 0.52);
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.resource-portal-sign-out.btn-ghost {
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.resource-portal-sign-out.btn-ghost:hover:not([disabled]) {
-  color: var(--white);
-  background: rgba(255, 255, 255, 0.1);
-}
+.resource-portal-sign-out.btn-ghost { color: var(--ink-600); }
+.resource-portal-sign-out.btn-ghost:hover:not([disabled]) { color: var(--ink-900); background: var(--fill); }
 
 .resource-portal-content {
   max-width: var(--content-max);
@@ -278,48 +290,41 @@ input, select, textarea {
 }
 
 @media (max-width: 760px) {
-  .resource-portal-header {
-    padding: 0 var(--s-5);
-  }
+  .resource-portal-header { padding: 0 var(--s-4); }
 
+  /* Brand and account share the first row; the tabs take the second. */
   .resource-portal-header-inner {
-    align-items: stretch;
-    flex-direction: column;
-    gap: var(--s-3);
-    padding: var(--s-4) 0;
+    flex-wrap: wrap;
+    gap: var(--s-2) var(--s-3);
+    padding: var(--s-3) 0;
   }
 
-  .resource-portal-logo-mark { width: 42px; height: 42px; }
-  .resource-portal-brand-product { font-size: var(--fs-lg); }
-
-  .resource-portal-account {
+  .resource-portal-nav {
+    order: 3;
     width: 100%;
     margin-left: 0;
-    gap: var(--s-2);
   }
 
-  .resource-portal-identity {
-    min-width: 0;
-    margin-right: auto;
-  }
-
-  .resource-portal-identity-copy { min-width: 0; }
+  .resource-portal-nav a { flex: 1; text-align: center; }
 
   .resource-portal-identity-copy > span:first-child {
-    max-width: 38vw;
+    max-width: 34vw;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .resource-portal-content { padding: var(--s-5); }
+  .resource-portal-content { padding: var(--s-5) var(--s-4) var(--s-8); }
 }
 
 @media (max-width: 480px) {
   .resource-portal-identity-copy { display: none; }
-  .resource-portal-identity { padding-right: 5px; }
-  .resource-portal-admin-link { padding: 0 10px; }
+  .resource-portal-identity { padding-right: 0; }
   .resource-portal-sign-out { padding: 0 8px; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .resource-portal-header { background: var(--white); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 /* Page header */
@@ -2253,37 +2258,6 @@ input, select, textarea {
   text-align: center;
 }
 
-.login-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--s-2);
-}
-.login-summary > div {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 38px;
-  padding: 0 var(--s-2);
-  border: 1px solid var(--ink-200);
-  border-radius: var(--r-md);
-  color: var(--ink-600);
-  background: var(--ink-25);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-}
-.login-summary svg {
-  flex-shrink: 0;
-  color: var(--brand-navy);
-}
-.login-summary span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .login-side-title {
   color: var(--white);
 }
@@ -2646,18 +2620,6 @@ input, select, textarea {
 .rg-bank-flag-form { margin-top: 8px; display: flex; flex-direction: column; }
 
 /* RES-104. Admin Question bank page. */
-.resource-portal-nav { display: flex; align-items: center; gap: var(--s-1); margin-left: var(--s-4); }
-.resource-portal-nav a {
-  padding: 7px 12px;
-  border-radius: var(--r-md);
-  color: rgba(255, 255, 255, 0.72);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
-}
-.resource-portal-nav a:hover { color: var(--white); background: rgba(255, 255, 255, 0.08); }
-.resource-portal-nav a.active { color: var(--white); background: rgba(255, 255, 255, 0.16); }
-
 .bank-tabs { overflow-y: hidden; padding-bottom: 1px; scrollbar-width: none; }
 .bank-tabs::-webkit-scrollbar { display: none; }
 .bank-tabs .tab.active::after { bottom: 0; }
@@ -2751,6 +2713,7 @@ button.bank-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(-
 .bank-section h4 { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-500); margin-bottom: 6px; }
 .bank-prose { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-900); line-height: 1.55; }
 .bank-source { color: var(--ink-700); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.bank-drive-link { display: inline-flex; align-items: center; gap: 6px; margin-top: var(--s-2); font-size: var(--fs-sm); font-weight: 600; }
 .bank-images { display: flex; flex-direction: column; gap: var(--s-2); }
 .bank-images img { display: block; max-width: 100%; max-height: 340px; margin: 0 auto; border: 1px solid var(--ink-100); border-radius: var(--r-md); background: var(--white); }
 .bank-details { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3) var(--s-4); margin: 0; }
@@ -2778,7 +2741,6 @@ button.bank-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(-
 .bank-chip-toggle.on { background: var(--brand-navy); border-color: var(--brand-navy); color: var(--white); }
 
 @media (max-width: 720px) {
-  .resource-portal-nav { margin-left: 0; }
   .bank-toolbar { align-items: flex-start; flex-direction: column; }
   .bank-filter { max-width: none; flex-basis: 45%; }
   .bank-row { gap: var(--s-3); padding: var(--s-3); }
@@ -2866,4 +2828,258 @@ button.bank-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(-
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* RES-74. The bank's "Gaps" tab: supply, demand and where diagrams were drawn. */
+.bank-gaps { display: flex; flex-direction: column; gap: var(--s-4); }
+.bank-gap-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-3); }
+.bank-gap-stat { background: var(--white); border: 1px solid var(--ink-100); border-radius: var(--r-lg); padding: var(--s-4) var(--s-5); }
+.bank-gap-stat-value { font-size: 28px; font-weight: 700; line-height: 1.1; color: var(--brand-navy); font-variant-numeric: tabular-nums; }
+.bank-gap-stat-label { margin-top: 4px; font-size: var(--fs-sm); color: var(--ink-700); }
+.bank-gap-updated { margin-top: calc(var(--s-2) * -1); font-size: var(--fs-sm); }
+.bank-gap-card { padding: var(--s-5) var(--s-6); }
+.bank-gap-title { font-size: var(--fs-lg, 18px); font-weight: 650; color: var(--ink-900); margin: 0 0 2px; }
+.bank-gap-card > p { margin: 0 0 var(--s-4); }
+.bank-gap-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bank-gap-table td { vertical-align: top; }
+.bank-gap-category { font-weight: 600; color: var(--ink-900); }
+.bank-gap-reasons { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.bank-gap-thin { background: var(--warn-100); color: var(--warn-700); font-weight: 600; }
+.bank-gap-more { margin-top: var(--s-3); }
+.bank-gap-supply-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; margin-bottom: var(--s-3); }
+@media (max-width: 760px) {
+  .bank-gap-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bank-gap-card { padding: var(--s-4); }
+}
+
+/* =========================================================
+   RES-85. One calmer look across the portal.
+
+   Fewer boxes inside boxes, type that carries the hierarchy, controls that
+   answer the moment they are pressed, and chrome that stays out of the way.
+   Nothing here changes what a control does. These rules come last so they
+   settle the look of the shared pieces above in one place.
+   ========================================================= */
+
+/* Type: the system font, with tracking set per size (large text tighter). */
+body { font-feature-settings: normal; letter-spacing: -0.003em; }
+h1 { font-weight: 700; letter-spacing: -0.024em; line-height: 1.1; }
+h2 { font-weight: 700; letter-spacing: -0.02em; }
+h3 { font-weight: 650; letter-spacing: -0.014em; }
+h4, h5 { letter-spacing: -0.008em; }
+
+::selection { background: rgba(74, 144, 196, 0.28); }
+
+.page-head { margin-bottom: var(--s-6); }
+.page-head .sub { max-width: 68ch; font-size: var(--fs-md); line-height: 1.45; color: var(--ink-500); }
+
+/* Surfaces */
+.card {
+  border-color: var(--hairline);
+  border-radius: var(--r-xl);
+  box-shadow: var(--card-shadow);
+}
+.card-head { border-bottom-color: var(--hairline); }
+.card-head h3 { font-size: var(--fs-lg); }
+.card-head .card-sub { margin-top: 3px; font-size: var(--fs-sm); line-height: 1.4; }
+
+/* Controls answer on press, not on release. */
+.btn {
+  border-radius: var(--r-md);
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), color var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.btn:active:not([disabled]) { transform: scale(0.97); }
+.btn-primary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(17, 39, 72, 0.28); }
+.btn-primary[disabled] { box-shadow: none; }
+.btn-secondary { background: var(--fill); border-color: transparent; color: var(--ink-900); }
+.btn-secondary:hover:not([disabled]) { background: var(--fill-hover); border-color: transparent; }
+.btn-ghost:hover:not([disabled]) { background: var(--fill); }
+.btn-sm { border-radius: var(--r-sm); }
+.icon-btn { border-radius: var(--r-md); transition: background var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out); }
+.icon-btn:hover { background: var(--fill); }
+.icon-btn:active { transform: scale(0.94); }
+
+.label { color: var(--ink-700); }
+.input, .select, .textarea {
+  height: 40px;
+  border-color: var(--hairline-strong);
+  border-radius: var(--r-md);
+  box-shadow: 0 1px 1px rgba(11, 18, 32, 0.03);
+}
+.textarea { height: auto; }
+.input:hover, .select:hover, .textarea:hover { border-color: var(--ink-300); }
+.input:focus, .select:focus, .textarea:focus { border-color: var(--brand-blue); box-shadow: var(--shadow-focus); }
+
+.badge { height: 22px; font-size: var(--fs-xs); letter-spacing: 0; }
+
+/* Tabs are a segmented control: the choice is the raised piece. */
+.tabs {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 2px;
+  padding: 3px;
+  border-bottom: none;
+  border-radius: 12px;
+  background: var(--fill);
+}
+.tab {
+  margin-bottom: 0;
+  padding: 7px 14px;
+  border-radius: 9px;
+  font-size: var(--fs-sm);
+  color: var(--ink-600);
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.tab:hover { color: var(--ink-900); }
+.tab:active { transform: scale(0.97); }
+.tab.active { color: var(--brand-navy); background: var(--white); box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 3px rgba(11, 18, 32, 0.10); }
+.tab.active::after, .bank-tabs .tab.active::after { display: none; }
+
+.table thead th { letter-spacing: 0.02em; }
+
+/* Layers: dim to focus, and let the sheet arrive as a material. */
+.modal-overlay, .panel-overlay, .bank-drawer-overlay {
+  background: rgba(11, 18, 32, 0.36);
+  -webkit-backdrop-filter: blur(6px) saturate(140%);
+  backdrop-filter: blur(6px) saturate(140%);
+}
+.modal { border-radius: var(--r-2xl); box-shadow: var(--shadow-xl); animation: modalIn var(--dur-slow) var(--ease-spring); }
+.modal-head, .panel-head { border-bottom-color: var(--hairline); }
+.modal-foot, .panel-foot { border-top-color: var(--hairline); background: var(--white); }
+.modal-foot { border-radius: 0 0 var(--r-2xl) var(--r-2xl); }
+.panel { animation: slideIn var(--dur-slow) var(--ease-spring); }
+@keyframes modalIn { from { opacity: 0; transform: translateY(10px) scale(0.975); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+.banner { border-radius: var(--r-lg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, .tab, .icon-btn, .resource-portal-nav a { transition: background var(--dur) linear, color var(--dur) linear; }
+  .btn:active:not([disabled]), .tab:active, .icon-btn:active, .resource-portal-nav a:active { transform: none; }
+  .modal, .panel, .bank-drawer { animation: fadeIn var(--dur) linear; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .modal-overlay, .panel-overlay, .bank-drawer-overlay { background: rgba(11, 18, 32, 0.6); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  .card, .input, .select, .textarea { border-color: var(--ink-400); }
+  .resource-portal-header { background: var(--white); border-bottom-color: var(--ink-400); }
+}
+
+/* ---- RES-85: the Resources page ------------------------------------- */
+
+/* The form on the left; on the right, what is being made, then the
+   assistant, then history. The queue's two cards join the side column so the
+   assistant can sit between them. */
+.rg-layout {
+  grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
+  gap: var(--s-6);
+}
+.rg-side { gap: var(--s-5); }
+.rg-queue { display: contents; }
+.rg-live-card { order: 1; }
+.rg-assistant-host { order: 2; }
+.rg-history-card { order: 3; margin-top: 0; }
+
+/* Submit stays in reach however long the form gets. */
+.rg-builder-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  padding: var(--s-4) var(--s-6);
+  border-top: 1px solid var(--hairline);
+  border-radius: 0 0 var(--r-xl) var(--r-xl);
+  background: var(--chrome);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  backdrop-filter: saturate(180%) blur(18px);
+}
+
+.rg-segments {
+  gap: 2px;
+  padding: 3px;
+  border: none;
+  border-radius: 12px;
+  background: var(--fill);
+}
+.rg-segments button {
+  min-height: 34px;
+  border-radius: 9px;
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.rg-segments button:active { transform: scale(0.97); }
+.rg-segments button.active { box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 3px rgba(11, 18, 32, 0.10); }
+.rg-model-segments { background: var(--fill); }
+.rg-model-segments::before { border: none; border-radius: 9px; box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 3px rgba(11, 18, 32, 0.10); transition: transform var(--dur-slow) var(--ease-spring); }
+
+.rg-type {
+  min-height: 52px;
+  border-color: var(--hairline-strong);
+  border-radius: var(--r-md);
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.rg-type:hover { border-color: var(--brand-blue-400); background: var(--white); box-shadow: var(--shadow-sm); }
+.rg-type:active { transform: scale(0.98); }
+.rg-type.active { border-color: var(--brand-blue); background: var(--brand-blue-50); box-shadow: 0 0 0 1px var(--brand-blue); }
+.rg-type .rg-type-icon { background: transparent; color: var(--ink-500); }
+.rg-type.active .rg-type-icon { color: var(--brand-navy); }
+
+.rg-upload { border-color: var(--hairline-strong); border-radius: var(--r-lg); background: var(--surface-sunken); }
+.rg-upload.filled { background: var(--white); }
+.rg-option-row { border: none; border-radius: var(--r-lg); background: var(--surface-sunken); }
+.rg-generation-settings[open] { border-color: var(--hairline); border-radius: var(--r-lg); background: var(--surface-sunken); }
+.rg-generation-settings-body { border-top-color: var(--hairline); }
+
+/* The assistant is as tall as its conversation, up to a limit. */
+.rg-assistant { height: auto; min-height: 0; max-height: min(560px, calc(100vh - 140px)); }
+.rg-chat-head { border-bottom-color: var(--hairline); }
+.rg-chat-context { border-bottom-color: var(--hairline); background: transparent; }
+.rg-chat-messages { min-height: 96px; }
+.rg-chat-msg { border-radius: 16px; }
+.rg-chat-msg-ai { background: var(--fill); border-top-left-radius: 6px; }
+.rg-chat-msg-user { border-bottom-right-radius: 6px; }
+.rg-chat-composer { border-top-color: var(--hairline); }
+.rg-chat-suggestions button { border-color: var(--hairline-strong); transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease-out); }
+.rg-chat-suggestions button:active { transform: scale(0.97); }
+
+@media (max-width: 1080px) {
+  .rg-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .rg-builder-foot { background: var(--white); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* ---- RES-85: question bank, stimulus library and gaps ----------------- */
+.bank-toolbar { margin-bottom: var(--s-4); }
+.bank-list-card { overflow: hidden; }
+.bank-row { transition: background var(--dur) var(--ease-out); }
+.bank-row:active { background: var(--fill); }
+.bank-drawer { border-radius: var(--r-2xl) 0 0 var(--r-2xl); box-shadow: var(--shadow-xl); animation: slideIn var(--dur-slow) var(--ease-spring); }
+.bank-drawer-head { border-bottom-color: var(--hairline); }
+.bank-drawer-foot { border-top-color: var(--hairline); }
+.bank-images img { border-color: var(--hairline); border-radius: var(--r-lg); }
+.bank-gap-stat { border-color: var(--hairline); border-radius: var(--r-xl); box-shadow: var(--card-shadow); }
+.bank-gap-stat-value { font-size: 30px; letter-spacing: -0.03em; }
+.bank-gap-table td:first-child { white-space: nowrap; }
+.bank-gap-reasons .bank-tag { padding: 2px 8px; border-radius: var(--r-full); background: var(--fill); color: var(--ink-700); font-size: var(--fs-xs); white-space: nowrap; }
+.bank-gap-thin { border-radius: 6px; }
+@media (max-width: 760px) {
+  .bank-drawer { border-radius: var(--r-2xl) var(--r-2xl) 0 0; }
+}
+
+/* On a phone the submit bar is one row, so it never covers a third of the form. */
+@media (max-width: 760px) {
+  .rg-builder-foot { flex-direction: row; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-4); }
+  .rg-builder-foot > .row { flex: 0 0 auto; }
+  .rg-builder-foot > .btn { flex: 1; width: auto; }
+  .rg-builder-foot .btn { height: 42px; }
+  .page-head h1 { font-size: var(--fs-2xl); }
+  .card-head, .card-body { padding-left: var(--s-4); padding-right: var(--s-4); }
+}
+
+/* Job rows: a dot between facts, and no dot left hanging when a row wraps. */
+.rg-sep { color: var(--ink-300); }
+.rg-job-title { font-size: var(--fs-md); letter-spacing: -0.008em; }
+@media (max-width: 520px) {
+  .rg-job-title, .rg-job-meta { column-gap: var(--s-2); }
+  .rg-job-title .rg-sep, .rg-job-meta .rg-sep { display: none; }
 }

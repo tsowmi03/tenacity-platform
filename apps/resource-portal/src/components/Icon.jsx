@@ -34,6 +34,8 @@ export default function Icon({ name, size = 18, className = "", style = {} }) {
       return <svg {...props}><path d="M3 3v18h18" /><path d="M7 14l4-4 4 4 5-5" /></svg>;
     case "audit":
       return <svg {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M8 13h5" /><path d="M8 17h3" /><circle cx="17" cy="16" r="2.2" /><path d="m18.6 17.6 2 2" /></svg>;
+    case "external-link":
+      return <svg {...props}><path d="M14 4h6v6" /><path d="M20 4l-9 9" /><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" /></svg>;
     case "file-text":
       return <svg {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M8 13h8" /><path d="M8 17h6" /></svg>;
     case "book":

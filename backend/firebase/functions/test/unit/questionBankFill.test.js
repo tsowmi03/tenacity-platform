@@ -142,7 +142,23 @@ describe("question bank fill: choosing slots", () => {
     delete parsed.questions[2].diagramType;
     const { slots, ineligible } = bankSlots(parsed);
     assert.deepEqual(slots.map((s) => s.number), [2]);
-    assert.deepEqual(ineligible, [{ questionNumber: 1, reason: "answer_row_unclear" }]);
+    // RES-74: with the diagram it asked for, so the gaps page can group it.
+    assert.deepEqual(ineligible, [{ questionNumber: 1, diagramType: "right-triangle", reason: "answer_row_unclear" }]);
+  });
+
+  it("notes what each slot needs before a swap replaces it (RES-74)", () => {
+    const parsed = worksheet(2);
+    parsed.questions[0].skill = "  finding the hypotenuse ";
+    parsed.questions[1].parts = [{ label: "a", stem: "Find x.", marks: 1, diagram: null, diagramType: "circle", diagramRequired: true }];
+    parsed.questions[1].skill = "angles in circles";
+    parsed.questions[1].diagramType = "none";
+    parsed.answers = [{ questionNumber: 1, partLabel: null, answer: "5" }, { questionNumber: 2, partLabel: "a", answer: "40" }];
+    const { slots } = bankSlots(parsed);
+    assert.deepEqual(slots.map((s) => s.need), [
+      { skill: "finding the hypotenuse", diagramType: "right-triangle" },
+      // A part takes its question's skill when it has none of its own.
+      { skill: "angles in circles", diagramType: "circle" },
+    ]);
   });
 
   // RES-109. A Year 9 paper with no answers had all 12 diagram questions
@@ -602,6 +618,37 @@ describe("question bank fill: diagram first", () => {
     } };
     const result = await applyQuestionBank({ job, parsed: worksheet(2), ...env, embed, logger: {} });
     assert.deepEqual(result.used.map((u) => u.questionId).sort(), ["crop1", "crop3"]);
+  });
+
+  it("records what each slot needed and where it sits in the bank, used or drawn (RES-74)", async () => {
+    let first = true;
+    const env = sharedBank({ choose: () => {
+      if (first) { first = false; return { choice: 0, reason: "none fit", stem: "", options: [], answer: "", workingOut: "" }; }
+      return pickFirst();
+    }, crops: 4 });
+    // The bank tags every question with its diagram type and skill.
+    const db = env.db;
+    env.db = { collection: () => {
+      const query = db.collection();
+      const nearest = query.findNearest;
+      query.findNearest = (...args) => ({ get: async () => {
+        const snap = await nearest(...args).get();
+        return { docs: snap.docs.map((doc) => ({ id: doc.id, data: () => ({ ...doc.data(), diagramType: "right_triangle", skill: "find_hypotenuse" }) })) };
+      } });
+      return query;
+    } };
+    const parsed = worksheet(2);
+    parsed.questions.forEach((question) => { question.skill = "finding the hypotenuse"; });
+    const result = await applyQuestionBank({ job, parsed, ...env, embed, logger: {} });
+    assert.equal(result.used.length, 1);
+    assert.equal(result.skipped.length, 1);
+    const need = { skill: "finding the hypotenuse", diagramType: "right-triangle", bankDiagramType: "right_triangle", bankSkill: "find_hypotenuse" };
+    for (const entry of [result.used[0], result.skipped[0]]) {
+      assert.deepEqual(Object.fromEntries(Object.keys(need).map((key) => [key, entry[key]])), need);
+    }
+    assert.equal(result.skipped[0].reason, "none_suitable");
+    // The swap still clears the question's own request for a drawn diagram.
+    assert.ok(parsed.questions.some((question) => question.diagram?.type === "source-image" && !("diagramType" in question)));
   });
 
   it("retries a refused call once, then leaves the slot to be drawn", async () => {

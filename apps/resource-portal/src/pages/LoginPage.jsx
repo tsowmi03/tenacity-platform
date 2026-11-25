@@ -3,14 +3,7 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider";
 import { firebaseInitError } from "../firebaseConfig";
 import Button from "../components/Button";
-import Icon from "../components/Icon";
 import logoHorizontal from "../assets/logo-horizontal.png";
-
-const PORTAL_AREAS = [
-  { icon: "sparkles", label: "Generate" },
-  { icon: "eye", label: "Preview" },
-  { icon: "download", label: "Download" },
-];
 
 export default function LoginPage() {
   const { user, loading, login, accessError } = useAuth();
@@ -24,7 +17,8 @@ export default function LoginPage() {
     return <Navigate to="/" replace />;
   }
 
-  async function onLogin() {
+  async function onLogin(event) {
+    event?.preventDefault();
     setError("");
 
     if (!email || !password) {
@@ -53,20 +47,8 @@ export default function LoginPage() {
         </div>
 
         <div className="login-copy mb-6">
-          <h1>Resource portal login</h1>
-          <p className="muted mt-3">
-            Sign in with your Tenacity tutor or admin account to generate teaching
-            resources.
-          </p>
-        </div>
-
-        <div className="login-summary mb-6" aria-label="Portal areas">
-          {PORTAL_AREAS.map((area) => (
-            <div key={area.label}>
-              <Icon name={area.icon} size={17} />
-              <span>{area.label}</span>
-            </div>
-          ))}
+          <h1>Resource portal</h1>
+          <p className="muted mt-3">Sign in with your Tenacity tutor or admin account.</p>
         </div>
 
         {firebaseInitError ? (
@@ -92,39 +74,36 @@ export default function LoginPage() {
           </div>
         ) : null}
 
-        <div className="card">
-          <div className="card-body grid gap-5">
-            <div className="field">
-              <span className="label">Email</span>
-              <input
-                className="input"
-                type="email"
-                placeholder="tutor@tenacitytutoring.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-              />
-            </div>
+        <form className="login-form grid gap-5" noValidate onSubmit={onLogin}>
+          <label className="field">
+            <span className="label">Email</span>
+            <input
+              className="input"
+              type="email"
+              placeholder="you@tenacitytutoring.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+            />
+          </label>
 
-            <div className="field">
-              <span className="label">Password</span>
-              <input
-                className="input"
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-              />
-            </div>
+          <label className="field">
+            <span className="label">Password</span>
+            <input
+              className="input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+          </label>
 
-            <Button loading={busy} onClick={onLogin} variant="primary">
-              Sign in
-            </Button>
+          <Button loading={busy} type="submit" variant="primary">
+            Sign in
+          </Button>
 
-            {error ? <p className="result error">{error}</p> : null}
-          </div>
-        </div>
+          {error ? <p className="result error" role="alert">{error}</p> : null}
+        </form>
       </main>
     </div>
   );
