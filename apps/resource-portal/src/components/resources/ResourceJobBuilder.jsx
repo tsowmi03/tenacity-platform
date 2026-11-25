@@ -496,7 +496,7 @@ export default function ResourceJobBuilder({
         <div className="card-head">
           <div>
             <h3>New resource</h3>
-            <div className="card-sub">Build one or more jobs before submitting them to the queue.</div>
+            <div className="card-sub">Choose a student and what to make. Add another to submit several together.</div>
           </div>
         </div>
 
@@ -816,8 +816,8 @@ export default function ResourceJobBuilder({
         <div className="card mt-4">
           <div className="card-head">
             <div>
-              <h3>Staged jobs</h3>
-              <div className="card-sub">Jobs submit sequentially and process one at a time per tutor.</div>
+              <h3>Ready to submit</h3>
+              <div className="card-sub">These are submitted together. Up to two are made at a time.</div>
             </div>
           </div>
           <div className="card-body flush">

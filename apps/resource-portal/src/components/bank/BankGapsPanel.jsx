@@ -49,9 +49,21 @@ function percent(part, whole) {
   return whole ? `${Math.round((part / whole) * 100)}%` : "0%";
 }
 
+// The bank's category ids read as code ("shape_2d"); these are the words a tutor would use.
+const TYPE_LABELS = {
+  shape_2d: "2D shapes", solid_3d: "3D solids", scale_drawing: "Scale drawings", right_triangle: "Right-angled triangles",
+  non_right_triangle: "Non-right-angled triangles", elevation_bearings: "Elevation and bearings", angle_relationships: "Angle relationships",
+  congruence_similarity: "Congruence and similarity", circle_geometry: "Circle geometry", transformations: "Transformations",
+  number_plane: "Number plane", straight_line: "Straight-line graphs", parabola: "Parabolas", other_curve: "Other curves",
+  trig_graph: "Trigonometric graphs", calculus_graph: "Calculus graphs", region_inequality: "Inequalities and regions",
+  data_display: "Data displays", normal_curve: "Normal curves", probability_diagram: "Probability diagrams", network: "Networks",
+  vectors: "Vectors", mechanics: "Mechanics", other: "Other",
+};
+export const typeLabel = (type) => TYPE_LABELS[type] || humanise(type);
+
 function categoryOf(row) {
   if (!row.bankDiagramType) return "Not in the bank's categories";
-  return row.bankSkill ? `${humanise(row.bankDiagramType)}: ${humanise(row.bankSkill).toLowerCase()}` : humanise(row.bankDiagramType);
+  return row.bankSkill ? `${typeLabel(row.bankDiagramType)}: ${humanise(row.bankSkill).toLowerCase()}` : typeLabel(row.bankDiagramType);
 }
 
 function Stat({ label, value, note }) {
@@ -121,7 +133,7 @@ function SupplyTable({ summary }) {
   const thin = summary.thinSupply ?? 10;
   const rows = type
     ? Object.entries(summary.supply.byType[type]?.skills || {}).sort((a, b) => b[1].total - a[1].total).map(([name, cell]) => ({ name: humanise(name), cell }))
-    : types.map(([name, cell]) => ({ name: humanise(name), cell }));
+    : types.map(([name, cell]) => ({ name: typeLabel(name), cell }));
   return (
     <>
       <div className="bank-gap-supply-head">
@@ -129,7 +141,7 @@ function SupplyTable({ summary }) {
           <label className="label" htmlFor="bank-gap-type">Diagram type</label>
           <select className="select" id="bank-gap-type" onChange={(event) => setType(event.target.value)} value={type}>
             <option value="">All types</option>
-            {types.map(([name]) => <option key={name} value={name}>{humanise(name)}</option>)}
+            {types.map(([name]) => <option key={name} value={name}>{typeLabel(name)}</option>)}
           </select>
         </div>
         <div className="bank-muted">Highlighted cells hold fewer than {thin} questions. A question for Years 9–10 counts in both.</div>

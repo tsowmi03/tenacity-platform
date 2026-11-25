@@ -11,6 +11,8 @@ const swaps = {
   [path.join(here, "src/backend/resourcesApi.js")]: path.join(here, "harness/mocks/resourcesApi.js"),
   [path.join(here, "src/AuthProvider.jsx")]: path.join(here, "harness/mocks/AuthProvider.jsx"),
   [path.join(here, "src/analytics.js")]: path.join(here, "harness/mocks/analytics.js"),
+  [path.join(here, "src/firebaseConfig.js")]: path.join(here, "harness/mocks/firebaseConfig.js"),
+  [path.join(here, "src/backend/studentsApi.js")]: path.join(here, "harness/mocks/studentsApi.js"),
 };
 
 function swapBackend() {

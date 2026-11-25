@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-26 | [Resource portal: one calmer, clearer look across every page (RES-85)](#2026-11-26--resource-portal-one-calmer-clearer-look-across-every-page-res-85) |
 | 2026-11-26 | [Stimulus library: tutors can browse the English stimuli (RES-68)](#2026-11-26--stimulus-library-tutors-can-browse-the-english-stimuli-res-68) |
 | 2026-11-26 | [Bank gaps: an admin tab showing where maths diagrams are drawn instead of taken from the bank (RES-74)](#2026-11-26--bank-gaps-an-admin-tab-showing-where-maths-diagrams-are-drawn-instead-of-taken-from-the-bank-res-74) |
 | 2026-11-26 | [Question bank sources ready for the Year → Topic Drive layout (RES-121)](#2026-11-26--question-bank-sources-ready-for-the-year--topic-drive-layout-res-121) |
@@ -269,6 +270,26 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-26 — Resource portal: one calmer, clearer look across every page (RES-85)
+
+**What changed**
+- The whole resource portal (sign-in, Resources, Question bank, Stimulus library, Gaps) now shares one look: the device's own system font, softer cards with larger corners, quieter borders and one set of button, input and tab styles.
+- The header stays at the top as a light, see-through bar. The page links are a segmented switch, and on a phone they sit on their own row.
+- Resources page: the form is on the left; on the right the order is now In progress, then the assistant, then History, so a tutor sees their running job first. The Submit bar stays in view while the form scrolls.
+- Plainer words: "Live queue" is "In progress", "Staged jobs" is "Ready to submit", and messages say what happens next ("It will appear under In progress in a moment.").
+- History search box is full width and styled like every other input (it was an unstyled browser box).
+- Gaps tab shows plain names ("2D shapes", "Right-angled triangles") instead of internal diagram codes.
+- Sign-in page is a single short form. Pressing Enter signs in. The three decorative chips that looked like buttons are gone.
+- Buttons respond the moment they are pressed. Windows and side panels blur and dim the page behind them. People who ask their device for less motion, less transparency or more contrast get that.
+- Checked at phone, tablet and desktop widths with no sideways scrolling.
+- The no-login preview (`apps/resource-portal/harness`) gained sample jobs, a tutor view (`?role=tutor`) and a signed-out view (`?role=none`).
+
+**Why:** The portal had grown page by page and looked heavier and busier than the work needs. Tutors mostly do two things: ask for a resource and collect it. Those now come first.
+
+**Status:** Live. Deployed to the resource portal with the stimulus library (RES-68) and Gaps tab (RES-74).
 
 ---
 

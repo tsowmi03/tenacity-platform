@@ -330,7 +330,7 @@ describe("Gaps tab (RES-74)", () => {
     await openGaps();
     const gaps = within(await screen.findByRole("region", { name: "Gaps" }));
     const rows = gaps.getAllByRole("row").slice(1);
-    expect(within(rows[0]).getByText("Shape 2d")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("2D shapes")).toBeInTheDocument();
     expect(within(rows[0]).getByText("angles in circles")).toBeInTheDocument();
     expect(within(rows[0]).getByText("Answer check ×4")).toBeInTheDocument();
     expect(within(rows[0]).getByText("None suited ×2")).toBeInTheDocument();
@@ -342,7 +342,7 @@ describe("Gaps tab (RES-74)", () => {
   it("lists demand, and supply by year with thin cells marked", async () => {
     await openGaps();
     const demand = within(await screen.findByRole("region", { name: "Demand" }));
-    expect(demand.getByText("Right triangle: find hypotenuse")).toBeInTheDocument();
+    expect(demand.getByText("Right-angled triangles: find hypotenuse")).toBeInTheDocument();
     const supply = within(screen.getByRole("region", { name: "Supply" }));
     // The name is also an option in the type picker; the table cell is the one wanted.
     const vectors = supply.getByText("Vectors", { selector: "td" }).closest("tr");

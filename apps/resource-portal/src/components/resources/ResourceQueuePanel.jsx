@@ -371,11 +371,11 @@ export default function ResourceQueuePanel({
 
   return (
     <section className="rg-queue">
-      <div className="card">
+      <div className="card rg-live-card">
         <div className="card-head">
           <div>
-            <h3>Live queue</h3>
-            <div className="card-sub">Queued, generating, and retry handoffs update from Firestore.</div>
+            <h3>In progress</h3>
+            <div className="card-sub">Resources being made now. This list updates by itself.</div>
           </div>
           {activeJobs.length ? <Badge tone="info" dot>{activeJobs.length} active</Badge> : null}
         </div>
@@ -391,7 +391,7 @@ export default function ResourceQueuePanel({
         ) : loading ? (
           <div className="rg-queue-empty">
             <span className="spinner" />
-            <div className="weight-600">Loading queue...</div>
+            <div className="weight-600">Loading…</div>
           </div>
         ) : activeJobs.length ? (
           <ul className="rg-job-list">
@@ -416,13 +416,13 @@ export default function ResourceQueuePanel({
         ) : (
           <div className="rg-queue-empty">
             <div className="rg-queue-empty-icon"><Icon name="sparkles" size={20} /></div>
-            <div className="weight-600">Nothing generating right now</div>
-            <div className="text-sm muted">Submitted jobs will appear here first.</div>
+            <div className="weight-600">Nothing is being made right now</div>
+            <div className="text-sm muted">A resource appears here as soon as you submit it.</div>
           </div>
         )}
       </div>
 
-      <div className="card mt-4">
+      <div className="card mt-4 rg-history-card">
         <button className="card-head rg-history-head" onClick={() => setHistoryOpen((current) => !current)} type="button">
           <div>
             <h3>History</h3>
@@ -439,7 +439,7 @@ export default function ResourceQueuePanel({
             <div className="rg-history-filter">
               <div className="field-search">
                 <Icon className="search-icon" name="search" size={16} />
-                <input onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Filter by student, type, or tutor..." type="search" value={historyQuery} />
+                <input aria-label="Filter history" className="input" onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Filter by student, type or tutor" type="search" value={historyQuery} />
               </div>
               <div aria-label="Filter by status" className="rg-history-status" role="group">
                 {HISTORY_STATUS_FILTERS.map((filter) => (
@@ -717,24 +717,24 @@ function ResourceJobRow({
           <div className="rg-job-main">
             <div className="rg-job-title">
               <span className="weight-600">{job.studentName || "Unknown student"}</span>
-              <span className="muted">-</span>
+              <span aria-hidden="true" className="rg-sep">·</span>
               <span>{resourceLabel(job.resourceType)}</span>
             </div>
             <div className="rg-job-meta">
               {versionNumber ? (
                 <>
                   <span className="rg-version-chip">v{versionNumber}</span>
-                  <span>-</span>
+                  <span aria-hidden="true" className="rg-sep">·</span>
                 </>
               ) : null}
               {versionLabel && versionLabel !== "Original" ? (
                 <>
                   <span>{versionLabel}</span>
-                  <span>-</span>
+                  <span aria-hidden="true" className="rg-sep">·</span>
                 </>
               ) : null}
               <span>Year {job.year || "-"} {capitalise(job.subject)}</span>
-              <span>-</span>
+              <span aria-hidden="true" className="rg-sep">·</span>
               <span>{createdLabel}</span>
             </div>
             {job.revisionInstruction ? (
