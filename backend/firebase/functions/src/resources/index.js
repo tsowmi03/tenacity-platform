@@ -1841,6 +1841,17 @@ async function saveGeneratedResourceLogged({ job, parsed, storage, buildDocx, cl
  * Never fails the resource: every failure delivers the original build, and
  * only a cancellation or a worker hand-off (resourceControl) propagates.
  */
+/** Earlier warnings followed by later ones, without repeating one already given. */
+function mergeWarnings(earlier = [], later = []) {
+  const key = (warning) => `${warning?.code || ""}|${warning?.message || ""}`;
+  const seen = new Set();
+  return [...(earlier || []), ...(later || [])].filter((warning) => {
+    if (!warning || seen.has(key(warning))) return false;
+    seen.add(key(warning));
+    return true;
+  });
+}
+
 async function runVisualCheck(args) {
   return resourceStage(args.job, "visual.check", () => runVisualCheckLogged(args), {}, (result) => result.summary?.outcome || "skipped");
 }
@@ -1884,7 +1895,11 @@ async function runVisualCheckLogged({ job, built: firstBuilt, fileName, pdfConve
       ...(readPages ? { readPages } : {}),
     });
     if (joined.joined.length) {
-      built = joined.built;
+      // Same content, laid out again: everything the first build warned about
+      // still holds, and the rebuild won't say it twice. A diagram the first
+      // build left out is already gone from the resource the rebuild starts
+      // from, so its warning would otherwise be lost.
+      built = { ...joined.built, warnings: mergeWarnings(built.warnings, joined.built.warnings) };
       firstPdf = joined.pdf;
       resourceEvent(job, "layout.sections_joined", { fixedCount: joined.joined.length, pagesSaved: joined.pagesSaved });
     }
@@ -1937,7 +1952,10 @@ async function runVisualCheckLogged({ job, built: firstBuilt, fileName, pdfConve
   let pdf = firstPdf;
   if (fixed.length) {
     try {
-      delivered = await resourceStage(job, "visual.rebuild", () => rebuild(working));
+      const rebuilt = await resourceStage(job, "visual.rebuild", () => rebuild(working));
+      // The fixes change the content, so only warnings the rebuild cannot
+      // raise again are carried over: a diagram left out of the first build.
+      delivered = { ...rebuilt, warnings: mergeWarnings((built.warnings || []).filter((warning) => warning?.code === "OPTIONAL_DIAGRAM_OMITTED"), rebuilt.warnings) };
       // The preview must show what was delivered; a failed conversion leaves
       // it to the after-completion trigger.
       pdf = await convert(delivered.buffer);
