@@ -36,6 +36,9 @@ describe("English set-text reference bank", () => {
       file("English/Texts/LitCharts/Macbeth LitCharts/Macbeth Teacher/Macbeth-LitChart.pdf"),
       file("English/Texts/Mr-Pip-LitChart.pdf"),
       file("English/Texts/Novel guides/Of-Mice-and-Men-LitChart.pdf"),
+      // A folder under Texts holds several works: each is kept.
+      file("English/Texts/Novel guides/The-Outsiders-LitChart.pdf"),
+      file("English/Texts/Novel guides/Copies/The-Outsiders-LitChart.pdf"),
       file("English/Year 9/Comprehension/Some-LitChart.pdf"),
     ]);
     assert.deepEqual(chosen.map((f) => f.path), [
@@ -43,6 +46,7 @@ describe("English set-text reference bank", () => {
       "English/Texts/LitCharts/Macbeth LitCharts/Macbeth-LitChart.pdf",
       "English/Texts/Mr-Pip-LitChart.pdf",
       "English/Texts/Novel guides/Of-Mice-and-Men-LitChart.pdf",
+      "English/Texts/Novel guides/The-Outsiders-LitChart.pdf",
     ]);
   });
 

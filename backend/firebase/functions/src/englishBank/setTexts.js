@@ -27,7 +27,10 @@ function chooseLitChartFiles(files) {
     const folder = litCharts > 0 ? litCharts : /^texts$/i.test(parts[1] || "") && parts.length > 2 ? 1 : -1;
     if (folder < 0 || !/\.pdf$/i.test(file.name)) continue;
     if (!/lit-?charts?/i.test(file.name) || /translation/i.test(file.name)) continue;
-    const entry = parts[folder + 1];
+    // Under LitCharts each entry is one work (its folder, or a loose file).
+    // Under Texts a folder such as "Novel guides" holds several works, so
+    // each title is its own entry.
+    const entry = litCharts > 0 ? parts[folder + 1] : `title:${titleKey(file.name)}`;
     const current = byEntry.get(entry);
     if (!current || file.path.length < current.path.length) byEntry.set(entry, file);
   }
