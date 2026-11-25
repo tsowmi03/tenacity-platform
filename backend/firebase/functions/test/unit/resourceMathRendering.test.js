@@ -88,8 +88,8 @@ describe("money", () => {
 describe("LaTeX commands", () => {
   for (const [input, expected] of [
     ["\\sum_{k=1}^{n} k", /«Σ₍k=1₎⁽n⁾ k» || «Σ₍k=1₎⁽n⁾» k/],
-    ["Evaluate \\log_{2} 8.", /«log₍2₎ 8»/],
-    ["Evaluate \\log_2 8.", /«log₍2₎ 8»/],
+    ["Evaluate \\log_{2} 8.", /«log₍2₎ 8\.»/],
+    ["Evaluate \\log_2 8.", /«log₍2₎ 8\.»/],
     ["\\lim_{x \\to 0} f(x)", /lim₍x → 0₎/],
     ["\\int_{0}^{1} x \\, dx", /∫₍0₎⁽1⁾/],
     ["\\bigcup_{i} A_{i}", /⋃₍i₎/],
@@ -219,7 +219,7 @@ describe("structures", () => {
   it("keeps the power on a negative number", async () => {
     const { shown } = await body("Evaluate (-2)^{3} and -2^{2}.");
     assert.doesNotMatch(shown, /\^/);
-    assert.match(shown, /«−2⁽2⁾»/);
+    assert.match(shown, /«−2⁽2⁾\.»/);
   });
 
   it("stacks simultaneous equations written with cases", async () => {
@@ -276,9 +276,9 @@ describe("structures", () => {
 describe("whole expressions", () => {
   for (const [input, expected] of [
     // Ratios
-    ["If x:y = 2:5 and x = 8, find y.", "If «x:y = 2:5» and «x = 8», find y."],
-    ["Show that 1:2 = 3:6.", "Show that «1:2 = 3:6»."],
-    ["Divide $90 in the ratio a:b:c = 2:3:4.", "Divide $90 in the ratio «a:b:c = 2:3:4»."],
+    ["If x:y = 2:5 and x = 8, find y.", "If «x:y = 2:5» and «x = 8,» find y."],
+    ["Show that 1:2 = 3:6.", "Show that «1:2 = 3:6.»"],
+    ["Divide $90 in the ratio a:b:c = 2:3:4.", "Divide $90 in the ratio «a:b:c = 2:3:4.»"],
     ["AB:DE = 2:3", "«AB:DE = 2:3»"],
     // Greek letters, implicit products and function notation
     ["A = \\pi r^{2}", "«A = πr⁽2⁾» || «A = π r⁽2⁾»"],
@@ -289,27 +289,27 @@ describe("whole expressions", () => {
     ["P(A \\cup B) = P(A) + P(B) - P(A \\cap B)", "«P(A ∪ B) = P(A) + P(B) − P(A ∩ B)»"],
     ["P(A') = 1 - P(A)", "«P(A') = 1 − P(A)»"],
     ["P(x) = 2x^{3} - 3x^{2} + x - 5", "«P(x) = 2x⁽3⁾ − 3x⁽2⁾ + x − 5»"],
-    ["If f(x) = 2x + 1, find f(3).", "If «f(x) = 2x + 1», find f(3)."],
+    ["If f(x) = 2x + 1, find f(3).", "If «f(x) = 2x + 1,» find f(3)."],
     ["y - y_{1} = m(x - x_{1})", "«y − y₍1₎ = m(x − x₍1₎)»"],
     ["A = P(1 + r)^{n}", "«A = P(1 + r)⁽n⁾»"],
     ["\\Delta = b^{2} - 4ac", "«Δ = b⁽2⁾ − 4ac»"],
     // Signs after operators
     ["x^{2} = 49 \\Rightarrow x = \\pm 7", "«x⁽2⁾ = 49 ⇒ x = ± 7»"],
-    ["The axis of symmetry is x = -\\frac{b}{2a}.", "The axis of symmetry is «x = −[b/2a]»."],
-    ["Sketch y = -(x + 1)^{2} + 3.", "Sketch «y = −(x + 1)⁽2⁾ + 3»."],
+    ["The axis of symmetry is x = -\\frac{b}{2a}.", "The axis of symmetry is «x = −[b/2a].»"],
+    ["Sketch y = -(x + 1)^{2} + 3.", "Sketch «y = −(x + 1)⁽2⁾ + 3.»"],
     // Functions, angles, degrees
     ["x = 12 tan 35°", "«x = 12 tan 35°»"],
     ["a^{2} = b^{2} + c^{2} - 2bc cos A", "«a⁽2⁾ = b⁽2⁾ + c⁽2⁾ − 2bc cos A»"],
     ["\\angle A + \\angle B + \\angle C = 180°", "«∠A + ∠B + ∠C = 180°» || «∠ A + ∠ B + ∠ C = 180°»"],
-    ["Solve x + 35° = 180°.", "Solve «x + 35° = 180°»."],
+    ["Solve x + 35° = 180°.", "Solve «x + 35° = 180°.»"],
     ["\\angle AOB = 2\\angle ACB", "«∠ AOB = 2∠ ACB» || «∠AOB = 2∠ACB»"],
     ["log_{b} (x^{n}) = n log_{b} x", "«log₍b₎ (x⁽n⁾) = n log₍b₎ x»"],
     ["\\therefore x = 4", "«∴ x = 4» || «∴x = 4»"],
     // Absolute values and sets
-    ["Solve |x - 3| = 5.", "Solve «|x − 3| = 5»."],
+    ["Solve |x - 3| = 5.", "Solve «|x − 3| = 5.»"],
     ["A \\cup B = \\{1, 2, 3\\}", "«A ∪ B = {1, 2, 3}»"],
     // Spaced thousands stay one number
-    ["Evaluate 12 000 + 3 500.", "Evaluate «12 000 + 3 500»."],
+    ["Evaluate 12 000 + 3 500.", "Evaluate «12 000 + 3 500.»"],
   ]) {
     it(`keeps ${input} together`, async () => {
       // A long equation is cut into pieces joined by a space so it can wrap;
@@ -362,8 +362,32 @@ describe("units", () => {
   it("still stacks real fractions and keeps the equation before a unit", async () => {
     assert.equal((await body("x = 5 cm")).shown, "«x = 5» cm");
     assert.match((await body("Speed = \\frac{distance}{time}")).shown, /\[distance\/time\]/);
-    assert.match((await body("Evaluate 3/4 + 1/6.")).shown, /«\[3\/4\] \+ \[1\/6\]»/);
+    assert.match((await body("Evaluate 3/4 + 1/6.")).shown, /«\[3\/4\] \+ \[1\/6\]\.»/);
     assert.match((await body("s = \\frac{d}{t}")).shown, /«s = \[d\/t\]»/);
+  });
+});
+
+describe("punctuation after an equation (RES-40)", () => {
+  // LibreOffice, which makes the PDF preview, draws an inline equation a
+  // little lower than the words around it. A full stop left in the text then
+  // hung above the last digit, so "19." printed like "19·".
+  it("sets the mark that closes the maths inside the equation, upright", async () => {
+    const text = "So x = 19. Then y = \\frac{1}{2}, and z = 4";
+    const { shown, issues } = await body(text);
+    const xml = await xmlFor(await shared.runWithMathRendering(true, () => [new Paragraph({ children: shared.richTextRuns(text) })]));
+    assert.equal(shown.replace(/» «/g, " "), "So «x = 19.» Then «y = [1/2],» and «z = 4»");
+    assert.deepEqual(issues, []);
+    // Upright, like the words: m:sty p.
+    assert.match(xml, /<m:r><m:rPr><m:sty m:val="p"\/><\/m:rPr>(?:<w:rPr>.*?<\/w:rPr>)?<m:t[^>]*>\.<\/m:t><\/m:r><\/m:oMath>/);
+  });
+
+  it("leaves punctuation that does not close the maths where it was", async () => {
+    // A decimal point and a ratio's colon belong to the number.
+    assert.equal((await body("x = 2.5 and y = 3")).shown.replace(/» «/g, " "), "«x = 2.5» and «y = 3»");
+    // No space after it, so it is not the end of a clause.
+    assert.match((await body("Use f(x):g(x) here")).shown, /here$/);
+    // Plain sentences are untouched.
+    assert.equal((await body("Write your answer in words.")).shown, "Write your answer in words.");
   });
 });
 
@@ -508,7 +532,7 @@ describe("real job regressions", () => {
       const { shown } = await body(input);
       assert.doesNotMatch(shown, /«(sin on|log of)/, shown);
     }
-    assert.match((await body("Find sin 30° and log_{2} 8.")).shown, /«sin 30°».*«log₍2₎ 8»/);
+    assert.match((await body("Find sin 30° and log_{2} 8.")).shown, /«sin 30°».*«log₍2₎ 8\.»/);
   });
 
   it("does not stack one word over another", async () => {

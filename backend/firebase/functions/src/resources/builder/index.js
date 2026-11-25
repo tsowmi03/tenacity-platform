@@ -10,7 +10,7 @@ const { buildStudyGuideDocx } = require("./studyGuide");
 const { buildTopicBookletDocx } = require("./topicBooklet");
 const { buildWorksheetDocx } = require("./worksheet");
 const { isEnglishSubject } = require("./common");
-const { cleanText, formatSubject, runWithMathRendering, titleCase } = require("./shared");
+const { cleanText, formatSubject, runWithLayout, runWithMathRendering, titleCase } = require("./shared");
 const { collectMathIssues } = require("../mathNotation");
 const { findRawMathInDocx } = require("./docxText");
 
@@ -62,7 +62,7 @@ async function buildResourceDocx(resourceType, resource, options = {}) {
   const subject = resource?.subject || options.subject || "";
   const mathEnabled = !isEnglishSubject(subject);
   const { value: buffer, issues } = await collectMathIssues(() =>
-    runWithMathRendering(mathEnabled, () => builder(resource, options))
+    runWithMathRendering(mathEnabled, () => runWithLayout(resource?.layout, () => builder(resource, options)))
   );
   if (mathEnabled) {
     // Catch-all: every text path is guarded while building, but a future

@@ -206,6 +206,53 @@ describe("runVisualCheck", () => {
     assert.equal(result.summary.outcome, "passed");
   });
 
+  // RES-40. The layout pass reads the converted pages before the model does.
+  const header = ["Year 8 Paper", "Maths"];
+  const page = (number, ...lines) => [...header, `Mei | Tenacity Tutoring - Determination Meets Success. Page ${number}`, ...lines].join("\n");
+  const longPage = (number, first) => page(number, first, ...Array.from({ length: 30 }, (_, i) => `Line ${i + 1}`));
+  const pagesOf = (layouts) => async (pdf) => layouts[pdf.toString()];
+
+  it("joins a section to a page left with a few lines, when that saves a page (RES-40)", async () => {
+    const converted = [];
+    let rebuiltFrom = null;
+    const result = await runVisualCheck({
+      job, built: built(), fileName: "a.docx", pdfConverter: converter(converted),
+      callAi: async () => ({ parsed: { faults: [] } }),
+      rebuild: async (resource) => { rebuiltFrom = resource; return { buffer: Buffer.from("PK joined"), warnings: [], resource }; },
+      readPages: pagesOf({
+        "%PDF of PK first": [longPage(1, "Stimulus booklet"), page(2, "the last two lines", "of the text."), longPage(3, "Section A")],
+        "%PDF of PK joined": [longPage(1, "Stimulus booklet"), longPage(2, "the last two lines")],
+      }),
+    });
+    assert.deepEqual(rebuiltFrom.layout, { joinBefore: ["Section A"] });
+    assert.deepEqual(converted, ["PK first", "PK joined"]);
+    assert.equal(result.built.buffer.toString(), "PK joined");
+    assert.equal(result.pdf.toString(), "%PDF of PK joined", "the preview and the model's check use the joined pages");
+    assert.equal(result.summary.outcome, "passed");
+  });
+
+  it("keeps the first build when joining saves no page, or the layout pass fails (RES-40)", async () => {
+    const original = built();
+    const same = [longPage(1, "Questions"), page(2, "one line"), longPage(3, "Answers")];
+    const noGain = await runVisualCheck({
+      job, built: original, fileName: "a.docx", pdfConverter: converter(),
+      callAi: async () => ({ parsed: { faults: [] } }),
+      rebuild: async (resource) => ({ buffer: Buffer.from("PK joined"), warnings: [], resource }),
+      readPages: pagesOf({ "%PDF of PK first": same, "%PDF of PK joined": same }),
+    });
+    assert.equal(noGain.built, original);
+    assert.equal(noGain.pdf.toString(), "%PDF of PK first");
+
+    const failed = await runVisualCheck({
+      job, built: original, fileName: "a.docx", pdfConverter: converter(),
+      callAi: async () => ({ parsed: { faults: [] } }),
+      rebuild: async () => assert.fail("no rebuild"),
+      readPages: async () => { throw new Error("unreadable PDF"); },
+    });
+    assert.equal(failed.built, original);
+    assert.equal(failed.summary.outcome, "passed");
+  });
+
   it("fixes what it can, rebuilds once, previews the rebuild and warns about the rest", async () => {
     const converted = [];
     let rebuiltFrom = null;

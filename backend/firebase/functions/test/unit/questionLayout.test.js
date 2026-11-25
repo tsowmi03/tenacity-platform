@@ -134,16 +134,55 @@ describe("question layout with diagrams (RES-81)", () => {
     assert.doesNotMatch(left, /Use the table/);
   });
 
-  it("keeps a question's text, diagram and first two answer lines together", async () => {
+  it("keeps a question's text, diagram and a short block of answer lines on one page (RES-40)", async () => {
     const xml = await documentXml(paper([
       { number: 1, stem: "Find the area.", marks: 3, diagram: await crop(1000, 300) },
     ]));
     const ps = paragraphs(body(xml));
     const stem = ps.findIndex((p) => /Find the area/.test(p));
     const rules = ps.filter(isRule);
+    assert.equal(rules.length, 9);
     assert.ok(keepsNext(ps[stem]));
-    assert.ok(keepsNext(rules[0]) && keepsNext(rules[1]));
-    assert.ok(!keepsNext(rules[2]));
+    // Every line holds the next, so none is printed alone on the next page.
+    // The last ends the chain, or the next question would be held too.
+    assert.ok(rules.slice(0, -1).every(keepsNext));
+    assert.ok(!keepsNext(rules[rules.length - 1]));
+  });
+
+  it("lets a long block of answer lines run on, never leaving a few lines behind (RES-40)", async () => {
+    const xml = await documentXml(paper([{ number: 1, stem: "Discuss.", marks: 8 }]));
+    const rules = paragraphs(body(xml)).filter(isRule);
+    assert.equal(rules.length, 24);
+    const held = rules.map(keepsNext);
+    // The first four stay with the question, the last ten stay together.
+    assert.deepEqual(held.slice(0, 3), [true, true, true]);
+    assert.ok(held.slice(3, 14).every((kept) => !kept), "the middle of the block may break");
+    assert.ok(held.slice(14, 23).every(Boolean));
+    assert.equal(held[23], false);
+  });
+
+  it("does not chain a question that ends inside its diagram table to the next one (RES-40)", async () => {
+    // Two marks is six lines: all of them fit beside a square diagram.
+    const xml = await documentXml(paper([
+      { number: 1, stem: "Find the gradient.", marks: 2, diagram: await crop(500, 500) },
+      { number: 2, stem: "Find the intercept.", marks: 2, diagram: await crop(500, 500) },
+    ]));
+    const [first] = tables(xml);
+    assert.ok(paragraphs(first).length > 6);
+    // LibreOffice keeps a table with the next block when its paragraphs are
+    // kept with the next, which chained every such question on to one page.
+    assert.ok(paragraphs(first).every((p) => !keepsNext(p)));
+    assert.match(first, /<w:cantSplit\/>/);
+  });
+
+  it("holds a diagram table to the answer lines that carry on below it", async () => {
+    const xml = await documentXml(paper([
+      { number: 1, stem: "Explain your reasoning in full.", marks: 4, diagram: await crop(500, 500) },
+    ]));
+    const [table] = tables(xml);
+    const after = body(xml).slice(body(xml).indexOf("</w:tbl>"));
+    assert.ok(paragraphs(after).filter(isRule).length > 0, "lines continue under the table");
+    assert.ok(paragraphs(table).every(keepsNext));
   });
 
   it("keeps list lines in a stem with the diagram after them", async () => {

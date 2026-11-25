@@ -339,7 +339,7 @@ async function buildTopicBookletDocx(resource, options = {}) {
   }
 
   if (sections.length) {
-    children.push(makePageBreak());
+    children.push(makePageBreak({ joinable: true }));
     children.push(makeContentsHeading("End of Topic Quiz", { section: true }));
     for (const section of sections) {
       children.push(makeContentsHeading(section.title || section.name || "Quiz Section", { level: 2 }));

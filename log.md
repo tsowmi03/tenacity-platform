@@ -20,6 +20,8 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-26 | [No near-blank pages; answer lines stay with their question; diagram label and spacing fixes (RES-40)](#2026-11-26--no-near-blank-pages-answer-lines-stay-with-their-question-diagram-label-and-spacing-fixes-res-40) |
+| 2026-11-26 | [Contents page shows in the PDF preview (RES-124)](#2026-11-26--contents-page-shows-in-the-pdf-preview-res-124) |
 | 2026-11-24 | [Resource assistant: the planning chat recommends what to make and knows what the generator can do (RES-102)](#2026-11-24--resource-assistant-the-planning-chat-recommends-what-to-make-and-knows-what-the-generator-can-do-res-102) |
 | 2026-11-24 | [Photos, scans, PowerPoint, Excel and older Word files as reference files (RES-122)](#2026-11-24--photos-scans-powerpoint-excel-and-older-word-files-as-reference-files-res-122) |
 | 2026-11-23 | [Worksheet contents and section headings; a missing diagram is asked for again; Retry survives a double-click (RES-123)](#2026-11-23--worksheet-contents-and-section-headings-a-missing-diagram-is-asked-for-again-retry-survives-a-double-click-res-123) |
@@ -264,6 +266,89 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-26 — No near-blank pages; answer lines stay with their question; diagram label and spacing fixes (RES-40)
+
+**What changed**
+- A question's answer lines stay on its page. Up to 12 lines move with the
+  question as one block. A longer block may run on to the next page, but the
+  first four lines stay with the question and the last ten stay together, so
+  one or two lines are never printed alone at the top of a page.
+- Blank working space (graphs, sketches) is cut off at the foot of a page
+  instead of running on to the next one. Its first six lines' worth always
+  prints with the question.
+- A page break before a section is now part of the section's heading. As a
+  paragraph of its own, it could move to the next page and leave that page
+  blank.
+- Questions with a diagram beside them are no longer chained to the next
+  question. A run of them had to fit one page together, so the first one left
+  page 1 and took the "Questions" heading with it.
+- A contents list is left out when a resource has three or fewer sections
+  (was: fewer than three entries). An English worksheet with a stimulus
+  booklet, questions and a marking guide no longer opens with one.
+- After the document is converted for the preview, its pages are read. Where a
+  page holds six lines or fewer and the next page opens with a new section
+  (for example a reading text that runs three lines over, before Section A),
+  the resource is rebuilt with that section following on the same page. The
+  rebuild is kept only when it saves a page. Answers and marking guides always
+  start their own page. No model is involved.
+- Punctuation straight after an equation is set inside the equation. In the
+  preview a full stop used to sit above the last digit, so "19." read like
+  "19·".
+- Diagram labels with a combining mark (x̄, a recurring decimal's dot) print
+  correctly on the server. DejaVu Sans now ships with the functions and is used
+  for those labels only; before, the bar printed beside the x and the dot was
+  lost. Set symbols and Greek letters were already correct.
+- Three diagram types reviewed and fixed: a dot plot's title sits just above
+  its dots and a pictograph's key under its last row (both left a wide empty
+  band), and a clock's minute hand stops short of the numerals.
+- New script `scripts/rerenderSavedResources.js` rebuilds saved resources with
+  the current builder, converts them and reports near-blank pages, with no
+  model calls. `docs/operations/resource-diagram-fonts.md` records how to
+  check label fonts on the Functions image.
+
+**Why:** Near-blank pages appeared in most of the 20 benchmark resources
+(RES-113 baseline, 18 November), and layout was the weakest criterion
+(3.20/5).
+
+**Status:** Live. Functions deployed. Rebuilding the 19 baseline resources that
+still validate and converting them with the production converter gives 211
+pages with no near-blank page; the baseline run had 8 in 223 pages. Label fonts
+were checked on the Cloud Functions image. Decisions recorded on RES-40:
+fractions in diagram labels stay inline (1/2), and the preview's raised full
+stop is fixed, not accepted.
+
+**Next steps**
+- Re-run the RES-113 benchmark with `--compare
+  scripts/qualityBenchmark/baselines/2026-11-18.json` once Claude API access is
+  restored, to record the new layout score (RES-125, about 1.5 hours, grader
+  spend only).
+- Drawn chart diagrams (tree, Venn, bar graph, histogram, function plot) print
+  with labels of about 4 pt in the side column, function-plot labels overlap
+  their curves, and some drawn labels show unrounded values (RES-126).
+
+---
+
+## 2026-11-26 — Contents page shows in the PDF preview (RES-124)
+
+**What changed**
+- The contents page of a booklet or study guide now shows its entries and page
+  numbers in the portal's PDF preview. The downloaded Word file was already
+  correct.
+- The entries are set in the document font with dotted leaders to the page
+  number.
+
+**Why:** The preview is made by LibreOffice, which rebuilds the contents list
+from the headings' outline levels. The headings had none (Word reads the style
+names instead), so the rebuilt list was empty and the page showed only its
+"Contents" heading. Tutors print from the preview.
+
+**Status:** Live. Functions deployed. A 25-page production-style booklet
+converted by the production converter lists all nine entries with the right
+page numbers. Previews made before 2026-11-26 keep their empty contents page
+until the resource is regenerated.
 
 ---
 

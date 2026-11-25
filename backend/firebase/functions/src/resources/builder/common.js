@@ -3,6 +3,7 @@
 const {
   BorderStyle,
   Document,
+  LeaderType,
   Packer,
   Paragraph,
   SectionType,
@@ -11,6 +12,7 @@ const {
   TableCell,
   TableLayoutType,
   TableRow,
+  TabStopType,
   TextRun,
   VerticalAlign,
   WidthType,
@@ -20,8 +22,10 @@ const { BRAND, PAGE } = require("./branding");
 const { estimateTextHeight, layoutDiagramBlock, lineItems, textItem } = require("./questionLayout");
 const { makeImageContent, makePassageGroups } = require("./passage");
 const {
+  blankSpaceParts,
   cleanText,
   formatSubject,
+  finishPageBreaks,
   makeAnswerRow,
   makeContentsHeading,
   makeFooter,
@@ -71,13 +75,34 @@ function splitParagraphs(value) {
     .filter(Boolean);
 }
 
+// Heading 1 and 2 are what the contents list is built from. They carry an
+// outline level because LibreOffice, which makes the PDF preview, rebuilds the
+// list from outline levels alone: without one it found no headings and printed
+// an empty Contents page (RES-124). Word reads the style names and was fine.
+// Their look comes from each heading paragraph, so the styles set none.
 function docStyles() {
+  const contentsEntry = (level) => ({
+    id: `TOC${level}`,
+    name: `toc ${level}`,
+    basedOn: "Normal",
+    next: "Normal",
+    quickFormat: true,
+    run: { font: BRAND.FONT, size: BRAND.FONT_SIZE_BODY, color: "000000" },
+    paragraph: {
+      spacing: { after: 80 },
+      indent: level === 2 ? { left: 360 } : undefined,
+      tabStops: [{ type: TabStopType.RIGHT, position: PAGE.CONTENT_WIDTH, leader: LeaderType.DOT }],
+    },
+  });
   return {
     default: {
       document: {
         run: { font: BRAND.FONT, size: BRAND.FONT_SIZE_BODY },
       },
+      heading1: { paragraph: { outlineLevel: 0 } },
+      heading2: { paragraph: { outlineLevel: 1 } },
     },
+    paragraphStyles: [contentsEntry(1), contentsEntry(2)],
   };
 }
 
@@ -117,7 +142,7 @@ async function packDocument({
         footers: {
           default: makeFooter(cleanText(studentName)),
         },
-        children,
+        children: finishPageBreaks(children),
       },
     ],
   });
@@ -459,13 +484,13 @@ function optionText(option, index) {
   return text.slice(match[0].length);
 }
 
-function multipleChoiceOptions(question) {
+function multipleChoiceOptions(question, { keepNext = true } = {}) {
   const options = asArray(question?.options);
   return options.map((option, index) => {
     const label = String.fromCharCode(65 + index);
     return paragraph(`${label}. ${optionText(option, index)}`, {
       indent: { left: 360 },
-      keepNext: true,
+      keepNext,
       spacing: { after: 60 },
     });
   });
@@ -493,7 +518,7 @@ function stemItems(stem, marks, render, { before, after, indent }) {
 
 function optionItems(question) {
   return asArray(question?.options).map((option, index) => textItem({
-    render: () => [multipleChoiceOptions(question)[index]],
+    render: (width, flow) => [multipleChoiceOptions(question, { keepNext: !flow?.loose })[index]],
     estimate: (width) => estimateTextHeight(optionText(option, index), width, { after: 60, indent: 360, extraChars: 3 }),
   }));
 }
@@ -509,7 +534,17 @@ function answerSpaceMaker(item, opts, parent) {
 }
 
 function answerLineItems(question, makeLines) {
-  return lineItems(makeLines(responseLineCount(question), { keepFirst: 2 }), RULED_LINE_HEIGHT);
+  const count = responseLineCount(question);
+  const items = lineItems(makeLines(count, { keepFirst: 2 }), RULED_LINE_HEIGHT, makeLines(count));
+  if (makeLines === makeBlankSpace && items.length) {
+    // Blank space is a firm block and a flexible remainder, not one paragraph
+    // per line, so each part states its own height.
+    const { firm, rest } = blankSpaceParts(count);
+    [firm, rest].forEach((lines, index) => {
+      if (items[index]) items[index].estimate = () => lines * RULED_LINE_HEIGHT;
+    });
+  }
+  return items;
 }
 
 async function renderQuestion(question, opts = {}) {
@@ -532,7 +567,7 @@ async function renderQuestion(question, opts = {}) {
   const stem = questionStem(question);
   const stemMarks = parts.length || !showMarks ? null : question?.marks;
   const questionLead = [
-    ...stemItems(stem, stemMarks, (width) => renderQuestionStem(number, stem, stemMarks, { keepNext: true }, { tabPosition: width }), {
+    ...stemItems(stem, stemMarks, (width, flow) => renderQuestionStem(number, stem, stemMarks, { keepNext: !flow?.loose }, { tabPosition: width, keepNext: !flow?.loose }), {
       before: 220,
       after: 100,
       indent: 0,
@@ -548,7 +583,7 @@ async function renderQuestion(question, opts = {}) {
     return {
       part,
       lead: [
-        ...stemItems(partText, partMarks, (width) => renderPartStem(part.label, partText, partMarks, { keepNext: true }, { tabPosition: width }), {
+        ...stemItems(partText, partMarks, (width, flow) => renderPartStem(part.label, partText, partMarks, { keepNext: !flow?.loose }, { tabPosition: width, keepNext: !flow?.loose }), {
           before: 100,
           after: 80,
           indent: 360,
@@ -673,7 +708,8 @@ function renderStimulusBooklet(resource, subject, opts = {}) {
     ),
     ...renderStimulusItems(stimulus),
   ];
-  children.push(makePageBreak());
+  // The questions start a new page unless the texts end a few lines into one.
+  children.push(makePageBreak({ joinable: true }));
   return children;
 }
 
