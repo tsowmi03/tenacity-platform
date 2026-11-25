@@ -51,6 +51,15 @@ const SUBJECT_DEFAULTS = {
   english: { questions: 10, fit: { a: 150, b: 20 }, shares: { plan: 0.4, write: 0.58, diagrams: 0, check: 0, finish: 0.02 } },
 };
 const MAX_FINISH_SHARE = 0.05;
+// RES-93. What follows the counted work (the last question written, or the
+// last diagram question settled) takes a roughly fixed time, not a share of
+// the run: answers are verified, the document is built and its pages are
+// checked. Measured on production runs it is 15-30 s at the median and 1-3
+// minutes at the long end, while the ETA showed 3-15 s. The time it took on
+// the last TAIL_SAMPLES runs of the same kind is kept, and their median is
+// added to the ETA until that work is done.
+const TAIL_SAMPLES = 10;
+const MAX_TAIL_MS = 180_000;
 const DEFAULT_LOG_ERROR = 0.4;
 const DEFAULT_QUESTIONS = 20;
 
@@ -120,6 +129,25 @@ function normalisedShares(stats, job = {}) {
   return Object.fromEntries(PHASE_KEYS.map((k) => [k, k === "finish" ? finish : (Math.max(0, raw[k] || 0) / rest) * (1 - finish)]));
 }
 
+/** Whether everything this run counts (questions, diagram questions) is done. */
+function countedWorkDone(tracker = {}, job = {}) {
+  if (tracker.diagramCount > 0) return (tracker.diagramsDone || 0) >= tracker.diagramCount;
+  if (!(tracker.questionCount > 0) || (tracker.questionsDone || 0) < tracker.questionCount) return false;
+  // A maths resource goes on to its diagram step, whose count is not known
+  // until it starts; without diagrams, its checks begin the tail.
+  return job.subject !== "maths" || phaseIndex(tracker.phase) >= phaseIndex("check");
+}
+
+/** The finishing time learnt for this kind of resource, in ms, or 0 with too little history. */
+function learntTailMs(stats) {
+  const tails = Array.isArray(stats?.tails) ? stats.tails.filter((t) => Number.isFinite(t) && t >= 0) : [];
+  if (tails.length < MIN_SAMPLES) return 0;
+  const sorted = [...tails].sort((x, y) => x - y);
+  const mid = sorted.length / 2;
+  const median = sorted.length % 2 ? sorted[Math.floor(mid)] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return Math.min(MAX_TAIL_MS, Math.round(median * 1000));
+}
+
 function expectedQuestions({ tracker = {}, stats, requested, job = {} }) {
   if (tracker.questionCount > 0) return tracker.questionCount;
   if (requested > 0) return requested;
@@ -158,8 +186,10 @@ const MIN_SMOOTHING = 0.2;
  *           elapsedMs being the time since it was written
  * recentWait  trackWait() sums for the recent real/worker time ratio
  * countChangedAtMs  activeMs when the current step's count last moved
+ * countsDoneAgoMs  real time since the counted work was finished, or null
+ *                  while it is still going (RES-93)
  */
-function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 0, wallMs = activeMs, phaseStarts = {}, requestedQuestions = null, previous = null, recentWait = null, countChangedAtMs = null }) {
+function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 0, wallMs = activeMs, phaseStarts = {}, requestedQuestions = null, previous = null, recentWait = null, countChangedAtMs = null, countsDoneAgoMs = null }) {
   const stats = chooseStats(statsByKey, job);
   const fit = fitFromStats(stats) || SUBJECT_DEFAULTS[job.subject]?.fit || DEFAULT_FIT;
   const questions = expectedQuestions({ tracker, stats, requested: requestedQuestions, job });
@@ -243,6 +273,12 @@ function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 
       : Math.min(1, Math.max(MIN_SMOOTHING, 1 - Math.exp(-elapsed / SMOOTHING_MS)));
     remainingMs = Math.round(before + alpha * (remainingMs - before));
   }
+  // RES-93. The model's own figure is what the next report blends with; the
+  // finishing time is added on top of it, counted down once it has begun.
+  const modelRemainingMs = remainingMs;
+  const tailMs = learntTailMs(stats);
+  const tailAllowanceMs = Number.isFinite(countsDoneAgoMs) ? Math.max(0, tailMs - Math.max(0, countsDoneAgoMs)) : tailMs;
+  remainingMs += tailAllowanceMs;
 
   // The range narrows as history grows and as the run nears its end.
   const logError = stats?.logErrN >= MIN_SAMPLES ? Math.sqrt(stats.logErrSq / stats.logErrN) : DEFAULT_LOG_ERROR;
@@ -251,6 +287,8 @@ function estimateProgress({ job = {}, statsByKey = {}, tracker = {}, activeMs = 
     phase,
     fraction: Math.round(fraction * 1000) / 1000,
     remainingMs,
+    modelRemainingMs,
+    tailAllowanceMs,
     lowMs: Math.round(remainingMs * Math.exp(-spread)),
     highMs: Math.round(remainingMs * Math.exp(spread)),
     expectedTotalMs: Math.round(expectedTotalMs),
@@ -291,6 +329,10 @@ function addSample(stats, sample) {
   if (sample.predictedMs > 0) {
     s.logErrSq += Math.log(sample.activeMs / sample.predictedMs) ** 2;
     s.logErrN += 1;
+  }
+  // RES-93. How long this run took after its counted work was done, in seconds.
+  if (Number.isFinite(sample.tailMs) && sample.tailMs >= 0) {
+    s.tails = [...(Array.isArray(s.tails) ? s.tails : []), Math.round(sample.tailMs / 1000)].slice(-TAIL_SAMPLES);
   }
   return s;
 }
@@ -342,6 +384,6 @@ async function recordTimingSample(db, job, sample) {
 
 module.exports = {
   PHASES, PHASE_KEYS, STATS_COLLECTION, DEFAULT_FIT, MIN_SAMPLE_ACTIVE_MS, SUBJECT_DEFAULTS,
-  phaseForStage, phaseIndex, kindKey, fitFromStats, estimateProgress, trackWait,
+  phaseForStage, phaseIndex, kindKey, fitFromStats, estimateProgress, trackWait, countedWorkDone, learntTailMs,
   phaseDurations, addSample, noteProgress, countResourceQuestions, loadTimingStats, recordTimingSample,
 };
