@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@lib/firebaseAdmin";
+import { normalisePersonName } from "@lib/personName";
 import { sendAdminNotification } from "@lib/adminNotification";
 import {
   MAX_PREFERRED_DAYS,
@@ -48,6 +49,9 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const cleanString = (value: unknown, maxLength = 500) =>
   typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 
+const cleanName = (value: unknown) =>
+  normalisePersonName(cleanString(value, 120));
+
 const isEmail = (value: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
 
 const cleanCodeList = (
@@ -71,8 +75,8 @@ const buildParent = (payload: unknown) => {
 
   const parent = payload as ParentPayload;
   const cleaned = {
-    parentFirstName: cleanString(parent.parentFirstName, 120),
-    parentLastName: cleanString(parent.parentLastName, 120),
+    parentFirstName: cleanName(parent.parentFirstName),
+    parentLastName: cleanName(parent.parentLastName),
     parentEmail: cleanString(parent.parentEmail, 180),
     parentPhone: cleanString(parent.parentPhone, 60),
   };
@@ -99,8 +103,8 @@ const buildStudent = (payload: unknown) => {
   const studentStatus = cleanString(student.studentStatus, 60);
 
   const cleaned = {
-    studentFirstName: cleanString(student.studentFirstName, 120),
-    studentLastName: cleanString(student.studentLastName, 120),
+    studentFirstName: cleanName(student.studentFirstName),
+    studentLastName: cleanName(student.studentLastName),
     school: cleanString(student.school, 160),
     currentYear,
     studentStatus,
