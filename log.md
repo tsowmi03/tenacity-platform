@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-27 | [Website gives search engines and AI assistants the basics to read (WEB-5)](#2026-11-27--website-gives-search-engines-and-ai-assistants-the-basics-to-read-web-5) |
 | 2026-11-27 | [Names on the website forms saved in normal case, not all capitals (WEB-16)](#2026-11-27--names-on-the-website-forms-saved-in-normal-case-not-all-capitals-web-16) |
 | 2026-11-26 | [Resource portal: one calmer, clearer look across every page (RES-85)](#2026-11-26--resource-portal-one-calmer-clearer-look-across-every-page-res-85) |
 | 2026-11-26 | [Stimulus library: tutors can browse the English stimuli (RES-68)](#2026-11-26--stimulus-library-tutors-can-browse-the-english-stimuli-res-68) |
@@ -272,6 +273,25 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-27 — Website gives search engines and AI assistants the basics to read (WEB-5)
+
+**What changed**
+- The website now has a `robots.txt`, a `sitemap.xml` and an `llms.txt`. The robots file allows every public page, names the sitemap, and lists the AI crawlers (ChatGPT, Claude, Perplexity, Gemini, Apple) as welcome.
+- Every page carries its full canonical address and a full address for the share image, so the picture shows when the site is shared in a message. The thank-you, unsubscribe and parent feedback pages are kept out of search.
+- Every page carries machine-readable business details: name, address, phone, class hours (Monday to Thursday, 4pm to 8pm), price range and links to Instagram, Facebook and the Google listing. The home page adds its four questions and answers, and the Subjects page adds each fee.
+- The home page's main heading is now "Maths & English tutoring in Narwee, NSW · Years 5 to HSC", the small line above the tagline. The page looks the same.
+- The facts live in one file, and tests fail if the sitemap, fees, FAQ or contact details stop matching the pages. `apps/website/docs/seo.md` says what to update when a fact changes.
+
+**Why:** The live site had none of these. All five nearby competitor sites checked have a robots file and three have structured business data. This is proposals 1 to 4 and 7 of the "Software for growth" proposal in Confluence.
+
+**Status:** Live. The website deploys to production when merged.
+
+**Next steps**
+- Tom takes down the old Google Sites website and corrects two directory listings (GRO-30). About 30 minutes.
+- Set up Google Search Console and Bing Webmaster Tools, submit the sitemap, and make the redirect to www permanent in Vercel (GRO-31). About 30 minutes with Tom signed in.
 
 ---
 

@@ -1,0 +1,30 @@
+# Tenacity Tutoring - https://www.tenacitytutoring.com
+# Every public page may be read and indexed, by search engines and by AI
+# assistants. Only the form endpoints, the analytics proxy and referral
+# redirects are off limits.
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /ingest/
+Disallow: /r/
+
+# AI search, assistant and model crawlers are welcome. They are named so the
+# choice is explicit. A named group replaces the general one above, so it
+# repeats the same rules.
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /api/
+Disallow: /ingest/
+Disallow: /r/
+
+Sitemap: https://www.tenacitytutoring.com/sitemap.xml

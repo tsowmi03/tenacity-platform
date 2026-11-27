@@ -54,6 +54,7 @@ export default function Unsubscribe({ token, valid }: Props) {
     <>
       <Head
         title="Email preferences"
+        noindex
         description="Manage whether you receive the Tenacity Tutoring weekly update."
       />
       <main className="reg-section">

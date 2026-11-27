@@ -6,6 +6,7 @@ export default function ThankYou() {
     <>
       <Head
         title="Registration complete"
+        noindex
         description="Thanks for registering with Tenacity Tutoring. We will confirm your child's class and free trial lesson within one business day."
       />
       <main className="reg-section">

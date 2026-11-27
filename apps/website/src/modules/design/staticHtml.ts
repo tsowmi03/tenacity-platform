@@ -8,10 +8,14 @@ export type DesignPageName =
   | "contact.html"
   | "register.html";
 
+export type DesignFaq = { question: string; answer: string };
+
 export type DesignStaticProps = {
   html: string;
   title: string;
   description: string;
+  /** The page's FAQ accordion as plain text, for structured data. */
+  faqs: DesignFaq[];
 };
 
 const decodeHtml = (value: string) =>
@@ -21,6 +25,29 @@ const decodeHtml = (value: string) =>
     .replace(/&#39;/g, "'")
     .replace(/&ndash;/g, "-")
     .replace(/&mdash;/g, "-");
+
+const plainText = (value: string) =>
+  decodeHtml(value.replace(/<[^>]+>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * Reads the questions and answers out of a page's FAQ accordion, so the
+ * structured data always says what the page says.
+ */
+export const extractFaqs = (html: string): DesignFaq[] => {
+  const items =
+    html.match(/<div class="faq-item">[\s\S]*?<\/div><\/div>/g) ?? [];
+  return items.flatMap((item) => {
+    const question = item.match(/<button class="faq-q">([\s\S]*?)<span/)?.[1];
+    const answer = item.match(
+      /<div class="faq-a-inner">([\s\S]*?)<\/div><\/div>/
+    )?.[1];
+    return question && answer
+      ? [{ question: plainText(question), answer: plainText(answer) }]
+      : [];
+  });
+};
 
 const transformDesignHtml = (html: string) => {
   const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
@@ -75,5 +102,6 @@ export const getDesignStaticProps = (
     html: transformDesignHtml(source),
     title: decodeHtml(title),
     description: decodeHtml(description),
+    faqs: extractFaqs(source),
   };
 };

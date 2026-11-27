@@ -192,11 +192,16 @@ section { position: relative; }
 .hero-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 48px; align-items: center; }
 .hero-eyebrow { color: var(--blue-300); }
 .hero-eyebrow::before { background: var(--gold); }
-.hero h1 {
+/* The home page's main heading is the small line that names the subjects and
+   the suburb (WEB-5), so it drops the heading weight and spacing. */
+h1.hero-eyebrow { font-weight: 400; line-height: 1.6; margin: 0; text-wrap: wrap; }
+/* The tagline keeps the look of a main heading. */
+.hero .hero-title {
+  font-family: var(--display); font-weight: 700; text-wrap: balance;
   color: #fff; font-size: clamp(2.7rem, 6vw, 4.6rem); margin: 1.1rem 0 1.2rem;
   letter-spacing: -0.035em; line-height: 1.0;
 }
-.hero h1 .accent { color: var(--gold); }
+.hero .hero-title .accent { color: var(--gold); }
 .hero p.sub { color: rgba(255,255,255,.86); font-size: clamp(1.05rem, 1.6vw, 1.3rem); max-width: 30rem; line-height: 1.6; }
 .hero-actions { display: flex; align-items: center; gap: 1rem; margin-top: 2rem; flex-wrap: wrap; }
 .hero-trust { display: flex; align-items: center; gap: 1rem; margin-top: 2.4rem; color: rgba(255,255,255,.85); font-size: .95rem; }
@@ -604,7 +609,7 @@ section { position: relative; }
   .hero-bg::after { display: none; }
   .hero-bg img { object-position: 50% 38%; }
   .hero-grid { gap: 30px; }
-  .hero h1 { margin: .9rem 0 1rem; }
+  .hero .hero-title { margin: .9rem 0 1rem; }
   .book-card { max-width: 100%; }
 }
 @media (max-width: 480px) {
@@ -615,7 +620,7 @@ section { position: relative; }
   .hamburger { padding: 11px 5px; margin-right: -5px; }
   .hamburger span { width: 23px; }
   .footer-grid { grid-template-columns: 1fr; }
-  .hero h1 { font-size: clamp(2.3rem, 9.5vw, 3rem); }
+  .hero .hero-title { font-size: clamp(2.3rem, 9.5vw, 3rem); }
   .hero-actions { flex-direction: column; align-items: stretch; }
   .hero-actions .btn { width: 100%; }
 }
