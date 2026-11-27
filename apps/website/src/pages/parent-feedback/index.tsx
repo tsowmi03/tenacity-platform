@@ -604,10 +604,8 @@ export default function ParentFeedbackPage() {
       <Head
         title="Parent feedback"
         description="Share confidential feedback about your family's experience with Tenacity Tutoring."
-        canonicalPath="/parent-feedback"
-      >
-        <meta name="robots" content="noindex,nofollow" />
-      </Head>
+        noindex
+      />
 
       <header className="nav solid pf-nav">
         <div className="wrap nav-inner">

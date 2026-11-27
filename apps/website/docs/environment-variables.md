@@ -30,6 +30,15 @@ NEXT_PUBLIC_POSTHOG_KEY=phc_your_eu_project_key
 NEXT_PUBLIC_POSTHOG_DRY_RUN=1
 ```
 
+Optional, to verify the site with Google Search Console and Bing Webmaster
+Tools ([search guide](./seo.md)):
+
+```bash
+# Vercel Production only. Each adds a verification tag to every page.
+NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=your_google_token
+NEXT_PUBLIC_BING_SITE_VERIFICATION=your_bing_token
+```
+
 `RECIEVER_EMAIL` preserves the spelling used by the current source. Do not
 rename it as part of local configuration.
 

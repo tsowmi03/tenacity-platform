@@ -1,3 +1,4 @@
+import { faqSchema, servicesSchema } from "@lib/structuredData";
 import Head from "@modules/common/components/head";
 import Script from "next/script";
 import DesignRuntime, { DesignRuntimePage } from "./DesignRuntime";
@@ -7,10 +8,25 @@ type DesignPageProps = DesignStaticProps & {
   page: DesignRuntimePage;
 };
 
-const DesignPage = ({ html, title, description, page }: DesignPageProps) => {
+const DesignPage = ({
+  html,
+  title,
+  description,
+  faqs,
+  page,
+}: DesignPageProps) => {
+  const structuredData = [
+    ...(faqs.length ? [faqSchema(faqs)] : []),
+    ...(page === "programs" ? servicesSchema() : []),
+  ];
+
   return (
     <>
-      <Head title={title} description={description} />
+      <Head
+        title={title}
+        description={description}
+        structuredData={structuredData}
+      />
       {page === "register" || page === "contact" ? (
         <Script
           src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"

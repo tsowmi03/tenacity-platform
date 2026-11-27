@@ -18,6 +18,7 @@ A Next.js tutoring website with a 6-step student enrollment form and Firebase ba
 
 - **[Registration Flow](./docs/registration-flow.md)** - How the 6-step form works
 - **[Analytics](./docs/analytics.md)** - PostHog events, privacy rules and dashboards
+- **[Search engines and AI assistants](./docs/seo.md)** - robots.txt, sitemap, structured data, llms.txt and what to update when a fact changes
 - **[Firebase Setup](./docs/firebase-setup.md)** - Database configuration
 - **[Project Structure](./docs/project-structure.md)** - Code organization
 
