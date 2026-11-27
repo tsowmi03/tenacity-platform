@@ -11,6 +11,7 @@ This monorepo's work is tracked in Jira across these spaces:
 | Resource portal | `apps/resource-portal` | Resource Generator |
 | Website | `apps/website` | Website |
 | Cross-cutting / infra | (repo root, `backend/`, `scripts/`) | Tenacity Platform |
+| Business growth, not software (recruiting, Year 11–12) | (none) | Growth |
 
 When working on a ticket, pull its Jira context (description, comments, linked
 issues) before starting so the implementation matches what was actually
