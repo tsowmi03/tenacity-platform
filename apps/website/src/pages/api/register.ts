@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { FieldValue } from "firebase-admin/firestore";
 import { captureServerEvent } from "@lib/analyticsServer";
 import { getAdminDb } from "@lib/firebaseAdmin";
+import { normalisePersonName } from "@lib/personName";
 import { lookupReferrer, normaliseReferralCode } from "@lib/referralCodes";
 import { isReferralSourceCode } from "@lib/referralSources";
 import { hasValidClassSelection } from "@lib/registrationSlots";
@@ -59,6 +60,9 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const cleanString = (value: unknown, maxLength = 500) =>
   typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 
+const cleanName = (value: unknown) =>
+  normalisePersonName(cleanString(value, 120));
+
 const isEmail = (value: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
 
 const cleanStringList = (value: unknown, maxItems = 6) => {
@@ -104,15 +108,12 @@ const buildFamily = (payload: unknown) => {
   }
 
   const cleaned = {
-    carerFirstName: cleanString(family.carerFirstName, 120),
-    carerLastName: cleanString(family.carerLastName, 120),
+    carerFirstName: cleanName(family.carerFirstName),
+    carerLastName: cleanName(family.carerLastName),
     carerEmail: cleanString(family.carerEmail, 180),
     carerPhone: cleanString(family.carerPhone, 60),
-    emergencyContactFirstName: cleanString(
-      family.emergencyContactFirstName,
-      120
-    ),
-    emergencyContactLastName: cleanString(family.emergencyContactLastName, 120),
+    emergencyContactFirstName: cleanName(family.emergencyContactFirstName),
+    emergencyContactLastName: cleanName(family.emergencyContactLastName),
     emergencyContactPhone: cleanString(family.emergencyContactPhone, 60),
     emergencyContactRelation: cleanString(family.emergencyContactRelation, 120),
     referralSource,
@@ -148,8 +149,8 @@ const buildStudent = (payload: unknown) => {
   const classes = cleanClasses(student.classes);
 
   const cleaned = {
-    studentFirstName: cleanString(student.studentFirstName, 120),
-    studentLastName: cleanString(student.studentLastName, 120),
+    studentFirstName: cleanName(student.studentFirstName),
+    studentLastName: cleanName(student.studentLastName),
     studentYear: cleanString(student.studentYear, 40),
     studentSubjects,
     classes,

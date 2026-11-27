@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-27 | [Names on the website forms saved in normal case, not all capitals (WEB-16)](#2026-11-27--names-on-the-website-forms-saved-in-normal-case-not-all-capitals-web-16) |
 | 2026-11-26 | [Resource portal: one calmer, clearer look across every page (RES-85)](#2026-11-26--resource-portal-one-calmer-clearer-look-across-every-page-res-85) |
 | 2026-11-26 | [Stimulus library: tutors can browse the English stimuli (RES-68)](#2026-11-26--stimulus-library-tutors-can-browse-the-english-stimuli-res-68) |
 | 2026-11-26 | [Bank gaps: an admin tab showing where maths diagrams are drawn instead of taken from the bank (RES-74)](#2026-11-26--bank-gaps-an-admin-tab-showing-where-maths-diagrams-are-drawn-instead-of-taken-from-the-bank-res-74) |
@@ -271,6 +272,19 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-27 — Names on the website forms saved in normal case, not all capitals (WEB-16)
+
+**What changed**
+- The registration and Year 11 interest forms now tidy names before saving them. Names typed all in capitals or all in lower case are saved in title case, including after hyphens and apostrophes ("MARY-JANE O'BRIEN" becomes "Mary-Jane O'Brien").
+- Names that mix capitals and lower case are kept exactly as typed, so "McDonald" and "van der Berg" stay as they are. Extra spaces are removed.
+- One family's records that had come through in capitals (their enrolment, parent account, student record and sign-in name) were corrected by hand in production.
+
+**Why:** Names typed in capitals were carried unchanged into the parent and student records, and from there into the app and emails.
+
+**Status:** Live. The website deploys to production when merged. Enrolments submitted before this change keep the casing they were typed in.
 
 ---
 
