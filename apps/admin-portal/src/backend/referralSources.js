@@ -14,6 +14,14 @@ export const REFERRAL_SOURCE_OPTIONS = [
     label: "Google Search or Maps",
   },
   {
+    code: "google_ad",
+    label: "Google ad",
+  },
+  {
+    code: "ai_assistant",
+    label: "AI assistant (ChatGPT, Gemini)",
+  },
+  {
     code: "social_media",
     label: "Facebook or Instagram",
   },
