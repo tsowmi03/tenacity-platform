@@ -279,7 +279,7 @@ export const scrubEvent = (event: CaptureResult | null) => {
 
 // Only an explicit preview or development build counts as staging, so a build
 // without Vercel's system variables can't hide production from dashboards.
-const ANALYTICS_ENVIRONMENT = ["preview", "development"].includes(
+export const ANALYTICS_ENVIRONMENT = ["preview", "development"].includes(
   process.env.NEXT_PUBLIC_VERCEL_ENV ?? ""
 )
   ? "staging"

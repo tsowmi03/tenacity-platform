@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-28 | [Website asks who to thank, shows the Google rating and links its social icons (WEB-17)](#2026-11-28--website-asks-who-to-thank-shows-the-google-rating-and-links-its-social-icons-web-17) |
 | 2026-11-27 | [Website gives search engines and AI assistants the basics to read (WEB-5)](#2026-11-27--website-gives-search-engines-and-ai-assistants-the-basics-to-read-web-5) |
 | 2026-11-27 | [Names on the website forms saved in normal case, not all capitals (WEB-16)](#2026-11-27--names-on-the-website-forms-saved-in-normal-case-not-all-capitals-web-16) |
 | 2026-11-26 | [Resource portal: one calmer, clearer look across every page (RES-85)](#2026-11-26--resource-portal-one-calmer-clearer-look-across-every-page-res-85) |
@@ -273,6 +274,21 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-28 — Website asks who to thank, shows the Google rating and links its social icons (WEB-17)
+
+**What changed**
+- The home page shows "5.0 on Google" beside the stars at the top, linking to the Google listing, and a "Read our Google reviews" link under the reviews. No review count is shown.
+- On the registration form, "How did you hear about us?" gains two choices: "Google ad" and "AI assistant (ChatGPT, Gemini)". When a family picks a friend or a current family, the follow-up question is now "Who can we thank?" with "Their name" as a hint. It can still be skipped.
+- The Facebook and Instagram icons in the footer of every page now open Tenacity's pages. They went nowhere before.
+- Website events sent from the server now carry the `environment` label (production or staging), as the browser events already do, so staging tests can be filtered out.
+- In PostHog, the "filter out internal and test users" switch now also leaves out bots and overseas visits to the website. Payment, app and report events are untouched.
+
+**Why:** Only about one enrolment in four records where the family came from, and the referral question was rarely answered. The Google rating is the strongest proof the site was not showing. This is proposals 8, 10 and 13 of the "Software for growth" proposal in Confluence.
+
+**Status:** Live. The website deploys to production when merged. It went out after the admin portal and the enrolment-edit Function learnt the two new choices (TP-48).
 
 ---
 

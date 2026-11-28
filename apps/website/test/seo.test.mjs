@@ -227,3 +227,21 @@ test("the home page has one main heading naming the subjects and the suburb", ()
   assert.match(headings[0], /English/);
   assert.match(headings[0], /Narwee/);
 });
+
+test("the home page links its Google rating to the listing, without a review count", () => {
+  const links = homeHtml.split(site.BUSINESS.googleListingUrl).length - 1;
+  assert.equal(links, 2, "hero rating and the reviews link");
+  assert.match(homeHtml, /5\.0 on Google/);
+  assert.match(homeHtml, /Read our Google reviews/);
+  assert.doesNotMatch(homeHtml, /\d+\s+(Google\s+)?reviews/i);
+});
+
+test("the footer icons link to the Facebook and Instagram pages", () => {
+  for (const page of ["home", "programs", "about", "contact", "register"]) {
+    const html = read(`src/modules/design/static/${page}.html`);
+    const footer = html.match(/<div class="footer-socials">[\s\S]*?<\/div>/)?.[0] ?? "";
+    assert.ok(footer.includes(`href="${site.BUSINESS.facebookUrl}"`), `${page}: Facebook`);
+    assert.ok(footer.includes(`href="${site.BUSINESS.instagramUrl}"`), `${page}: Instagram`);
+    assert.doesNotMatch(footer, /href="#"/);
+  }
+});

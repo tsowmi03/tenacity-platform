@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { PostHog } from "posthog-node";
 import {
+  ANALYTICS_ENVIRONMENT,
   POSTHOG_KEY,
   POSTHOG_SERVER_HOST,
   type AnalyticsEvent,
@@ -68,6 +69,9 @@ export const captureServerEvent = async <E extends AnalyticsEvent>(
       event,
       properties: {
         ...properties,
+        // Same tag the browser adds, so dashboards that leave out staging
+        // still count these (WEB-17).
+        environment: ANALYTICS_ENVIRONMENT,
         // Matches the browser: anonymous events, no person profiles.
         $process_person_profile: false,
         source: "server",
