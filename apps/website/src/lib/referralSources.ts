@@ -2,16 +2,26 @@ export const REFERRAL_SOURCE_OPTIONS = [
   {
     code: "friend_family",
     label: "Friend or family",
-    detailLabel: "Who referred you? (optional)",
+    detailLabel: "Who can we thank?",
+    detailPlaceholder: "Their name",
   },
   {
     code: "existing_family",
     label: "Existing Tenacity family",
-    detailLabel: "Family name (optional)",
+    detailLabel: "Which family can we thank?",
+    detailPlaceholder: "Their name",
   },
   {
     code: "google",
     label: "Google Search or Maps",
+  },
+  {
+    code: "google_ad",
+    label: "Google ad",
+  },
+  {
+    code: "ai_assistant",
+    label: "AI assistant (ChatGPT, Gemini)",
   },
   {
     code: "social_media",
@@ -49,6 +59,8 @@ type ReferralSourceOption = {
   code: ReferralSourceCode;
   label: string;
   detailLabel?: string;
+  /** Hint text inside the detail box. The box is never required. */
+  detailPlaceholder?: string;
 };
 
 export const isReferralSourceCode = (

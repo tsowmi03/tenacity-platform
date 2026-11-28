@@ -1193,6 +1193,9 @@ const setupRegistrationRuntime = () => {
     if (detailLabel && option?.detailLabel) {
       detailLabel.textContent = option.detailLabel;
     }
+    if (detailInput) {
+      detailInput.placeholder = option?.detailPlaceholder ?? "";
+    }
     if (!option?.detailLabel && detailInput) {
       detailInput.value = "";
       family.referralSourceDetail = "";

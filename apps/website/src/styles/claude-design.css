@@ -204,8 +204,15 @@ h1.hero-eyebrow { font-weight: 400; line-height: 1.6; margin: 0; text-wrap: wrap
 .hero .hero-title .accent { color: var(--gold); }
 .hero p.sub { color: rgba(255,255,255,.86); font-size: clamp(1.05rem, 1.6vw, 1.3rem); max-width: 30rem; line-height: 1.6; }
 .hero-actions { display: flex; align-items: center; gap: 1rem; margin-top: 2rem; flex-wrap: wrap; }
-.hero-trust { display: flex; align-items: center; gap: 1rem; margin-top: 2.4rem; color: rgba(255,255,255,.85); font-size: .95rem; }
+.hero-trust { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-top: 2.4rem; color: rgba(255,255,255,.85); font-size: .95rem; }
 .stars { color: var(--gold); letter-spacing: 2px; font-size: 1rem; }
+/* The Google rating beside the stars, linked to the Google listing (WEB-17). */
+.hero-rating { display: inline-flex; align-items: center; gap: .6rem; color: #fff; white-space: nowrap; }
+.hero-rating strong { font-weight: 600; text-decoration: underline; text-decoration-color: rgba(255,255,255,.4); text-underline-offset: 3px; }
+.hero-rating:hover strong { text-decoration-color: #fff; }
+.rev-google { text-align: center; margin-top: 1.6rem; }
+.rev-google a { color: #fff; font-weight: 600; text-decoration: underline; text-decoration-color: rgba(255,255,255,.4); text-underline-offset: 4px; }
+.rev-google a:hover { text-decoration-color: #fff; }
 .hero-trust .avatars { display: flex; }
 .hero-trust .avatars span {
   width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--ink);

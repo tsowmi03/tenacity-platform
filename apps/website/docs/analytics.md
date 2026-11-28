@@ -39,7 +39,8 @@ enquiry and registration. The mobile app and admin portal are not covered.
   PostHog project settings cannot switch them on. Flags stay on only because
   replay needs the project settings to load.
 - Every event carries `environment`: `staging` on Vercel preview and
-  development builds, otherwise `production` (TP-36). Previews have no key
+  development builds, otherwise `production` (TP-36). Server events carry it too (WEB-17).
+  Previews have no key
   today, so they send nothing.
 - Families can opt out on [`/privacy`](../src/pages/privacy/index.tsx). The
   policy there describes what is collected. Update it if a change here
@@ -68,6 +69,10 @@ Set once in the US project:
 - **Data retention:** set it to match the privacy policy.
 - **Internal traffic:** opt out on your own browsers from `/privacy`.
   Opted-out browsers send nothing.
+- **Test-account filter:** "Filter out internal and test users" also leaves
+  out website visits that PostHog marks as bots or that come from outside
+  Australia. The rule applies only to events from `www.tenacitytutoring.com`,
+  so server, app and payment events are kept.
 
 ## Events
 
