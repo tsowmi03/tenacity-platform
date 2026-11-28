@@ -20,6 +20,7 @@ omitted, and open follow-ups are tracked at the bottom.
 
 | Date | Entry |
 | --- | --- |
+| 2026-11-28 | [Admin portal and enrolment edits accept two new "how did you hear" choices (TP-48)](#2026-11-28--admin-portal-and-enrolment-edits-accept-two-new-how-did-you-hear-choices-tp-48) |
 | 2026-11-27 | [Website gives search engines and AI assistants the basics to read (WEB-5)](#2026-11-27--website-gives-search-engines-and-ai-assistants-the-basics-to-read-web-5) |
 | 2026-11-27 | [Names on the website forms saved in normal case, not all capitals (WEB-16)](#2026-11-27--names-on-the-website-forms-saved-in-normal-case-not-all-capitals-web-16) |
 | 2026-11-26 | [Resource portal: one calmer, clearer look across every page (RES-85)](#2026-11-26--resource-portal-one-calmer-clearer-look-across-every-page-res-85) |
@@ -273,6 +274,18 @@ omitted, and open follow-ups are tracked at the bottom.
 | 2026-07-21 | [Phase 3 CI and deployment controls](#2026-07-21--phase-3-ci-and-deployment-controls) |
 | 2026-07-21 | [Phase 2 Firebase extraction](#2026-07-21--phase-2-firebase-extraction) |
 | 2026-07-21 | [Phase 0–1 history import and hardening](#2026-07-21--phase-01-history-import-and-hardening) |
+
+---
+
+## 2026-11-28 — Admin portal and enrolment edits accept two new "how did you hear" choices (TP-48)
+
+**What changed**
+- "How did you hear about us?" has two new choices in the admin portal: "Google ad" and "AI assistant (ChatGPT, Gemini)". They show when viewing or editing an enrolment.
+- The Function that saves an enrolment edit accepts the two new choices.
+
+**Why:** The website registration form is about to offer these choices (WEB-17). The portal and the Function must know them first, or editing an enrolment that used one would fail.
+
+**Status:** Live. The admin portal deploys when merged; the Function was deployed to production after the merge.
 
 ---
 

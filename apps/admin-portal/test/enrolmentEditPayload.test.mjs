@@ -28,6 +28,13 @@ describe("enrolment edit payload", () => {
     ]);
   });
 
+  it("keeps the Google ad and AI assistant referral sources", () => {
+    for (const referralSource of ["google_ad", "ai_assistant"]) {
+      const form = editFormFromEnrolment({ referralSource });
+      assert.equal(form.referralSource, referralSource);
+    }
+  });
+
   it("normalises unknown legacy referral sources to an empty edit state", () => {
     const form = editFormFromEnrolment({
       referralSource: "newspaper",

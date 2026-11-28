@@ -77,6 +77,16 @@ describe("validateUpdateEnrolmentPayload", () => {
     });
   });
 
+  it("accepts the Google ad and AI assistant referral sources", () => {
+    for (const referralSource of ["google_ad", "ai_assistant"]) {
+      const out = validateUpdateEnrolmentPayload({
+        enrolmentId: "e1",
+        referralSource,
+      });
+      assert.deepEqual(out.updates, { referralSource });
+    }
+  });
+
   it("allows referral source fields to be cleared", () => {
     const out = validateUpdateEnrolmentPayload({
       enrolmentId: "e1",

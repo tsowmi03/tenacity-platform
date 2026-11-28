@@ -55,6 +55,8 @@ const REFERRAL_SOURCE_CODES = [
   "friend_family",
   "existing_family",
   "google",
+  "google_ad",
+  "ai_assistant",
   "social_media",
   "community",
   "tutoring_provider",
